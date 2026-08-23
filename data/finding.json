@@ -1,0 +1,9 @@
+{
+  "finding_id": "FIND-0001",
+  "asset_name": "internet-web-01",
+  "cve": "CVE-2026-12345",
+  "title": "Remote Code Execution Vulnerability",
+  "description": "A remote code execution vulnerability was detected on the affected system.",
+  "cvss": 9.8,
+  "patch_available": true
+}

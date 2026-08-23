@@ -1,0 +1,14 @@
+{
+  "asset_name": "internet-web-01",
+  "owner": "Web Platform Team",
+  "application": "Customer Portal",
+  "environment": "production",
+  "business_criticality": "critical",
+  "internet_exposed": true,
+  "data_classification": "confidential",
+  "current_controls": [
+    "WAF enabled",
+    "EDR installed",
+    "SIEM logging enabled"
+  ]
+}
