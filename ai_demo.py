@@ -1,3 +1,5 @@
+from app.audit import log_event
+
 from app.ai_analyzer import analyze_vulnerability
 
 from app.loaders import load_asset
@@ -13,6 +15,14 @@ from app.ticketing import create_mock_ticket
 def main():
 
     # -------------------------------------------------
+    # 0. START WORKFLOW
+    # -------------------------------------------------
+
+    log_event(
+        "WORKFLOW_STARTED"
+    )
+
+    # -------------------------------------------------
     # 1. LOAD AND VALIDATE SECURITY DATA
     # -------------------------------------------------
 
@@ -20,6 +30,14 @@ def main():
     asset = load_asset()
     threat = load_threat_intel()
 
+    log_event(
+        "SECURITY_DATA_VALIDATED",
+        {
+            "finding_id": finding.finding_id,
+            "asset_name": finding.asset_name,
+            "cve": finding.cve
+        }
+    )
 
     # -------------------------------------------------
     # 2. CALCULATE AUTHORITATIVE RISK
@@ -31,6 +49,15 @@ def main():
         threat=threat
     )
 
+    log_event(
+        "RISK_CALCULATED",
+        {
+            "score": risk.score,
+            "rating": risk.rating,
+            "sla_hours": risk.sla_hours,
+            "factors": risk.factors
+        }
+    )
 
     # -------------------------------------------------
     # 3. GENERATE AI SECURITY ANALYSIS
@@ -43,6 +70,14 @@ def main():
         risk=risk
     )
 
+    log_event(
+        "AI_ANALYSIS_GENERATED",
+        {
+            "confidence": analysis.confidence,
+            "requires_human_review":
+                analysis.requires_human_review
+        }
+    )
 
     # -------------------------------------------------
     # 4. BUILD VALIDATED TICKET DRAFT
@@ -55,6 +90,15 @@ def main():
         analysis=analysis
     )
 
+    log_event(
+        "TICKET_DRAFTED",
+        {
+            "priority": ticket.priority,
+            "asset_name": ticket.asset_name,
+            "cve": ticket.cve,
+            "risk_rating": ticket.risk_rating
+        }
+    )
 
     # -------------------------------------------------
     # 5. DISPLAY AUTHORITATIVE RISK RESULT
@@ -76,7 +120,6 @@ def main():
         risk.sla_hours,
         "hours"
     )
-
 
     # -------------------------------------------------
     # 6. DISPLAY AI SECURITY ANALYSIS
@@ -120,7 +163,6 @@ def main():
     print()
     print("Human Review Required:")
     print(analysis.requires_human_review)
-
 
     # -------------------------------------------------
     # 7. DISPLAY VALIDATED TICKET DRAFT
@@ -177,7 +219,6 @@ def main():
     for step in ticket.validation_steps:
         print("-", step)
 
-
     # -------------------------------------------------
     # 8. HUMAN APPROVAL GATE
     # -------------------------------------------------
@@ -195,16 +236,36 @@ def main():
         "or press Enter to reject: "
     )
 
-
     # -------------------------------------------------
     # 9. EXECUTE ONLY AFTER EXPLICIT APPROVAL
     # -------------------------------------------------
 
     if approval.strip().upper() == "APPROVE":
 
+        log_event(
+            "TICKET_APPROVED",
+            {
+                "approved_by": "demo-analyst",
+                "asset_name": ticket.asset_name,
+                "cve": ticket.cve
+            }
+        )
+
         created_ticket = create_mock_ticket(
             ticket=ticket,
             approved_by="demo-analyst"
+        )
+
+        log_event(
+            "MOCK_TICKET_CREATED",
+            {
+                "ticket_id":
+                    created_ticket["ticket_id"],
+                "priority":
+                    created_ticket["priority"],
+                "risk_rating":
+                    created_ticket["risk_rating"]
+            }
         )
 
         print()
@@ -239,6 +300,14 @@ def main():
         )
 
     else:
+
+        log_event(
+            "TICKET_REJECTED",
+            {
+                "asset_name": ticket.asset_name,
+                "cve": ticket.cve
+            }
+        )
 
         print()
         print("=" * 70)
