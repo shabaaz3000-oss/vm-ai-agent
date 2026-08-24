@@ -79,3 +79,31 @@ class AIAnalysis(BaseModel):
 
     ticket_summary: str
     ticket_description: str
+
+class TicketDraft(BaseModel):
+    short_description: str
+
+    priority: Literal[
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+    ]
+
+    asset_name: str
+    cve: str
+    assignment_group: str
+
+    risk_rating: Literal[
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+    ]
+
+    risk_score: int
+    sla_hours: int
+
+    description: str
+    remediation: str
+    validation_steps: list[str]
