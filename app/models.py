@@ -139,12 +139,13 @@ class WorkflowResult(BaseModel):
     workflow_id: str
 
     status: Literal[
-        "AWAITING_APPROVAL",
-        "APPROVED",
-        "REJECTED",
-        "TICKET_CREATED",
-        "FAILED"
-    ]
+    "AWAITING_APPROVAL",
+    "PROCESSING",
+    "APPROVED",
+    "REJECTED",
+    "TICKET_CREATED",
+    "FAILED"
+]
 
     finding_id: str
     asset_name: str

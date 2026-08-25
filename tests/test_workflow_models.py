@@ -339,3 +339,59 @@ def test_workflow_result_contains_ai_analysis():
         "Critical vulnerability"
         in result.analysis.executive_summary
     )
+
+
+
+def test_processing_workflow_status_is_valid():
+
+    result = WorkflowResult(
+        workflow_id="WF-12345678",
+
+        status="PROCESSING",
+
+        finding_id="FIND-0001",
+
+        asset_name="internet-web-01",
+
+        cve="CVE-2026-12345",
+
+        risk=make_risk(),
+
+        security=make_security(),
+
+        analysis=make_analysis(),
+
+        ticket=make_ticket()
+    )
+
+    assert (
+        result.status
+        == "PROCESSING"
+    )
+
+def test_processing_workflow_status_is_valid():
+
+    result = WorkflowResult(
+        workflow_id="WF-12345678",
+
+        status="PROCESSING",
+
+        finding_id="FIND-0001",
+
+        asset_name="internet-web-01",
+
+        cve="CVE-2026-12345",
+
+        risk=make_risk(),
+
+        security=make_security(),
+
+        analysis=make_analysis(),
+
+        ticket=make_ticket()
+    )
+
+    assert (
+        result.status
+        == "PROCESSING"
+    )

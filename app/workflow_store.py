@@ -38,7 +38,8 @@ def connect_database():
     )
 
     connection = sqlite3.connect(
-        database_path
+        database_path,
+        timeout=10
     )
 
     connection.row_factory = (
@@ -178,6 +179,120 @@ def update_workflow(
             )
 
     return result
+
+
+# -------------------------------------------------
+# ATOMIC EXECUTION CLAIM
+# -------------------------------------------------
+
+
+def claim_workflow_for_execution(
+    workflow_id: str
+) -> WorkflowResult:
+
+    """
+    Atomically claim an AWAITING_APPROVAL workflow.
+
+    Only one caller may transition a workflow from
+    AWAITING_APPROVAL to PROCESSING.
+
+    A second caller must fail instead of executing
+    the same workflow again.
+    """
+
+    with connect_database() as connection:
+
+        # BEGIN IMMEDIATE obtains the SQLite write
+        # lock before checking the workflow state.
+        #
+        # This prevents two writers from both seeing
+        # AWAITING_APPROVAL and claiming it.
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+
+            FROM workflows
+
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            )
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: {workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "AWAITING_APPROVAL"
+        ):
+
+            raise PermissionError(
+                "Workflow must be awaiting approval "
+                "before execution can be claimed."
+            )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                row["payload"]
+            )
+        )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data[
+            "status"
+        ] = "PROCESSING"
+
+        claimed = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'AWAITING_APPROVAL'
+            """,
+            (
+                claimed.status,
+                claimed.model_dump_json(),
+                workflow_id,
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow execution has already "
+                "been claimed."
+            )
+
+    return claimed
 
 
 # -------------------------------------------------

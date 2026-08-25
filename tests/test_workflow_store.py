@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import importlib
 
 import pytest
@@ -12,7 +13,7 @@ from app.models import WorkflowSecurity
 
 
 # -------------------------------------------------
-# TEST DATABASE
+# ISOLATED SQLITE DATABASE
 # -------------------------------------------------
 
 
@@ -293,7 +294,7 @@ def test_store_preserves_authoritative_ticket():
 
 
 # -------------------------------------------------
-# STATE SURVIVES MODULE RELOAD
+# PERSISTENCE THROUGH MODULE RELOAD
 # -------------------------------------------------
 
 
@@ -318,3 +319,161 @@ def test_workflow_survives_module_reload():
     )
 
     assert retrieved == original
+
+
+# -------------------------------------------------
+# ATOMIC EXECUTION CLAIM
+# -------------------------------------------------
+
+
+def test_awaiting_workflow_can_be_claimed():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            "WF-TEST0001"
+        )
+    )
+
+    assert (
+        claimed.status
+        == "PROCESSING"
+    )
+
+    stored = (
+        workflow_store.get_workflow(
+            "WF-TEST0001"
+        )
+    )
+
+    assert (
+        stored.status
+        == "PROCESSING"
+    )
+
+
+# -------------------------------------------------
+# SECOND CLAIM IS BLOCKED
+# -------------------------------------------------
+
+
+def test_second_execution_claim_is_rejected():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    workflow_store.claim_workflow_for_execution(
+        "WF-TEST0001"
+    )
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        workflow_store.claim_workflow_for_execution(
+            "WF-TEST0001"
+        )
+
+    stored = (
+        workflow_store.get_workflow(
+            "WF-TEST0001"
+        )
+    )
+
+    assert (
+        stored.status
+        == "PROCESSING"
+    )
+
+
+# -------------------------------------------------
+# UNKNOWN WORKFLOW CANNOT BE CLAIMED
+# -------------------------------------------------
+
+
+def test_unknown_workflow_cannot_be_claimed():
+
+    with pytest.raises(
+        KeyError
+    ):
+
+        workflow_store.claim_workflow_for_execution(
+            "WF-DOESNOTEXIST"
+        )
+
+
+# -------------------------------------------------
+# CONCURRENT CLAIM
+# -------------------------------------------------
+
+
+def test_concurrent_execution_claim_allows_one_winner():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    def attempt_claim():
+
+        try:
+
+            result = (
+                workflow_store
+                .claim_workflow_for_execution(
+                    "WF-TEST0001"
+                )
+            )
+
+            return (
+                "CLAIMED",
+                result.status
+            )
+
+        except PermissionError:
+
+            return (
+                "BLOCKED",
+                None
+            )
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        results = list(
+            executor.map(
+                lambda _: attempt_claim(),
+                range(2)
+            )
+        )
+
+    outcomes = [
+        result[0]
+        for result in results
+    ]
+
+    assert (
+        outcomes.count("CLAIMED")
+        == 1
+    )
+
+    assert (
+        outcomes.count("BLOCKED")
+        == 1
+    )
+
+    stored = (
+        workflow_store.get_workflow(
+            "WF-TEST0001"
+        )
+    )
+
+    assert (
+        stored.status
+        == "PROCESSING"
+    )
