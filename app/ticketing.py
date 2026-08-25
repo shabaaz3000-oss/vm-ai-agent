@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from app.approval import validate_approval
+
 from app.models import AIAnalysis
 from app.models import AssetContext
 from app.models import RiskResult
@@ -64,22 +66,53 @@ def build_ticket(
 
 def create_mock_ticket(
     ticket: TicketDraft,
-    approved_by: str
+    approval: dict
 ) -> dict:
 
+    # -------------------------------------------------
+    # SECURITY ENFORCEMENT
+    # -------------------------------------------------
+
+    if not validate_approval(
+        ticket=ticket,
+        approval=approval
+    ):
+        raise PermissionError(
+            "Valid approval is required "
+            "before ticket creation."
+        )
+
+    # -------------------------------------------------
+    # CREATE TICKET RECORD
+    # -------------------------------------------------
+
     ticket_record = {
-        "ticket_id": "VM-" + uuid4().hex[:8].upper(),
+        "ticket_id":
+            "VM-" + uuid4().hex[:8].upper(),
 
-        "created_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "created_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
 
-        "approved_by": approved_by,
+        "approval_id":
+            approval["approval_id"],
 
-        "status": "OPEN",
+        "approved_by":
+            approval["approved_by"],
+
+        "approved_at":
+            approval["approved_at"],
+
+        "status":
+            "OPEN",
 
         **ticket.model_dump()
     }
+
+    # -------------------------------------------------
+    # PERSIST MOCK TICKET
+    # -------------------------------------------------
 
     with open(
         TICKET_FILE,
