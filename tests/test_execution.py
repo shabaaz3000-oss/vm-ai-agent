@@ -487,3 +487,209 @@ def test_execution_authorization_failure_is_logged_and_blocked(
         ]
         == "PermissionError"
     )
+
+# -------------------------------------------------
+# ATOMIC API EXECUTION CLAIM
+# -------------------------------------------------
+
+
+def test_claim_and_execute_uses_atomic_workflow_claim(
+    monkeypatch
+):
+
+    events = capture_events(
+        monkeypatch
+    )
+
+    claimed_data = (
+        make_result().model_dump()
+    )
+
+    claimed_data[
+        "status"
+    ] = "PROCESSING"
+
+    claimed_result = (
+        WorkflowResult.model_validate(
+            claimed_data
+        )
+    )
+
+    claim_calls = []
+
+    def fake_claim(
+        workflow_id
+    ):
+
+        claim_calls.append(
+            workflow_id
+        )
+
+        return claimed_result
+
+    monkeypatch.setattr(
+        execution,
+        "claim_workflow_for_execution",
+        fake_claim
+    )
+
+    def fake_ticket_creation(
+        ticket,
+        approval
+    ):
+
+        return {
+            "ticket_id":
+                "VM-TEST0001",
+
+            "approval_id":
+                approval["approval_id"],
+
+            "approved_by":
+                approval["approved_by"],
+
+            "approved_at":
+                approval["approved_at"],
+
+            "status":
+                "OPEN",
+
+            "priority":
+                ticket.priority,
+
+            "risk_rating":
+                ticket.risk_rating
+        }
+
+    monkeypatch.setattr(
+        execution,
+        "create_mock_ticket",
+        fake_ticket_creation
+    )
+
+    result = (
+        execution
+        .claim_and_execute_workflow(
+            workflow_id="WF-TEST0001",
+
+            approved_by=
+                "api-approver"
+        )
+    )
+
+    assert (
+        claim_calls
+        == ["WF-TEST0001"]
+    )
+
+    assert (
+        result.status
+        == "TICKET_CREATED"
+    )
+
+    assert (
+        result.ticket_id
+        == "VM-TEST0001"
+    )
+
+    assert (
+        result.approval_id
+        is not None
+    )
+
+    event_types = [
+        event["event_type"]
+        for event in events
+    ]
+
+    assert (
+        "WORKFLOW_EXECUTION_CLAIMED"
+        in event_types
+    )
+
+    assert (
+        "TICKET_APPROVED"
+        in event_types
+    )
+
+    assert (
+        "MOCK_TICKET_CREATED"
+        in event_types
+    )
+
+
+def test_failed_atomic_claim_prevents_ticket_execution(
+    monkeypatch
+):
+
+    events = capture_events(
+        monkeypatch
+    )
+
+    ticket_creation_called = False
+
+    def blocked_claim(
+        workflow_id
+    ):
+
+        raise PermissionError(
+            "Workflow execution has already "
+            "been claimed."
+        )
+
+    monkeypatch.setattr(
+        execution,
+        "claim_workflow_for_execution",
+        blocked_claim
+    )
+
+    def fake_ticket_creation(
+        ticket,
+        approval
+    ):
+
+        nonlocal ticket_creation_called
+
+        ticket_creation_called = True
+
+    monkeypatch.setattr(
+        execution,
+        "create_mock_ticket",
+        fake_ticket_creation
+    )
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        execution.claim_and_execute_workflow(
+            workflow_id="WF-TEST0001",
+
+            approved_by=
+                "api-approver"
+        )
+
+    assert (
+        ticket_creation_called
+        is False
+    )
+
+    event_types = [
+        event["event_type"]
+        for event in events
+    ]
+
+    assert (
+        "WORKFLOW_EXECUTION_CLAIM_BLOCKED"
+        in event_types
+    )
+
+    assert (
+        "TICKET_APPROVED"
+        not in event_types
+    )
+
+    assert (
+        "MOCK_TICKET_CREATED"
+        not in event_types
+    )

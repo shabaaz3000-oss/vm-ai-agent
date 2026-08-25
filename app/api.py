@@ -8,7 +8,7 @@ from app.auth import require_approver
 from app.auth import require_authenticated_user
 
 from app.execution import (
-    approve_and_execute_workflow,
+    claim_and_execute_workflow,
     reject_workflow,
 )
 
@@ -30,10 +30,11 @@ from app.workflow_store import (
 
 app = FastAPI(
     title="VM AI Agent API",
-    version="0.2.0",
+    version="0.3.0",
     description=(
         "Secure AI-assisted vulnerability management "
-        "workflow API with authentication and RBAC."
+        "workflow API with authentication, RBAC, "
+        "persistent state, and atomic execution claims."
     ),
 )
 
@@ -128,8 +129,13 @@ def approve_workflow(
 
     try:
 
-        result = get_workflow(
-            workflow_id
+        completed_result = (
+            claim_and_execute_workflow(
+                workflow_id=workflow_id,
+
+                approved_by=
+                    principal.username,
+            )
         )
 
     except KeyError:
@@ -137,17 +143,6 @@ def approve_workflow(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workflow not found.",
-        )
-
-    try:
-
-        completed_result = (
-            approve_and_execute_workflow(
-                result=result,
-
-                approved_by=
-                    principal.username,
-            )
         )
 
     except PermissionError as error:

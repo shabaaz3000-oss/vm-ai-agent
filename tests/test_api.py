@@ -1,6 +1,12 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+import pytest
+
 from fastapi.testclient import TestClient
 
 import app.api as api_module
+import app.ticketing as ticketing
 
 from app.api import app
 
@@ -11,10 +17,14 @@ from app.models import WorkflowResult
 from app.models import WorkflowSecurity
 
 from app.workflow_store import (
-    clear_workflows,
     get_workflow,
     save_workflow,
 )
+
+
+# -------------------------------------------------
+# TEST CLIENT
+# -------------------------------------------------
 
 
 client = TestClient(
@@ -52,9 +62,25 @@ def approver_headers():
     }
 
 
-def configure_tokens(
+# -------------------------------------------------
+# ISOLATED TEST ENVIRONMENT
+# -------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def isolated_test_environment(
+    tmp_path,
     monkeypatch
 ):
+
+    database_path = (
+        tmp_path / "workflows.db"
+    )
+
+    monkeypatch.setenv(
+        "VM_AI_DB_PATH",
+        str(database_path)
+    )
 
     monkeypatch.setenv(
         "VM_AI_ANALYST_TOKEN",
@@ -66,6 +92,8 @@ def configure_tokens(
         APPROVER_TOKEN
     )
 
+    yield
+
 
 # -------------------------------------------------
 # TEST DATA HELPERS
@@ -76,8 +104,11 @@ def make_risk():
 
     return RiskResult(
         score=100,
+
         rating="CRITICAL",
+
         sla_hours=24,
+
         factors=[
             "Listed in CISA KEV",
             "Asset is internet exposed",
@@ -184,6 +215,7 @@ def make_result(
 
         security=WorkflowSecurity(
             prompt_injection_detected=False,
+
             human_review_required=True,
         ),
 
@@ -195,11 +227,6 @@ def make_result(
 
         ticket_id=ticket_id,
     )
-
-
-def setup_function():
-
-    clear_workflows()
 
 
 # -------------------------------------------------
@@ -231,7 +258,10 @@ def test_create_workflow_requires_authentication():
         "/workflows"
     )
 
-    assert response.status_code == 401
+    assert (
+        response.status_code
+        == 401
+    )
 
 
 # -------------------------------------------------
@@ -239,13 +269,7 @@ def test_create_workflow_requires_authentication():
 # -------------------------------------------------
 
 
-def test_invalid_token_is_rejected(
-    monkeypatch
-):
-
-    configure_tokens(
-        monkeypatch
-    )
+def test_invalid_token_is_rejected():
 
     response = client.post(
         "/workflows",
@@ -256,7 +280,10 @@ def test_invalid_token_is_rejected(
         },
     )
 
-    assert response.status_code == 401
+    assert (
+        response.status_code
+        == 401
+    )
 
 
 # -------------------------------------------------
@@ -268,10 +295,6 @@ def test_analyst_can_create_workflow(
     monkeypatch
 ):
 
-    configure_tokens(
-        monkeypatch
-    )
-
     prepared = make_result()
 
     monkeypatch.setattr(
@@ -282,10 +305,14 @@ def test_analyst_can_create_workflow(
 
     response = client.post(
         "/workflows",
+
         headers=analyst_headers(),
     )
 
-    assert response.status_code == 201
+    assert (
+        response.status_code
+        == 201
+    )
 
     body = response.json()
 
@@ -321,7 +348,10 @@ def test_get_workflow_requires_authentication():
         "/workflows/WF-TEST0001"
     )
 
-    assert response.status_code == 401
+    assert (
+        response.status_code
+        == 401
+    )
 
 
 # -------------------------------------------------
@@ -329,13 +359,7 @@ def test_get_workflow_requires_authentication():
 # -------------------------------------------------
 
 
-def test_analyst_can_read_workflow(
-    monkeypatch
-):
-
-    configure_tokens(
-        monkeypatch
-    )
+def test_analyst_can_read_workflow():
 
     save_workflow(
         make_result()
@@ -343,10 +367,14 @@ def test_analyst_can_read_workflow(
 
     response = client.get(
         "/workflows/WF-TEST0001",
+
         headers=analyst_headers(),
     )
 
-    assert response.status_code == 200
+    assert (
+        response.status_code
+        == 200
+    )
 
     body = response.json()
 
@@ -371,13 +399,7 @@ def test_analyst_can_read_workflow(
 # -------------------------------------------------
 
 
-def test_unknown_workflow_returns_404(
-    monkeypatch
-):
-
-    configure_tokens(
-        monkeypatch
-    )
+def test_unknown_workflow_returns_404():
 
     response = client.get(
         "/workflows/WF-DOESNOTEXIST",
@@ -385,7 +407,10 @@ def test_unknown_workflow_returns_404(
         headers=analyst_headers(),
     )
 
-    assert response.status_code == 404
+    assert (
+        response.status_code
+        == 404
+    )
 
     assert (
         response.json()["detail"]
@@ -398,13 +423,7 @@ def test_unknown_workflow_returns_404(
 # -------------------------------------------------
 
 
-def test_analyst_cannot_approve(
-    monkeypatch
-):
-
-    configure_tokens(
-        monkeypatch
-    )
+def test_analyst_cannot_approve():
 
     save_workflow(
         make_result()
@@ -416,7 +435,10 @@ def test_analyst_cannot_approve(
         headers=analyst_headers(),
     )
 
-    assert response.status_code == 403
+    assert (
+        response.status_code
+        == 403
+    )
 
     assert (
         "approver role"
@@ -431,13 +453,7 @@ def test_analyst_cannot_approve(
 # -------------------------------------------------
 
 
-def test_analyst_cannot_reject(
-    monkeypatch
-):
-
-    configure_tokens(
-        monkeypatch
-    )
+def test_analyst_cannot_reject():
 
     save_workflow(
         make_result()
@@ -449,22 +465,21 @@ def test_analyst_cannot_reject(
         headers=analyst_headers(),
     )
 
-    assert response.status_code == 403
+    assert (
+        response.status_code
+        == 403
+    )
 
 
 # -------------------------------------------------
 # APPROVAL USES AUTHENTICATED IDENTITY
-# AND TRUSTED SERVER STATE
+# AND TRUSTED SERVER-SIDE STATE
 # -------------------------------------------------
 
 
 def test_approver_identity_and_server_state_are_used(
     monkeypatch
 ):
-
-    configure_tokens(
-        monkeypatch
-    )
 
     trusted_result = make_result()
 
@@ -475,19 +490,31 @@ def test_approver_identity_and_server_state_are_used(
     captured = {}
 
     def fake_execute(
-        result,
+        workflow_id,
         approved_by,
     ):
 
         captured[
-            "result"
-        ] = result
+            "workflow_id"
+        ] = workflow_id
 
         captured[
             "approved_by"
         ] = approved_by
 
-        updated = result.model_dump()
+        authoritative = (
+            get_workflow(
+                workflow_id
+            )
+        )
+
+        captured[
+            "result"
+        ] = authoritative
+
+        updated = (
+            authoritative.model_dump()
+        )
 
         updated.update(
             {
@@ -502,21 +529,25 @@ def test_approver_identity_and_server_state_are_used(
             }
         )
 
-        return WorkflowResult.model_validate(
-            updated
+        return (
+            WorkflowResult
+            .model_validate(
+                updated
+            )
         )
 
     monkeypatch.setattr(
         api_module,
-        "approve_and_execute_workflow",
+        "claim_and_execute_workflow",
         fake_execute,
     )
 
-    # Malicious client attempts to supply
-    # altered authoritative ticket values.
+    # Malicious client attempts to submit
+    # different authoritative ticket values.
     #
-    # Endpoint accepts only workflow_id,
-    # therefore this body must have no effect.
+    # The API does not trust this request body.
+    # Execution uses workflow_id to retrieve
+    # trusted server-side workflow state.
 
     response = client.post(
         "/workflows/WF-TEST0001/approve",
@@ -533,11 +564,19 @@ def test_approver_identity_and_server_state_are_used(
         },
     )
 
-    assert response.status_code == 200
+    assert (
+        response.status_code
+        == 200
+    )
 
     authoritative = captured[
         "result"
     ]
+
+    assert (
+        captured["workflow_id"]
+        == "WF-TEST0001"
+    )
 
     assert (
         authoritative.ticket.priority
@@ -591,10 +630,6 @@ def test_approver_can_reject_workflow(
     monkeypatch
 ):
 
-    configure_tokens(
-        monkeypatch
-    )
-
     save_workflow(
         make_result()
     )
@@ -603,7 +638,9 @@ def test_approver_can_reject_workflow(
         result
     ):
 
-        updated = result.model_dump()
+        updated = (
+            result.model_dump()
+        )
 
         updated.update(
             {
@@ -618,8 +655,11 @@ def test_approver_can_reject_workflow(
             }
         )
 
-        return WorkflowResult.model_validate(
-            updated
+        return (
+            WorkflowResult
+            .model_validate(
+                updated
+            )
         )
 
     monkeypatch.setattr(
@@ -634,7 +674,10 @@ def test_approver_can_reject_workflow(
         headers=approver_headers(),
     )
 
-    assert response.status_code == 200
+    assert (
+        response.status_code
+        == 200
+    )
 
     assert (
         response.json()["status"]
@@ -652,17 +695,11 @@ def test_approver_can_reject_workflow(
 
 
 # -------------------------------------------------
-# INVALID STATE TRANSITION
+# REJECTED WORKFLOW CANNOT BE APPROVED
 # -------------------------------------------------
 
 
-def test_rejected_workflow_cannot_be_approved(
-    monkeypatch
-):
-
-    configure_tokens(
-        monkeypatch
-    )
+def test_rejected_workflow_cannot_be_approved():
 
     save_workflow(
         make_result(
@@ -676,7 +713,10 @@ def test_rejected_workflow_cannot_be_approved(
         headers=approver_headers(),
     )
 
-    assert response.status_code == 409
+    assert (
+        response.status_code
+        == 409
+    )
 
     assert (
         "awaiting approval"
@@ -695,10 +735,6 @@ def test_approver_can_create_workflow(
     monkeypatch
 ):
 
-    configure_tokens(
-        monkeypatch
-    )
-
     prepared = make_result()
 
     monkeypatch.setattr(
@@ -709,7 +745,204 @@ def test_approver_can_create_workflow(
 
     response = client.post(
         "/workflows",
+
         headers=approver_headers(),
     )
 
-    assert response.status_code == 201
+    assert (
+        response.status_code
+        == 201
+    )
+
+
+# -------------------------------------------------
+# SECOND APPROVAL IS BLOCKED
+# -------------------------------------------------
+
+
+def test_second_approval_is_blocked_and_creates_one_ticket(
+    tmp_path,
+    monkeypatch
+):
+
+    ticket_file = (
+        tmp_path / "tickets.jsonl"
+    )
+
+    monkeypatch.setattr(
+        ticketing,
+        "TICKET_FILE",
+        ticket_file
+    )
+
+    save_workflow(
+        make_result()
+    )
+
+    first_response = client.post(
+        "/workflows/WF-TEST0001/approve",
+
+        headers=approver_headers(),
+    )
+
+    second_response = client.post(
+        "/workflows/WF-TEST0001/approve",
+
+        headers=approver_headers(),
+    )
+
+    assert (
+        first_response.status_code
+        == 200
+    )
+
+    assert (
+        second_response.status_code
+        == 409
+    )
+
+    assert ticket_file.exists()
+
+    lines = (
+        ticket_file
+        .read_text(
+            encoding="utf-8"
+        )
+        .splitlines()
+    )
+
+    assert (
+        len(lines)
+        == 1
+    )
+
+    stored = get_workflow(
+        "WF-TEST0001"
+    )
+
+    assert (
+        stored.status
+        == "TICKET_CREATED"
+    )
+
+
+# -------------------------------------------------
+# CONCURRENT APPROVAL REQUESTS
+# -------------------------------------------------
+
+
+def test_concurrent_api_approval_creates_exactly_one_ticket(
+    tmp_path,
+    monkeypatch
+):
+
+    ticket_file = (
+        tmp_path / "tickets.jsonl"
+    )
+
+    monkeypatch.setattr(
+        ticketing,
+        "TICKET_FILE",
+        ticket_file
+    )
+
+    save_workflow(
+        make_result()
+    )
+
+    barrier = Barrier(
+        2
+    )
+
+    def approve():
+
+        barrier.wait()
+
+        with TestClient(
+            app
+        ) as concurrent_client:
+
+            return (
+                concurrent_client.post(
+                    (
+                        "/workflows/"
+                        "WF-TEST0001/"
+                        "approve"
+                    ),
+
+                    headers=
+                        approver_headers(),
+                )
+            )
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        responses = list(
+            executor.map(
+                lambda _: approve(),
+                range(2)
+            )
+        )
+
+    status_codes = sorted(
+        response.status_code
+        for response in responses
+    )
+
+    assert status_codes == [
+        200,
+        409
+    ]
+
+    assert ticket_file.exists()
+
+    lines = (
+        ticket_file
+        .read_text(
+            encoding="utf-8"
+        )
+        .splitlines()
+    )
+
+    assert (
+        len(lines)
+        == 1
+    )
+
+    stored = get_workflow(
+        "WF-TEST0001"
+    )
+
+    assert (
+        stored.status
+        == "TICKET_CREATED"
+    )
+
+    successful_response = next(
+        response
+        for response in responses
+        if response.status_code
+        == 200
+    )
+
+    blocked_response = next(
+        response
+        for response in responses
+        if response.status_code
+        == 409
+    )
+
+    assert (
+        successful_response
+        .json()["status"]
+        == "TICKET_CREATED"
+    )
+
+    assert (
+        "awaiting approval"
+        in blocked_response
+        .json()["detail"]
+        .lower()
+    )

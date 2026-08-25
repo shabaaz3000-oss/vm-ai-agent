@@ -5,6 +5,10 @@ from app.models import WorkflowResult
 
 from app.ticketing import create_mock_ticket
 
+from app.workflow_store import (
+    claim_workflow_for_execution,
+)
+
 
 # -------------------------------------------------
 # WORKFLOW STATE VALIDATION
@@ -66,27 +70,19 @@ def reject_workflow(
 
 
 # -------------------------------------------------
-# HUMAN APPROVAL + AUTHORIZED EXECUTION
+# INTERNAL AUTHORIZED EXECUTION
 # -------------------------------------------------
 
 
-def approve_and_execute_workflow(
+def _execute_ticket_bound_workflow(
     result: WorkflowResult,
     approved_by: str
 ) -> WorkflowResult:
 
-    # -------------------------------------------------
-    # 1. VERIFY WORKFLOW STATE
-    # -------------------------------------------------
-
-    require_awaiting_approval(
-        result
-    )
-
     ticket = result.ticket
 
     # -------------------------------------------------
-    # 2. CREATE TICKET-BOUND APPROVAL
+    # 1. CREATE TICKET-BOUND APPROVAL
     # -------------------------------------------------
 
     approval_record = create_approval(
@@ -129,7 +125,7 @@ def approve_and_execute_workflow(
     )
 
     # -------------------------------------------------
-    # 3. EXECUTE ONLY WITH VALID APPROVAL
+    # 2. EXECUTE ONLY WITH VALID APPROVAL
     # -------------------------------------------------
 
     try:
@@ -163,7 +159,7 @@ def approve_and_execute_workflow(
         raise
 
     # -------------------------------------------------
-    # 4. AUDIT SUCCESSFUL EXECUTION
+    # 3. AUDIT SUCCESSFUL EXECUTION
     # -------------------------------------------------
 
     log_event(
@@ -195,7 +191,7 @@ def approve_and_execute_workflow(
     )
 
     # -------------------------------------------------
-    # 5. RETURN UPDATED STRUCTURED RESULT
+    # 4. RETURN COMPLETED WORKFLOW
     # -------------------------------------------------
 
     updated_data = result.model_dump()
@@ -219,4 +215,90 @@ def approve_and_execute_workflow(
 
     return WorkflowResult.model_validate(
         updated_data
+    )
+
+
+# -------------------------------------------------
+# DIRECT APPROVAL
+# -------------------------------------------------
+#
+# Used by the CLI, where the WorkflowResult already
+# exists locally and there is no shared HTTP race.
+# -------------------------------------------------
+
+
+def approve_and_execute_workflow(
+    result: WorkflowResult,
+    approved_by: str
+) -> WorkflowResult:
+
+    require_awaiting_approval(
+        result
+    )
+
+    return _execute_ticket_bound_workflow(
+        result=result,
+        approved_by=approved_by
+    )
+
+
+# -------------------------------------------------
+# ATOMIC SERVER-SIDE APPROVAL
+# -------------------------------------------------
+#
+# Used by the API.
+#
+# The trusted SQLite workflow is atomically claimed
+# BEFORE any ticket or external action can occur.
+# -------------------------------------------------
+
+
+def claim_and_execute_workflow(
+    workflow_id: str,
+    approved_by: str
+) -> WorkflowResult:
+
+    try:
+
+        claimed_result = (
+            claim_workflow_for_execution(
+                workflow_id
+            )
+        )
+
+    except PermissionError as error:
+
+        log_event(
+            "WORKFLOW_EXECUTION_CLAIM_BLOCKED",
+            {
+                "workflow_id":
+                    workflow_id,
+
+                "error_type":
+                    "PermissionError",
+
+                "message":
+                    str(error)
+            }
+        )
+
+        raise
+
+    log_event(
+        "WORKFLOW_EXECUTION_CLAIMED",
+        {
+            "workflow_id":
+                claimed_result.workflow_id,
+
+            "status":
+                claimed_result.status,
+
+            "approved_by":
+                approved_by
+        }
+    )
+
+    return _execute_ticket_bound_workflow(
+        result=claimed_result,
+        approved_by=approved_by
     )
