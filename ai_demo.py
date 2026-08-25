@@ -4,148 +4,59 @@ from pydantic import ValidationError
 
 from app.approval import create_approval
 from app.audit import log_event
-from app.input_security import detect_prompt_injection
-
-from app.ai_analyzer import analyze_vulnerability
-
-from app.loaders import load_asset
-from app.loaders import load_finding
-from app.loaders import load_threat_intel
-
-from app.risk_engine import calculate_risk
-
-from app.ticketing import build_ticket
 from app.ticketing import create_mock_ticket
+from app.workflow import prepare_workflow
 
 
-def run_workflow():
+# -------------------------------------------------
+# DISPLAY SECURITY WARNING
+# -------------------------------------------------
 
-    # -------------------------------------------------
-    # 0. START WORKFLOW
-    # -------------------------------------------------
 
-    log_event(
-        "WORKFLOW_STARTED"
+def display_security_warning(result):
+
+    if not result.security.prompt_injection_detected:
+        return
+
+    print()
+    print("=" * 70)
+    print("SECURITY WARNING")
+    print("=" * 70)
+
+    print()
+    print(
+        "Potential prompt injection detected "
+        "in vulnerability data."
     )
 
-    # -------------------------------------------------
-    # 1. LOAD AND VALIDATE SECURITY DATA
-    # -------------------------------------------------
+    print()
+    print("Matched indicators:")
 
-    finding = load_finding()
-    asset = load_asset()
-    threat = load_threat_intel()
+    for match in (
+        result.security.prompt_injection_matches
+    ):
+        print("-", match)
 
-    injection_matches = detect_prompt_injection(
-        finding.description
+    print()
+    print(
+        "The content will remain untrusted. "
+        "Authoritative risk policy cannot be overridden."
     )
 
-    if injection_matches:
 
-        log_event(
-            "PROMPT_INJECTION_SUSPECTED",
-            {
-                "finding_id": finding.finding_id,
-                "field": "description",
-                "matches": injection_matches
-            }
-        )
+# -------------------------------------------------
+# DISPLAY PREPARED WORKFLOW
+# -------------------------------------------------
 
-        print()
-        print("=" * 70)
-        print("SECURITY WARNING")
-        print("=" * 70)
 
-        print()
-        print(
-            "Potential prompt injection detected "
-            "in vulnerability data."
-        )
+def display_prepared_workflow(result):
 
-        print()
-        print("Matched indicators:")
-
-        for match in injection_matches:
-            print("-", match)
-
-        print()
-        print(
-            "The content will remain untrusted. "
-            "Authoritative risk policy cannot be overridden."
-        )
-
-    log_event(
-        "SECURITY_DATA_VALIDATED",
-        {
-            "finding_id": finding.finding_id,
-            "asset_name": finding.asset_name,
-            "cve": finding.cve
-        }
-    )
+    risk = result.risk
+    analysis = result.analysis
+    ticket = result.ticket
 
     # -------------------------------------------------
-    # 2. CALCULATE AUTHORITATIVE RISK
-    # -------------------------------------------------
-
-    risk = calculate_risk(
-        finding=finding,
-        asset=asset,
-        threat=threat
-    )
-
-    log_event(
-        "RISK_CALCULATED",
-        {
-            "score": risk.score,
-            "rating": risk.rating,
-            "sla_hours": risk.sla_hours,
-            "factors": risk.factors
-        }
-    )
-
-    # -------------------------------------------------
-    # 3. GENERATE AI SECURITY ANALYSIS
-    # -------------------------------------------------
-
-    analysis = analyze_vulnerability(
-        finding=finding,
-        asset=asset,
-        threat=threat,
-        risk=risk
-    )
-
-    log_event(
-        "AI_ANALYSIS_GENERATED",
-        {
-            "confidence": analysis.confidence,
-            "requires_human_review":
-                analysis.requires_human_review
-        }
-    )
-
-    # -------------------------------------------------
-    # 4. BUILD VALIDATED TICKET DRAFT
-    # -------------------------------------------------
-
-    ticket = build_ticket(
-        finding=finding,
-        asset=asset,
-        risk=risk,
-        analysis=analysis
-    )
-
-    log_event(
-        "TICKET_DRAFTED",
-        {
-            "priority": ticket.priority,
-            "asset_name": ticket.asset_name,
-            "cve": ticket.cve,
-            "risk_rating": ticket.risk_rating
-        }
-    )
-
-    # -------------------------------------------------
-    # 5. DISPLAY AUTHORITATIVE RISK RESULT
+    # AUTHORITATIVE RISK RESULT
     # -------------------------------------------------
 
     print()
@@ -154,8 +65,9 @@ def run_workflow():
     print("=" * 70)
 
     print()
-    print("Asset:", finding.asset_name)
-    print("CVE:", finding.cve)
+    print("Workflow ID:", result.workflow_id)
+    print("Asset:", result.asset_name)
+    print("CVE:", result.cve)
     print("Risk Score:", risk.score)
     print("Risk Rating:", risk.rating)
 
@@ -166,7 +78,7 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 6. DISPLAY AI SECURITY ANALYSIS
+    # AI SECURITY ANALYSIS
     # -------------------------------------------------
 
     print()
@@ -209,7 +121,7 @@ def run_workflow():
     print(analysis.requires_human_review)
 
     # -------------------------------------------------
-    # 7. DISPLAY VALIDATED TICKET DRAFT
+    # VALIDATED TICKET DRAFT
     # -------------------------------------------------
 
     print()
@@ -263,8 +175,40 @@ def run_workflow():
     for step in ticket.validation_steps:
         print("-", step)
 
+
+# -------------------------------------------------
+# HUMAN-FACING CLI WORKFLOW
+# -------------------------------------------------
+
+
+def run_workflow():
+
     # -------------------------------------------------
-    # 8. HUMAN APPROVAL GATE
+    # 1. PREPARE WORKFLOW THROUGH SERVICE LAYER
+    # -------------------------------------------------
+
+    result = prepare_workflow()
+
+    ticket = result.ticket
+
+    # -------------------------------------------------
+    # 2. DISPLAY SECURITY WARNING IF NEEDED
+    # -------------------------------------------------
+
+    display_security_warning(
+        result
+    )
+
+    # -------------------------------------------------
+    # 3. DISPLAY STRUCTURED WORKFLOW RESULT
+    # -------------------------------------------------
+
+    display_prepared_workflow(
+        result
+    )
+
+    # -------------------------------------------------
+    # 4. HUMAN APPROVAL GATE
     # -------------------------------------------------
 
     print()
@@ -281,7 +225,7 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 9. CREATE TICKET-BOUND APPROVAL
+    # 5. CREATE TICKET-BOUND APPROVAL
     # -------------------------------------------------
 
     if approval_input.strip().upper() == "APPROVE":
@@ -294,6 +238,9 @@ def run_workflow():
         log_event(
             "TICKET_APPROVED",
             {
+                "workflow_id":
+                    result.workflow_id,
+
                 "approval_id":
                     approval_record["approval_id"],
 
@@ -317,7 +264,7 @@ def run_workflow():
         )
 
         # -------------------------------------------------
-        # 10. EXECUTE ONLY WITH VALID APPROVAL
+        # 6. EXECUTE ONLY WITH VALID APPROVAL
         # -------------------------------------------------
 
         created_ticket = create_mock_ticket(
@@ -328,6 +275,9 @@ def run_workflow():
         log_event(
             "MOCK_TICKET_CREATED",
             {
+                "workflow_id":
+                    result.workflow_id,
+
                 "ticket_id":
                     created_ticket["ticket_id"],
 
@@ -388,8 +338,14 @@ def run_workflow():
         log_event(
             "TICKET_REJECTED",
             {
-                "asset_name": ticket.asset_name,
-                "cve": ticket.cve
+                "workflow_id":
+                    result.workflow_id,
+
+                "asset_name":
+                    ticket.asset_name,
+
+                "cve":
+                    ticket.cve
             }
         )
 
@@ -400,6 +356,11 @@ def run_workflow():
 
         print()
         print("No ticket was created.")
+
+
+# -------------------------------------------------
+# SAFE TOP-LEVEL ERROR HANDLING
+# -------------------------------------------------
 
 
 def main():
@@ -413,10 +374,17 @@ def main():
         log_event(
             "WORKFLOW_FAILED",
             {
-                "error_type": "JSONDecodeError",
-                "stage": "input_loading",
-                "line": error.lineno,
-                "column": error.colno
+                "error_type":
+                    "JSONDecodeError",
+
+                "stage":
+                    "input_loading",
+
+                "line":
+                    error.lineno,
+
+                "column":
+                    error.colno
             }
         )
 
@@ -427,7 +395,8 @@ def main():
 
         print()
         print(
-            "The vulnerability input file contains invalid JSON."
+            "The vulnerability input file "
+            "contains invalid JSON."
         )
 
         print(
@@ -435,9 +404,7 @@ def main():
         )
 
         print()
-        print(
-            "Error location:"
-        )
+        print("Error location:")
 
         print(
             "Line:",
@@ -451,9 +418,14 @@ def main():
         log_event(
             "WORKFLOW_FAILED",
             {
-                "error_type": "ValidationError",
-                "stage": "input_validation",
-                "error_count": error.error_count()
+                "error_type":
+                    "ValidationError",
+
+                "stage":
+                    "input_validation",
+
+                "error_count":
+                    error.error_count()
             }
         )
 
@@ -483,9 +455,14 @@ def main():
         log_event(
             "WORKFLOW_FAILED",
             {
-                "error_type": "PermissionError",
-                "stage": "ticket_execution_authorization",
-                "message": str(error)
+                "error_type":
+                    "PermissionError",
+
+                "stage":
+                    "ticket_execution_authorization",
+
+                "message":
+                    str(error)
             }
         )
 
@@ -531,7 +508,8 @@ def main():
 
         print()
         print(
-            "The vulnerability workflow could not complete safely."
+            "The vulnerability workflow "
+            "could not complete safely."
         )
 
         print(
