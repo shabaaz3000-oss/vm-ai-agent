@@ -1,3 +1,7 @@
+import json
+
+from pydantic import ValidationError
+
 from app.audit import log_event
 from app.input_security import detect_prompt_injection
 
@@ -13,7 +17,7 @@ from app.ticketing import build_ticket
 from app.ticketing import create_mock_ticket
 
 
-def main():
+def run_workflow():
 
     # -------------------------------------------------
     # 0. START WORKFLOW
@@ -356,6 +360,115 @@ def main():
         print()
         print("No ticket was created.")
 
+
+def main():
+
+    try:
+
+        run_workflow()
+
+    except json.JSONDecodeError as error:
+
+        log_event(
+            "WORKFLOW_FAILED",
+            {
+                "error_type": "JSONDecodeError",
+                "stage": "input_loading",
+                "line": error.lineno,
+                "column": error.colno
+            }
+        )
+
+        print()
+        print("=" * 70)
+        print("WORKFLOW FAILED")
+        print("=" * 70)
+
+        print()
+        print(
+            "The vulnerability input file contains invalid JSON."
+        )
+
+        print(
+            "Check the JSON syntax and try again."
+        )
+
+        print()
+        print(
+            "Error location:"
+        )
+
+        print(
+            "Line:",
+            error.lineno,
+            "Column:",
+            error.colno
+        )
+
+    except ValidationError as error:
+
+        log_event(
+            "WORKFLOW_FAILED",
+            {
+                "error_type": "ValidationError",
+                "stage": "input_validation",
+                "error_count": error.error_count()
+            }
+        )
+
+        print()
+        print("=" * 70)
+        print("WORKFLOW FAILED")
+        print("=" * 70)
+
+        print()
+        print(
+            "Security input validation failed."
+        )
+
+        print(
+            "One or more input values do not match "
+            "the required schema."
+        )
+
+        print()
+        print(
+            "Validation errors:",
+            error.error_count()
+        )
+
+    except Exception as error:
+
+        log_event(
+            "WORKFLOW_FAILED",
+            {
+                "error_type":
+                    type(error).__name__,
+
+                "stage":
+                    "unhandled_workflow_error"
+            }
+        )
+
+        print()
+        print("=" * 70)
+        print("WORKFLOW FAILED")
+        print("=" * 70)
+
+        print()
+        print(
+            "The vulnerability workflow could not complete safely."
+        )
+
+        print(
+            "Error type:",
+            type(error).__name__
+        )
+
+        print()
+        print(
+            "Review the audit log before retrying."
+        )
 
 if __name__ == "__main__":
     main()
