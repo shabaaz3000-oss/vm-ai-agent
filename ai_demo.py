@@ -2,9 +2,13 @@ import json
 
 from pydantic import ValidationError
 
-from app.approval import create_approval
 from app.audit import log_event
-from app.ticketing import create_mock_ticket
+
+from app.execution import (
+    approve_and_execute_workflow,
+    reject_workflow,
+)
+
 from app.workflow import prepare_workflow
 
 
@@ -177,6 +181,50 @@ def display_prepared_workflow(result):
 
 
 # -------------------------------------------------
+# DISPLAY COMPLETED EXECUTION
+# -------------------------------------------------
+
+
+def display_created_ticket(result):
+
+    print()
+    print("=" * 70)
+    print("MOCK TICKET CREATED")
+    print("=" * 70)
+
+    print()
+    print(
+        "Workflow ID:",
+        result.workflow_id
+    )
+
+    print(
+        "Ticket ID:",
+        result.ticket_id
+    )
+
+    print(
+        "Approval ID:",
+        result.approval_id
+    )
+
+    print(
+        "Status:",
+        result.status
+    )
+
+    print(
+        "Priority:",
+        result.ticket.priority
+    )
+
+    print(
+        "Risk Rating:",
+        result.ticket.risk_rating
+    )
+
+
+# -------------------------------------------------
 # HUMAN-FACING CLI WORKFLOW
 # -------------------------------------------------
 
@@ -184,15 +232,13 @@ def display_prepared_workflow(result):
 def run_workflow():
 
     # -------------------------------------------------
-    # 1. PREPARE WORKFLOW THROUGH SERVICE LAYER
+    # 1. PREPARE WORKFLOW
     # -------------------------------------------------
 
     result = prepare_workflow()
 
-    ticket = result.ticket
-
     # -------------------------------------------------
-    # 2. DISPLAY SECURITY WARNING IF NEEDED
+    # 2. DISPLAY SECURITY WARNING
     # -------------------------------------------------
 
     display_security_warning(
@@ -200,7 +246,7 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 3. DISPLAY STRUCTURED WORKFLOW RESULT
+    # 3. DISPLAY PREPARED RESULT
     # -------------------------------------------------
 
     display_prepared_workflow(
@@ -225,134 +271,50 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 5. CREATE TICKET-BOUND APPROVAL
+    # 5. APPROVE OR REJECT THROUGH EXECUTION SERVICE
     # -------------------------------------------------
 
-    if approval_input.strip().upper() == "APPROVE":
+    if (
+        approval_input
+        .strip()
+        .upper()
+        == "APPROVE"
+    ):
 
-        approval_record = create_approval(
-            ticket=ticket,
-            approved_by="demo-analyst"
+        completed_result = (
+            approve_and_execute_workflow(
+                result=result,
+                approved_by="demo-analyst"
+            )
         )
 
-        log_event(
-            "TICKET_APPROVED",
-            {
-                "workflow_id":
-                    result.workflow_id,
-
-                "approval_id":
-                    approval_record["approval_id"],
-
-                "approved_by":
-                    approval_record["approved_by"],
-
-                "approved_at":
-                    approval_record["approved_at"],
-
-                "ticket_fingerprint":
-                    approval_record[
-                        "ticket_fingerprint"
-                    ],
-
-                "asset_name":
-                    ticket.asset_name,
-
-                "cve":
-                    ticket.cve
-            }
-        )
-
-        # -------------------------------------------------
-        # 6. EXECUTE ONLY WITH VALID APPROVAL
-        # -------------------------------------------------
-
-        created_ticket = create_mock_ticket(
-            ticket=ticket,
-            approval=approval_record
-        )
-
-        log_event(
-            "MOCK_TICKET_CREATED",
-            {
-                "workflow_id":
-                    result.workflow_id,
-
-                "ticket_id":
-                    created_ticket["ticket_id"],
-
-                "approval_id":
-                    created_ticket["approval_id"],
-
-                "priority":
-                    created_ticket["priority"],
-
-                "risk_rating":
-                    created_ticket["risk_rating"]
-            }
-        )
-
-        print()
-        print("=" * 70)
-        print("MOCK TICKET CREATED")
-        print("=" * 70)
-
-        print()
-        print(
-            "Ticket ID:",
-            created_ticket["ticket_id"]
-        )
-
-        print(
-            "Status:",
-            created_ticket["status"]
-        )
-
-        print(
-            "Approval ID:",
-            created_ticket["approval_id"]
-        )
-
-        print(
-            "Approved By:",
-            created_ticket["approved_by"]
-        )
-
-        print(
-            "Approved At:",
-            created_ticket["approved_at"]
-        )
-
-        print(
-            "Priority:",
-            created_ticket["priority"]
-        )
-
-        print(
-            "Risk Rating:",
-            created_ticket["risk_rating"]
+        display_created_ticket(
+            completed_result
         )
 
     else:
 
-        log_event(
-            "TICKET_REJECTED",
-            {
-                "workflow_id":
-                    result.workflow_id,
-
-                "asset_name":
-                    ticket.asset_name,
-
-                "cve":
-                    ticket.cve
-            }
+        rejected_result = (
+            reject_workflow(
+                result=result
+            )
         )
 
         print()
         print("=" * 70)
         print("TICKET REJECTED")
         print("=" * 70)
+
+        print()
+        print(
+            "Workflow ID:",
+            rejected_result.workflow_id
+        )
+
+        print(
+            "Workflow Status:",
+            rejected_result.status
+        )
 
         print()
         print("No ticket was created.")

@@ -1,6 +1,5 @@
 import json
 
-import app.ticketing as ticketing
 import ai_demo
 
 from app.models import AIAnalysis
@@ -23,10 +22,7 @@ def make_risk():
         sla_hours=24,
         factors=[
             "Listed in CISA KEV",
-            "Asset is internet exposed",
-            "Business critical asset",
-            "High EPSS",
-            "Critical CVSS"
+            "Asset is internet exposed"
         ]
     )
 
@@ -40,23 +36,21 @@ def make_analysis():
         ),
 
         rationale=[
-            "The asset is internet exposed.",
-            "The vulnerability is listed in KEV."
+            "Internet exposed.",
+            "Listed in CISA KEV."
         ],
 
         remediation=(
-            "Deploy the approved vendor patch "
-            "within the authoritative SLA."
+            "Deploy the approved vendor patch."
         ),
 
         compensating_controls=[
-            "Maintain WAF protection.",
-            "Increase EDR monitoring."
+            "Maintain WAF protection."
         ],
 
         validation_steps=[
-            "Verify the fixed version.",
-            "Run an authenticated rescan."
+            "Verify fixed version.",
+            "Run authenticated rescan."
         ],
 
         confidence="HIGH",
@@ -64,12 +58,11 @@ def make_analysis():
         requires_human_review=True,
 
         ticket_summary=(
-            "CRITICAL: Remediate CVE-2026-12345 "
-            "on internet-web-01 within 24 hours"
+            "CRITICAL: Remediate CVE-2026-12345"
         ),
 
         ticket_description=(
-            "Validated vulnerability ticket draft."
+            "Validated vulnerability ticket."
         )
     )
 
@@ -78,8 +71,7 @@ def make_ticket():
 
     return TicketDraft(
         short_description=(
-            "CRITICAL: Remediate CVE-2026-12345 "
-            "on internet-web-01 within 24 hours"
+            "CRITICAL: Remediate CVE-2026-12345"
         ),
 
         priority="P1",
@@ -99,22 +91,24 @@ def make_ticket():
         sla_hours=24,
 
         description=(
-            "Validated vulnerability ticket draft."
+            "Validated vulnerability ticket."
         ),
 
         remediation=(
-            "Deploy the approved vendor patch "
-            "within the authoritative SLA."
+            "Deploy the approved vendor patch."
         ),
 
         validation_steps=[
-            "Verify the fixed version.",
-            "Run an authenticated rescan."
+            "Verify fixed version.",
+            "Run authenticated rescan."
         ]
     )
 
 
-def make_workflow_result(
+def make_result(
+    status="AWAITING_APPROVAL",
+    approval_id=None,
+    ticket_id=None,
     prompt_injection_detected=False,
     prompt_injection_matches=None
 ):
@@ -125,7 +119,7 @@ def make_workflow_result(
     return WorkflowResult(
         workflow_id="WF-TEST0001",
 
-        status="AWAITING_APPROVAL",
+        status=status,
 
         finding_id="FIND-0001",
 
@@ -147,36 +141,25 @@ def make_workflow_result(
 
         analysis=make_analysis(),
 
-        ticket=make_ticket()
+        ticket=make_ticket(),
+
+        approval_id=approval_id,
+
+        ticket_id=ticket_id
     )
 
 
 def configure_cli(
     monkeypatch,
-    events,
-    result,
     approval_input=""
 ):
+
+    prepared_result = make_result()
 
     monkeypatch.setattr(
         ai_demo,
         "prepare_workflow",
-        lambda: result
-    )
-
-    monkeypatch.setattr(
-        ai_demo,
-        "log_event",
-        lambda event_type, details=None:
-            events.append(
-                {
-                    "event_type":
-                        event_type,
-
-                    "details":
-                        details or {}
-                }
-            )
+        lambda: prepared_result
     )
 
     monkeypatch.setattr(
@@ -184,215 +167,158 @@ def configure_cli(
         lambda prompt: approval_input
     )
 
+    return prepared_result
+
 
 # -------------------------------------------------
 # REJECTION PATH
 # -------------------------------------------------
 
 
-def test_rejected_workflow_does_not_create_ticket(
-    tmp_path,
-    monkeypatch
-):
-
-    events = []
-
-    result = make_workflow_result()
-
-    configure_cli(
-        monkeypatch=monkeypatch,
-        events=events,
-        result=result,
-        approval_input=""
-    )
-
-    temporary_ticket_file = (
-        tmp_path / "tickets.jsonl"
-    )
-
-    monkeypatch.setattr(
-        ticketing,
-        "TICKET_FILE",
-        temporary_ticket_file
-    )
-
-    ai_demo.run_workflow()
-
-    event_types = [
-        event["event_type"]
-        for event in events
-    ]
-
-    assert (
-        "TICKET_REJECTED"
-        in event_types
-    )
-
-    assert (
-        "TICKET_APPROVED"
-        not in event_types
-    )
-
-    assert (
-        "MOCK_TICKET_CREATED"
-        not in event_types
-    )
-
-    rejected_event = next(
-        event
-        for event in events
-        if event["event_type"]
-        == "TICKET_REJECTED"
-    )
-
-    assert (
-        rejected_event["details"][
-            "workflow_id"
-        ]
-        == "WF-TEST0001"
-    )
-
-    assert (
-        temporary_ticket_file.exists()
-        is False
-    )
-
-
-# -------------------------------------------------
-# APPROVED PATH
-# -------------------------------------------------
-
-
-def test_approved_workflow_creates_ticket_with_matching_approval(
-    tmp_path,
-    monkeypatch
-):
-
-    events = []
-
-    result = make_workflow_result()
-
-    configure_cli(
-        monkeypatch=monkeypatch,
-        events=events,
-        result=result,
-        approval_input="APPROVE"
-    )
-
-    temporary_ticket_file = (
-        tmp_path / "tickets.jsonl"
-    )
-
-    monkeypatch.setattr(
-        ticketing,
-        "TICKET_FILE",
-        temporary_ticket_file
-    )
-
-    ai_demo.run_workflow()
-
-    assert temporary_ticket_file.exists()
-
-    lines = (
-        temporary_ticket_file
-        .read_text(
-            encoding="utf-8"
-        )
-        .splitlines()
-    )
-
-    assert len(lines) == 1
-
-    ticket_record = json.loads(
-        lines[0]
-    )
-
-    approved_event = next(
-        event
-        for event in events
-        if event["event_type"]
-        == "TICKET_APPROVED"
-    )
-
-    created_event = next(
-        event
-        for event in events
-        if event["event_type"]
-        == "MOCK_TICKET_CREATED"
-    )
-
-    approval_id = (
-        approved_event["details"][
-            "approval_id"
-        ]
-    )
-
-    assert (
-        approved_event["details"][
-            "workflow_id"
-        ]
-        == "WF-TEST0001"
-    )
-
-    assert (
-        created_event["details"][
-            "workflow_id"
-        ]
-        == "WF-TEST0001"
-    )
-
-    assert (
-        ticket_record["approval_id"]
-        == approval_id
-    )
-
-    assert (
-        created_event["details"][
-            "approval_id"
-        ]
-        == approval_id
-    )
-
-    assert (
-        ticket_record["approved_by"]
-        == "demo-analyst"
-    )
-
-    assert (
-        ticket_record["priority"]
-        == "P1"
-    )
-
-    assert (
-        ticket_record["risk_rating"]
-        == "CRITICAL"
-    )
-
-    assert (
-        ticket_record["risk_score"]
-        == 100
-    )
-
-    assert (
-        ticket_record["sla_hours"]
-        == 24
-    )
-
-
-# -------------------------------------------------
-# SECURITY METADATA DISPLAY
-# -------------------------------------------------
-
-
-def test_prompt_injection_metadata_is_displayed_without_changing_risk(
-    tmp_path,
+def test_rejected_workflow_calls_rejection_service(
     monkeypatch,
     capsys
 ):
 
-    events = []
+    prepared_result = configure_cli(
+        monkeypatch,
+        approval_input=""
+    )
 
-    result = make_workflow_result(
+    calls = []
+
+    def fake_reject_workflow(
+        result
+    ):
+
+        calls.append(result)
+
+        return make_result(
+            status="REJECTED"
+        )
+
+    monkeypatch.setattr(
+        ai_demo,
+        "reject_workflow",
+        fake_reject_workflow
+    )
+
+    ai_demo.run_workflow()
+
+    output = capsys.readouterr().out
+
+    assert len(calls) == 1
+
+    assert (
+        calls[0]
+        is prepared_result
+    )
+
+    assert (
+        "TICKET REJECTED"
+        in output
+    )
+
+    assert (
+        "Workflow Status: REJECTED"
+        in output
+    )
+
+    assert (
+        "No ticket was created."
+        in output
+    )
+
+
+# -------------------------------------------------
+# APPROVAL PATH
+# -------------------------------------------------
+
+
+def test_approved_workflow_calls_execution_service(
+    monkeypatch,
+    capsys
+):
+
+    prepared_result = configure_cli(
+        monkeypatch,
+        approval_input="APPROVE"
+    )
+
+    calls = []
+
+    def fake_execute(
+        result,
+        approved_by
+    ):
+
+        calls.append(
+            {
+                "result": result,
+                "approved_by": approved_by
+            }
+        )
+
+        return make_result(
+            status="TICKET_CREATED",
+            approval_id="APR-TEST0001",
+            ticket_id="VM-TEST0001"
+        )
+
+    monkeypatch.setattr(
+        ai_demo,
+        "approve_and_execute_workflow",
+        fake_execute
+    )
+
+    ai_demo.run_workflow()
+
+    output = capsys.readouterr().out
+
+    assert len(calls) == 1
+
+    assert (
+        calls[0]["result"]
+        is prepared_result
+    )
+
+    assert (
+        calls[0]["approved_by"]
+        == "demo-analyst"
+    )
+
+    assert (
+        "MOCK TICKET CREATED"
+        in output
+    )
+
+    assert (
+        "VM-TEST0001"
+        in output
+    )
+
+    assert (
+        "APR-TEST0001"
+        in output
+    )
+
+    assert (
+        "TICKET_CREATED"
+        in output
+    )
+
+
+# -------------------------------------------------
+# PROMPT-INJECTION DISPLAY
+# -------------------------------------------------
+
+
+def test_prompt_injection_metadata_is_displayed_without_changing_risk(
+    monkeypatch,
+    capsys
+):
+
+    result = make_result(
         prompt_injection_detected=True,
 
         prompt_injection_matches=[
@@ -401,21 +327,24 @@ def test_prompt_injection_metadata_is_displayed_without_changing_risk(
         ]
     )
 
-    configure_cli(
-        monkeypatch=monkeypatch,
-        events=events,
-        result=result,
-        approval_input=""
-    )
-
-    temporary_ticket_file = (
-        tmp_path / "tickets.jsonl"
+    monkeypatch.setattr(
+        ai_demo,
+        "prepare_workflow",
+        lambda: result
     )
 
     monkeypatch.setattr(
-        ticketing,
-        "TICKET_FILE",
-        temporary_ticket_file
+        "builtins.input",
+        lambda prompt: ""
+    )
+
+    monkeypatch.setattr(
+        ai_demo,
+        "reject_workflow",
+        lambda result:
+            make_result(
+                status="REJECTED"
+            )
     )
 
     ai_demo.run_workflow()
@@ -455,11 +384,6 @@ def test_prompt_injection_metadata_is_displayed_without_changing_risk(
     assert (
         result.risk.score
         == 100
-    )
-
-    assert (
-        temporary_ticket_file.exists()
-        is False
     )
 
 
@@ -544,25 +468,21 @@ def test_invalid_json_fails_workflow_safely(
 # -------------------------------------------------
 
 
-def test_ticket_authorization_failure_fails_closed(
+def test_execution_service_permission_error_fails_closed(
     monkeypatch,
     capsys
 ):
 
     events = []
 
-    result = make_workflow_result()
-
     configure_cli(
-        monkeypatch=monkeypatch,
-        events=events,
-        result=result,
+        monkeypatch,
         approval_input="APPROVE"
     )
 
-    def blocked_ticket_creation(
-        ticket,
-        approval
+    def blocked_execution(
+        result,
+        approved_by
     ):
 
         raise PermissionError(
@@ -571,8 +491,23 @@ def test_ticket_authorization_failure_fails_closed(
 
     monkeypatch.setattr(
         ai_demo,
-        "create_mock_ticket",
-        blocked_ticket_creation
+        "approve_and_execute_workflow",
+        blocked_execution
+    )
+
+    monkeypatch.setattr(
+        ai_demo,
+        "log_event",
+        lambda event_type, details=None:
+            events.append(
+                {
+                    "event_type":
+                        event_type,
+
+                    "details":
+                        details or {}
+                }
+            )
     )
 
     ai_demo.main()
@@ -587,21 +522,6 @@ def test_ticket_authorization_failure_fails_closed(
     assert (
         "approval security control"
         in output
-    )
-
-    event_types = [
-        event["event_type"]
-        for event in events
-    ]
-
-    assert (
-        "TICKET_APPROVED"
-        in event_types
-    )
-
-    assert (
-        "MOCK_TICKET_CREATED"
-        not in event_types
     )
 
     failure_event = next(
