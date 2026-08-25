@@ -2,10 +2,16 @@ import pytest
 
 from pydantic import ValidationError
 
+from app.models import AIAnalysis
 from app.models import RiskResult
 from app.models import TicketDraft
 from app.models import WorkflowResult
 from app.models import WorkflowSecurity
+
+
+# -------------------------------------------------
+# TEST DATA HELPERS
+# -------------------------------------------------
 
 
 def make_risk():
@@ -18,6 +24,54 @@ def make_risk():
             "Listed in CISA KEV",
             "Asset is internet exposed"
         ]
+    )
+
+
+def make_security():
+
+    return WorkflowSecurity(
+        prompt_injection_detected=False,
+        human_review_required=True
+    )
+
+
+def make_analysis():
+
+    return AIAnalysis(
+        executive_summary=(
+            "Critical vulnerability requiring "
+            "expedited remediation."
+        ),
+
+        rationale=[
+            "Internet exposed.",
+            "Listed in CISA KEV."
+        ],
+
+        remediation=(
+            "Deploy the approved vendor patch."
+        ),
+
+        compensating_controls=[
+            "Maintain WAF protection."
+        ],
+
+        validation_steps=[
+            "Verify fixed version.",
+            "Run authenticated rescan."
+        ],
+
+        confidence="HIGH",
+
+        requires_human_review=True,
+
+        ticket_summary=(
+            "CRITICAL: Remediate CVE-2026-12345"
+        ),
+
+        ticket_description=(
+            "Validated vulnerability ticket."
+        )
     )
 
 
@@ -59,13 +113,9 @@ def make_ticket():
     )
 
 
-def make_security():
-
-    return WorkflowSecurity(
-        prompt_injection_detected=False,
-
-        human_review_required=True
-    )
+# -------------------------------------------------
+# WORKFLOW SECURITY MODEL
+# -------------------------------------------------
 
 
 def test_workflow_security_defaults_to_empty_matches():
@@ -88,6 +138,11 @@ def test_workflow_security_defaults_to_empty_matches():
     )
 
 
+# -------------------------------------------------
+# AWAITING APPROVAL STATE
+# -------------------------------------------------
+
+
 def test_awaiting_approval_result_is_valid():
 
     result = WorkflowResult(
@@ -104,6 +159,8 @@ def test_awaiting_approval_result_is_valid():
         risk=make_risk(),
 
         security=make_security(),
+
+        analysis=make_analysis(),
 
         ticket=make_ticket()
     )
@@ -130,6 +187,11 @@ def test_awaiting_approval_result_is_valid():
     )
 
 
+# -------------------------------------------------
+# COMPLETED TICKET STATE
+# -------------------------------------------------
+
+
 def test_ticket_created_result_tracks_identifiers():
 
     result = WorkflowResult(
@@ -147,6 +209,8 @@ def test_ticket_created_result_tracks_identifiers():
 
         security=make_security(),
 
+        analysis=make_analysis(),
+
         ticket=make_ticket(),
 
         approval_id="APR-12345678",
@@ -163,6 +227,11 @@ def test_ticket_created_result_tracks_identifiers():
         result.ticket_id
         == "VM-87654321"
     )
+
+
+# -------------------------------------------------
+# INVALID WORKFLOW STATUS
+# -------------------------------------------------
 
 
 def test_invalid_workflow_status_rejected():
@@ -186,8 +255,15 @@ def test_invalid_workflow_status_rejected():
 
             security=make_security(),
 
+            analysis=make_analysis(),
+
             ticket=make_ticket()
         )
+
+
+# -------------------------------------------------
+# NESTED RISK VALIDATION
+# -------------------------------------------------
 
 
 def test_nested_risk_validation_still_applies():
@@ -216,5 +292,50 @@ def test_nested_risk_validation_still_applies():
 
             security=make_security(),
 
+            analysis=make_analysis(),
+
             ticket=make_ticket()
         )
+
+
+# -------------------------------------------------
+# STRUCTURED AI ANALYSIS
+# -------------------------------------------------
+
+
+def test_workflow_result_contains_ai_analysis():
+
+    result = WorkflowResult(
+        workflow_id="WF-12345678",
+
+        status="AWAITING_APPROVAL",
+
+        finding_id="FIND-0001",
+
+        asset_name="internet-web-01",
+
+        cve="CVE-2026-12345",
+
+        risk=make_risk(),
+
+        security=make_security(),
+
+        analysis=make_analysis(),
+
+        ticket=make_ticket()
+    )
+
+    assert (
+        result.analysis.confidence
+        == "HIGH"
+    )
+
+    assert (
+        result.analysis.requires_human_review
+        is True
+    )
+
+    assert (
+        "Critical vulnerability"
+        in result.analysis.executive_summary
+    )

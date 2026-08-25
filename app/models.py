@@ -154,6 +154,8 @@ class WorkflowResult(BaseModel):
 
     security: WorkflowSecurity
 
+    analysis: AIAnalysis
+
     ticket: TicketDraft
 
     approval_id: str | None = None

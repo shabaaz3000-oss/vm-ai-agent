@@ -196,5 +196,7 @@ def prepare_workflow() -> WorkflowResult:
 
         security=security,
 
+        analysis=analysis,
+
         ticket=ticket
     )

@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import app.workflow as workflow
 
+from app.models import AIAnalysis
+
 
 def make_finding(
     description=(
@@ -51,7 +53,7 @@ def make_threat():
 
 def make_analysis():
 
-    return SimpleNamespace(
+    return AIAnalysis(
         executive_summary=(
             "Critical vulnerability requiring "
             "expedited remediation."
