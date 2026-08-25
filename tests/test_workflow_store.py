@@ -1,4 +1,8 @@
+import importlib
+
 import pytest
+
+import app.workflow_store as workflow_store
 
 from app.models import AIAnalysis
 from app.models import RiskResult
@@ -6,10 +10,33 @@ from app.models import TicketDraft
 from app.models import WorkflowResult
 from app.models import WorkflowSecurity
 
-from app.workflow_store import clear_workflows
-from app.workflow_store import get_workflow
-from app.workflow_store import save_workflow
-from app.workflow_store import update_workflow
+
+# -------------------------------------------------
+# TEST DATABASE
+# -------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def isolated_database(
+    tmp_path,
+    monkeypatch
+):
+
+    database_path = (
+        tmp_path / "workflows.db"
+    )
+
+    monkeypatch.setenv(
+        "VM_AI_DB_PATH",
+        str(database_path)
+    )
+
+    yield database_path
+
+
+# -------------------------------------------------
+# TEST DATA
+# -------------------------------------------------
 
 
 def make_result(
@@ -29,8 +56,11 @@ def make_result(
 
         risk=RiskResult(
             score=100,
+
             rating="CRITICAL",
+
             sla_hours=24,
+
             factors=[
                 "Listed in CISA KEV",
                 "Internet exposed"
@@ -39,6 +69,7 @@ def make_result(
 
         security=WorkflowSecurity(
             prompt_injection_detected=False,
+
             human_review_required=True
         ),
 
@@ -112,24 +143,55 @@ def make_result(
     )
 
 
-def setup_function():
-
-    clear_workflows()
+# -------------------------------------------------
+# SAVE + GET
+# -------------------------------------------------
 
 
 def test_save_and_get_workflow():
 
     original = make_result()
 
-    save_workflow(
+    workflow_store.save_workflow(
         original
     )
 
-    retrieved = get_workflow(
-        "WF-TEST0001"
+    retrieved = (
+        workflow_store.get_workflow(
+            "WF-TEST0001"
+        )
     )
 
     assert retrieved == original
+
+
+# -------------------------------------------------
+# DATABASE FILE CREATED
+# -------------------------------------------------
+
+
+def test_database_file_is_created(
+    isolated_database
+):
+
+    assert (
+        isolated_database.exists()
+        is False
+    )
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    assert (
+        isolated_database.exists()
+        is True
+    )
+
+
+# -------------------------------------------------
+# UNKNOWN WORKFLOW
+# -------------------------------------------------
 
 
 def test_unknown_workflow_is_rejected():
@@ -138,14 +200,19 @@ def test_unknown_workflow_is_rejected():
         KeyError
     ):
 
-        get_workflow(
+        workflow_store.get_workflow(
             "WF-DOESNOTEXIST"
         )
 
 
+# -------------------------------------------------
+# UPDATE
+# -------------------------------------------------
+
+
 def test_update_existing_workflow():
 
-    save_workflow(
+    workflow_store.save_workflow(
         make_result()
     )
 
@@ -153,12 +220,14 @@ def test_update_existing_workflow():
         status="REJECTED"
     )
 
-    update_workflow(
+    workflow_store.update_workflow(
         updated
     )
 
-    retrieved = get_workflow(
-        "WF-TEST0001"
+    retrieved = (
+        workflow_store.get_workflow(
+            "WF-TEST0001"
+        )
     )
 
     assert (
@@ -167,27 +236,39 @@ def test_update_existing_workflow():
     )
 
 
+# -------------------------------------------------
+# UPDATE UNKNOWN
+# -------------------------------------------------
+
+
 def test_update_unknown_workflow_is_rejected():
 
     with pytest.raises(
         KeyError
     ):
 
-        update_workflow(
+        workflow_store.update_workflow(
             make_result()
         )
+
+
+# -------------------------------------------------
+# AUTHORITATIVE TICKET PRESERVED
+# -------------------------------------------------
 
 
 def test_store_preserves_authoritative_ticket():
 
     original = make_result()
 
-    save_workflow(
+    workflow_store.save_workflow(
         original
     )
 
-    retrieved = get_workflow(
-        original.workflow_id
+    retrieved = (
+        workflow_store.get_workflow(
+            original.workflow_id
+        )
     )
 
     assert (
@@ -209,3 +290,31 @@ def test_store_preserves_authoritative_ticket():
         retrieved.ticket.priority
         == "P1"
     )
+
+
+# -------------------------------------------------
+# STATE SURVIVES MODULE RELOAD
+# -------------------------------------------------
+
+
+def test_workflow_survives_module_reload():
+
+    original = make_result()
+
+    workflow_store.save_workflow(
+        original
+    )
+
+    reloaded_store = (
+        importlib.reload(
+            workflow_store
+        )
+    )
+
+    retrieved = (
+        reloaded_store.get_workflow(
+            "WF-TEST0001"
+        )
+    )
+
+    assert retrieved == original

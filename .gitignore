@@ -5,3 +5,8 @@ __pycache__/
 .pytest_cache/
 data/tickets.jsonl
 logs/
+
+# Local application databases
+data/*.db
+data/*.db-shm
+data/*.db-wal
