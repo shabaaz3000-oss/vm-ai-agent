@@ -2,6 +2,7 @@ import json
 
 from pydantic import ValidationError
 
+from app.approval import create_approval
 from app.audit import log_event
 from app.input_security import detect_prompt_injection
 
@@ -274,29 +275,54 @@ def run_workflow():
     print()
     print("No ticket has been created.")
 
-    approval = input(
+    approval_input = input(
         "\nType APPROVE to create the mock ticket, "
         "or press Enter to reject: "
     )
 
     # -------------------------------------------------
-    # 9. EXECUTE ONLY AFTER EXPLICIT APPROVAL
+    # 9. CREATE TICKET-BOUND APPROVAL
     # -------------------------------------------------
 
-    if approval.strip().upper() == "APPROVE":
+    if approval_input.strip().upper() == "APPROVE":
+
+        approval_record = create_approval(
+            ticket=ticket,
+            approved_by="demo-analyst"
+        )
 
         log_event(
             "TICKET_APPROVED",
             {
-                "approved_by": "demo-analyst",
-                "asset_name": ticket.asset_name,
-                "cve": ticket.cve
+                "approval_id":
+                    approval_record["approval_id"],
+
+                "approved_by":
+                    approval_record["approved_by"],
+
+                "approved_at":
+                    approval_record["approved_at"],
+
+                "ticket_fingerprint":
+                    approval_record[
+                        "ticket_fingerprint"
+                    ],
+
+                "asset_name":
+                    ticket.asset_name,
+
+                "cve":
+                    ticket.cve
             }
         )
 
+        # -------------------------------------------------
+        # 10. EXECUTE ONLY WITH VALID APPROVAL
+        # -------------------------------------------------
+
         created_ticket = create_mock_ticket(
             ticket=ticket,
-            approved_by="demo-analyst"
+            approval=approval_record
         )
 
         log_event(
@@ -304,8 +330,13 @@ def run_workflow():
             {
                 "ticket_id":
                     created_ticket["ticket_id"],
+
+                "approval_id":
+                    created_ticket["approval_id"],
+
                 "priority":
                     created_ticket["priority"],
+
                 "risk_rating":
                     created_ticket["risk_rating"]
             }
@@ -328,8 +359,18 @@ def run_workflow():
         )
 
         print(
+            "Approval ID:",
+            created_ticket["approval_id"]
+        )
+
+        print(
             "Approved By:",
             created_ticket["approved_by"]
+        )
+
+        print(
+            "Approved At:",
+            created_ticket["approved_at"]
         )
 
         print(
@@ -437,6 +478,39 @@ def main():
             error.error_count()
         )
 
+    except PermissionError as error:
+
+        log_event(
+            "WORKFLOW_FAILED",
+            {
+                "error_type": "PermissionError",
+                "stage": "ticket_execution_authorization",
+                "message": str(error)
+            }
+        )
+
+        print()
+        print("=" * 70)
+        print("WORKFLOW FAILED")
+        print("=" * 70)
+
+        print()
+        print(
+            "Ticket execution was blocked by "
+            "the approval security control."
+        )
+
+        print()
+        print(
+            "No ticket was created."
+        )
+
+        print()
+        print(
+            "Review the approval and audit records "
+            "before retrying."
+        )
+
     except Exception as error:
 
         log_event(
@@ -469,6 +543,7 @@ def main():
         print(
             "Review the audit log before retrying."
         )
+
 
 if __name__ == "__main__":
     main()
