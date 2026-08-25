@@ -1,4 +1,5 @@
 from app.audit import log_event
+from app.input_security import detect_prompt_injection
 
 from app.ai_analyzer import analyze_vulnerability
 
@@ -29,6 +30,44 @@ def main():
     finding = load_finding()
     asset = load_asset()
     threat = load_threat_intel()
+
+    injection_matches = detect_prompt_injection(
+        finding.description
+    )
+
+    if injection_matches:
+
+        log_event(
+            "PROMPT_INJECTION_SUSPECTED",
+            {
+                "finding_id": finding.finding_id,
+                "field": "description",
+                "matches": injection_matches
+            }
+        )
+
+        print()
+        print("=" * 70)
+        print("SECURITY WARNING")
+        print("=" * 70)
+
+        print()
+        print(
+            "Potential prompt injection detected "
+            "in vulnerability data."
+        )
+
+        print()
+        print("Matched indicators:")
+
+        for match in injection_matches:
+            print("-", match)
+
+        print()
+        print(
+            "The content will remain untrusted. "
+            "Authoritative risk policy cannot be overridden."
+        )
 
     log_event(
         "SECURITY_DATA_VALIDATED",
