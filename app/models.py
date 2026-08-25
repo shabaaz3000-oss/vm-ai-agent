@@ -9,7 +9,10 @@ class VulnerabilityFinding(BaseModel):
     cve: str
     title: str
     description: str
-    cvss: float = Field(ge=0, le=10)
+    cvss: float = Field(
+        ge=0,
+        le=10
+    )
     patch_available: bool
 
 
@@ -33,6 +36,7 @@ class AssetContext(BaseModel):
 
     internet_exposed: bool
     data_classification: str
+
     current_controls: list[str] = Field(
         default_factory=list
     )
@@ -40,11 +44,13 @@ class AssetContext(BaseModel):
 
 class ThreatIntel(BaseModel):
     cve: str
+
     epss: float | None = Field(
         default=None,
         ge=0,
         le=1
     )
+
     kev: bool
     data_source: str
 
@@ -62,10 +68,13 @@ class RiskResult(BaseModel):
     sla_hours: int
     factors: list[str]
 
+
 class AIAnalysis(BaseModel):
     executive_summary: str
     rationale: list[str]
+
     remediation: str
+
     compensating_controls: list[str]
     validation_steps: list[str]
 
@@ -79,6 +88,7 @@ class AIAnalysis(BaseModel):
 
     ticket_summary: str
     ticket_description: str
+
 
 class TicketDraft(BaseModel):
     short_description: str
@@ -106,4 +116,46 @@ class TicketDraft(BaseModel):
 
     description: str
     remediation: str
+
     validation_steps: list[str]
+
+
+# -------------------------------------------------
+# STRUCTURED WORKFLOW RESULT MODELS
+# -------------------------------------------------
+
+
+class WorkflowSecurity(BaseModel):
+    prompt_injection_detected: bool
+
+    prompt_injection_matches: list[str] = Field(
+        default_factory=list
+    )
+
+    human_review_required: bool
+
+
+class WorkflowResult(BaseModel):
+    workflow_id: str
+
+    status: Literal[
+        "AWAITING_APPROVAL",
+        "APPROVED",
+        "REJECTED",
+        "TICKET_CREATED",
+        "FAILED"
+    ]
+
+    finding_id: str
+    asset_name: str
+    cve: str
+
+    risk: RiskResult
+
+    security: WorkflowSecurity
+
+    ticket: TicketDraft
+
+    approval_id: str | None = None
+
+    ticket_id: str | None = None
