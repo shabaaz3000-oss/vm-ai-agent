@@ -1,6 +1,11 @@
+from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import status
+
+from app.auth import Principal
+from app.auth import require_approver
+from app.auth import require_authenticated_user
 
 from app.execution import (
     approve_and_execute_workflow,
@@ -25,25 +30,12 @@ from app.workflow_store import (
 
 app = FastAPI(
     title="VM AI Agent API",
-    version="0.1.0",
+    version="0.2.0",
     description=(
         "Secure AI-assisted vulnerability management "
-        "workflow API."
+        "workflow API with authentication and RBAC."
     ),
 )
-
-
-# -------------------------------------------------
-# DEMO IDENTITY
-# -------------------------------------------------
-
-# This is intentionally a fixed demo identity.
-#
-# It does NOT represent authenticated production
-# user identity. Authentication and RBAC will be
-# added in a later security phase.
-
-DEMO_APPROVER = "api-demo-analyst"
 
 
 # -------------------------------------------------
@@ -71,7 +63,11 @@ def health():
     response_model=WorkflowResult,
     status_code=status.HTTP_201_CREATED,
 )
-def create_workflow():
+def create_workflow(
+    principal: Principal = Depends(
+        require_authenticated_user
+    )
+):
 
     result = prepare_workflow()
 
@@ -92,7 +88,11 @@ def create_workflow():
     response_model=WorkflowResult,
 )
 def read_workflow(
-    workflow_id: str
+    workflow_id: str,
+
+    principal: Principal = Depends(
+        require_authenticated_user
+    )
 ):
 
     try:
@@ -119,7 +119,11 @@ def read_workflow(
     response_model=WorkflowResult,
 )
 def approve_workflow(
-    workflow_id: str
+    workflow_id: str,
+
+    principal: Principal = Depends(
+        require_approver
+    )
 ):
 
     try:
@@ -140,7 +144,9 @@ def approve_workflow(
         completed_result = (
             approve_and_execute_workflow(
                 result=result,
-                approved_by=DEMO_APPROVER,
+
+                approved_by=
+                    principal.username,
             )
         )
 
@@ -168,7 +174,11 @@ def approve_workflow(
     response_model=WorkflowResult,
 )
 def reject_workflow_endpoint(
-    workflow_id: str
+    workflow_id: str,
+
+    principal: Principal = Depends(
+        require_approver
+    )
 ):
 
     try:
