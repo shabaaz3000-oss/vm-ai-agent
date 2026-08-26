@@ -728,3 +728,401 @@ def test_download_chunk_rejects_invalid_payload():
         )
 
     client.close()
+
+# -------------------------------------------------
+# START ASSET EXPORT
+# -------------------------------------------------
+
+
+def test_start_asset_export_posts_expected_request():
+
+    captured = {}
+
+    def handler(
+        request
+    ):
+
+        captured[
+            "method"
+        ] = request.method
+
+        captured[
+            "url"
+        ] = str(
+            request.url
+        )
+
+        captured[
+            "body"
+        ] = request.read()
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "export_uuid":
+                    "ASSET-EXPORT-123"
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    export_uuid = (
+        client.start_asset_export(
+            chunk_size=5000,
+
+            include_open_ports=False,
+
+            filters={
+                "types": [
+                    "host"
+                ]
+            },
+        )
+    )
+
+    client.close()
+
+    assert (
+        captured["method"]
+        == "POST"
+    )
+
+    assert (
+        captured["url"]
+        == (
+            "https://cloud.tenable.com"
+            "/assets/v2/export"
+        )
+    )
+
+    assert (
+        export_uuid
+        == "ASSET-EXPORT-123"
+    )
+
+    body = (
+        captured["body"]
+        .decode(
+            "utf-8"
+        )
+    )
+
+    assert (
+        '"chunk_size":5000'
+        in body
+    )
+
+    assert (
+        '"include_open_ports":false'
+        in body
+    )
+
+
+# -------------------------------------------------
+# ASSET CHUNK SIZE VALIDATION
+# -------------------------------------------------
+
+
+def test_asset_chunk_size_below_minimum_is_rejected():
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="100 and 10000",
+    ):
+
+        client.start_asset_export(
+            chunk_size=99
+        )
+
+    client.close()
+
+
+def test_asset_chunk_size_above_maximum_is_rejected():
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="100 and 10000",
+    ):
+
+        client.start_asset_export(
+            chunk_size=10001
+        )
+
+    client.close()
+
+
+# -------------------------------------------------
+# ASSET EXPORT STATUS
+# -------------------------------------------------
+
+
+def test_asset_export_status_uses_expected_endpoint():
+
+    captured = {}
+
+    def handler(
+        request
+    ):
+
+        captured[
+            "method"
+        ] = request.method
+
+        captured[
+            "url"
+        ] = str(
+            request.url
+        )
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "status":
+                    "PROCESSING",
+
+                "chunks_available": [
+                    0,
+                    2,
+                ],
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    result = (
+        client.get_asset_export_status(
+            "ASSET-EXPORT-123"
+        )
+    )
+
+    client.close()
+
+    assert (
+        captured["method"]
+        == "GET"
+    )
+
+    assert (
+        captured["url"]
+        == (
+            "https://cloud.tenable.com"
+            "/assets/export/"
+            "ASSET-EXPORT-123/status"
+        )
+    )
+
+    assert (
+        result["status"]
+        == "PROCESSING"
+    )
+
+
+def test_blank_asset_export_uuid_is_rejected():
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="export UUID",
+    ):
+
+        client.get_asset_export_status(
+            "   "
+        )
+
+    client.close()
+
+
+# -------------------------------------------------
+# AVAILABLE ASSET CHUNKS
+# -------------------------------------------------
+
+
+def test_available_asset_chunks_are_returned():
+
+    def handler(
+        request
+    ):
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "status":
+                    "PROCESSING",
+
+                "chunks_available": [
+                    4,
+                    1,
+                    7,
+                ],
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    chunks = (
+        client.get_available_asset_chunks(
+            "ASSET-EXPORT-123"
+        )
+    )
+
+    client.close()
+
+    assert chunks == [
+        4,
+        1,
+        7,
+    ]
+
+
+# -------------------------------------------------
+# DOWNLOAD ASSET CHUNK
+# -------------------------------------------------
+
+
+def test_download_asset_chunk_uses_expected_endpoint():
+
+    captured = {}
+
+    assets = [
+        {
+            "id":
+                "ASSET-UUID-123",
+
+            "name":
+                "internet-web-01",
+        }
+    ]
+
+    def handler(
+        request
+    ):
+
+        captured[
+            "method"
+        ] = request.method
+
+        captured[
+            "url"
+        ] = str(
+            request.url
+        )
+
+        return httpx.Response(
+            status_code=200,
+            json=assets,
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    result = (
+        client.download_asset_chunk(
+            export_uuid=
+                "ASSET-EXPORT-123",
+
+            chunk_id=
+                4,
+        )
+    )
+
+    client.close()
+
+    assert (
+        captured["method"]
+        == "GET"
+    )
+
+    assert (
+        captured["url"]
+        == (
+            "https://cloud.tenable.com"
+            "/assets/export/"
+            "ASSET-EXPORT-123/chunks/4"
+        )
+    )
+
+    assert result == assets
+
+
+def test_download_asset_chunk_rejects_invalid_payload():
+
+    def handler(
+        request
+    ):
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "unexpected":
+                    "object"
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    with pytest.raises(
+        TenableApiError,
+        match="unexpected response",
+    ):
+
+        client.download_asset_chunk(
+            export_uuid=
+                "ASSET-EXPORT-123",
+
+            chunk_id=
+                1,
+        )
+
+    client.close()

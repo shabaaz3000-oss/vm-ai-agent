@@ -478,6 +478,292 @@ class TenableApiClient:
         return response
 
 
+        # -------------------------------------------------
+    # START ASSET EXPORT
+    # -------------------------------------------------
+
+
+    def start_asset_export(
+        self,
+        *,
+        filters: dict | None = None,
+        chunk_size: int = 5000,
+        include_open_ports: bool = False,
+    ) -> str:
+
+        """
+        Queue a Tenable Asset Export v2 job.
+
+        Asset exports are used to obtain current
+        asset data rather than relying on the
+        best-effort asset object embedded in
+        vulnerability findings.
+        """
+
+        if (
+            isinstance(
+                chunk_size,
+                bool
+            )
+            or not isinstance(
+                chunk_size,
+                int
+            )
+        ):
+
+            raise ValueError(
+                "Asset export chunk_size "
+                "must be an integer."
+            )
+
+        if (
+            chunk_size < 100
+            or chunk_size > 10000
+        ):
+
+            raise ValueError(
+                "Asset export chunk_size must be "
+                "between 100 and 10000."
+            )
+
+        if (
+            filters is not None
+            and not isinstance(
+                filters,
+                dict
+            )
+        ):
+
+            raise ValueError(
+                "Tenable asset export filters "
+                "must be a dictionary."
+            )
+
+        request_body = {
+            "chunk_size":
+                chunk_size,
+
+            "include_open_ports":
+                include_open_ports,
+        }
+
+        if filters is not None:
+
+            request_body[
+                "filters"
+            ] = filters
+
+        response = self.request_json(
+            "POST",
+            "/assets/v2/export",
+            json=request_body,
+        )
+
+        if not isinstance(
+            response,
+            dict
+        ):
+
+            raise TenableApiError(
+                "Tenable asset export returned "
+                "an unexpected response."
+            )
+
+        export_uuid = (
+            response.get(
+                "export_uuid"
+            )
+        )
+
+        if (
+            not isinstance(
+                export_uuid,
+                str
+            )
+            or not export_uuid.strip()
+        ):
+
+            raise TenableApiError(
+                "Tenable asset export did not "
+                "return an export UUID."
+            )
+
+        return export_uuid
+
+
+    # -------------------------------------------------
+    # GET ASSET EXPORT STATUS
+    # -------------------------------------------------
+
+
+    def get_asset_export_status(
+        self,
+        export_uuid: str
+    ) -> dict:
+
+        export_uuid = (
+            export_uuid.strip()
+        )
+
+        if not export_uuid:
+
+            raise ValueError(
+                "Tenable asset export UUID "
+                "cannot be blank."
+            )
+
+        response = self.request_json(
+            "GET",
+            (
+                "/assets/export/"
+                f"{export_uuid}/status"
+            ),
+        )
+
+        if not isinstance(
+            response,
+            dict
+        ):
+
+            raise TenableApiError(
+                "Tenable asset export status "
+                "returned an unexpected response."
+            )
+
+        return response
+
+
+    # -------------------------------------------------
+    # AVAILABLE ASSET CHUNKS
+    # -------------------------------------------------
+
+
+    def get_available_asset_chunks(
+        self,
+        export_uuid: str
+    ) -> list[int]:
+
+        status = (
+            self.get_asset_export_status(
+                export_uuid
+            )
+        )
+
+        chunks = status.get(
+            "chunks_available",
+            []
+        )
+
+        if not isinstance(
+            chunks,
+            list
+        ):
+
+            raise TenableApiError(
+                "Tenable asset export returned "
+                "invalid chunk metadata."
+            )
+
+        validated_chunks = []
+
+        for chunk_id in chunks:
+
+            if (
+                isinstance(
+                    chunk_id,
+                    bool
+                )
+                or not isinstance(
+                    chunk_id,
+                    int
+                )
+                or chunk_id < 0
+            ):
+
+                raise TenableApiError(
+                    "Tenable asset export returned "
+                    "an invalid chunk ID."
+                )
+
+            validated_chunks.append(
+                chunk_id
+            )
+
+        return validated_chunks
+
+
+    # -------------------------------------------------
+    # DOWNLOAD ASSET CHUNK
+    # -------------------------------------------------
+
+
+    def download_asset_chunk(
+        self,
+        export_uuid: str,
+        chunk_id: int
+    ) -> list[dict]:
+
+        export_uuid = (
+            export_uuid.strip()
+        )
+
+        if not export_uuid:
+
+            raise ValueError(
+                "Tenable asset export UUID "
+                "cannot be blank."
+            )
+
+        if (
+            isinstance(
+                chunk_id,
+                bool
+            )
+            or not isinstance(
+                chunk_id,
+                int
+            )
+            or chunk_id < 0
+        ):
+
+            raise ValueError(
+                "Tenable asset chunk ID must be "
+                "a non-negative integer."
+            )
+
+        response = self.request_json(
+            "GET",
+            (
+                "/assets/export/"
+                f"{export_uuid}/chunks/"
+                f"{chunk_id}"
+            ),
+        )
+
+        if not isinstance(
+            response,
+            list
+        ):
+
+            raise TenableApiError(
+                "Tenable asset chunk returned "
+                "an unexpected response."
+            )
+
+        for record in response:
+
+            if not isinstance(
+                record,
+                dict
+            ):
+
+                raise TenableApiError(
+                    "Tenable asset chunk contains "
+                    "an invalid record."
+                )
+
+        return response
+
     # -------------------------------------------------
     # CLOSE
     # -------------------------------------------------
