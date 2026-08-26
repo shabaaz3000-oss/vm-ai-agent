@@ -9,6 +9,7 @@ from app.auth import require_authenticated_user
 
 from app.execution import (
     claim_and_execute_workflow,
+    reconcile_stale_workflow,
     reject_workflow,
 )
 
@@ -209,3 +210,52 @@ def reject_workflow_endpoint(
     )
 
     return rejected_result
+
+
+# -------------------------------------------------
+# RECONCILE STALE PROCESSING WORKFLOW
+# -------------------------------------------------
+
+
+@app.post(
+    "/workflows/{workflow_id}/reconcile",
+    response_model=WorkflowResult,
+)
+def reconcile_workflow(
+    workflow_id: str,
+
+    principal: Principal = Depends(
+        require_approver
+    )
+):
+
+    try:
+
+        result = (
+            reconcile_stale_workflow(
+                workflow_id=workflow_id
+            )
+        )
+
+    except KeyError:
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workflow not found.",
+        )
+
+    except PermissionError as error:
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
+
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        )
+
+    return result

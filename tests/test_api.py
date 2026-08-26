@@ -1,4 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from threading import Barrier
 
 import pytest
@@ -945,4 +948,212 @@ def test_concurrent_api_approval_creates_exactly_one_ticket(
         in blocked_response
         .json()["detail"]
         .lower()
+    )
+
+# -------------------------------------------------
+# RECONCILIATION API
+# -------------------------------------------------
+
+
+def test_analyst_cannot_reconcile_workflow():
+
+    processing_data = (
+        make_result()
+        .model_dump()
+    )
+
+    processing_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+
+            "processing_started_at":
+                (
+                    datetime.now(
+                        timezone.utc
+                    )
+                    - timedelta(
+                        seconds=301
+                    )
+                ),
+        }
+    )
+
+    save_workflow(
+        WorkflowResult.model_validate(
+            processing_data
+        )
+    )
+
+    response = client.post(
+        "/workflows/WF-TEST0001/reconcile",
+
+        headers=analyst_headers(),
+    )
+
+    assert (
+        response.status_code
+        == 403
+    )
+
+
+def test_unknown_workflow_cannot_be_reconciled():
+
+    response = client.post(
+        "/workflows/WF-DOESNOTEXIST/reconcile",
+
+        headers=approver_headers(),
+    )
+
+    assert (
+        response.status_code
+        == 404
+    )
+
+    assert (
+        response.json()["detail"]
+        == "Workflow not found."
+    )
+
+
+def test_fresh_processing_workflow_cannot_be_reconciled():
+
+    processing_data = (
+        make_result()
+        .model_dump()
+    )
+
+    processing_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+
+            "processing_started_at":
+                datetime.now(
+                    timezone.utc
+                ),
+        }
+    )
+
+    save_workflow(
+        WorkflowResult.model_validate(
+            processing_data
+        )
+    )
+
+    response = client.post(
+        "/workflows/WF-TEST0001/reconcile",
+
+        headers=approver_headers(),
+    )
+
+    assert (
+        response.status_code
+        == 409
+    )
+
+    stored = get_workflow(
+        "WF-TEST0001"
+    )
+
+    assert (
+        stored.status
+        == "PROCESSING"
+    )
+
+
+def test_approver_can_reconcile_stale_processing_workflow():
+
+    processing_data = (
+        make_result()
+        .model_dump()
+    )
+
+    processing_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+
+            "processing_started_at":
+                (
+                    datetime.now(
+                        timezone.utc
+                    )
+                    - timedelta(
+                        seconds=301
+                    )
+                ),
+
+            "recovery_reason":
+                None,
+        }
+    )
+
+    save_workflow(
+        WorkflowResult.model_validate(
+            processing_data
+        )
+    )
+
+    response = client.post(
+        "/workflows/WF-TEST0001/reconcile",
+
+        headers=approver_headers(),
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    body = response.json()
+
+    assert (
+        body["workflow_id"]
+        == "WF-TEST0001"
+    )
+
+    assert (
+        body["status"]
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        body["execution_attempt_id"]
+        == "EXEC-TEST0001"
+    )
+
+    assert (
+        body["recovery_reason"]
+        is not None
+    )
+
+    assert (
+        "reconciled"
+        in body[
+            "recovery_reason"
+        ].lower()
+    )
+
+    stored = get_workflow(
+        "WF-TEST0001"
+    )
+
+    assert (
+        stored.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        stored.execution_attempt_id
+        == "EXEC-TEST0001"
     )
