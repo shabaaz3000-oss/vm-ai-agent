@@ -229,9 +229,7 @@ def test_invalid_json_response_is_rejected():
         return httpx.Response(
             status_code=200,
 
-            text=(
-                "not-json"
-            ),
+            text="not-json",
         )
 
     transport = (
@@ -276,3 +274,457 @@ def test_invalid_timeout_is_rejected():
             secret_key="secret",
             timeout_seconds=0,
         )
+
+
+# -------------------------------------------------
+# START VULNERABILITY EXPORT
+# -------------------------------------------------
+
+
+def test_start_vulnerability_export_posts_expected_request():
+
+    captured = {}
+
+    def handler(
+        request
+    ):
+
+        captured[
+            "method"
+        ] = request.method
+
+        captured[
+            "url"
+        ] = str(
+            request.url
+        )
+
+        captured[
+            "body"
+        ] = request.read()
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "export_uuid":
+                    "EXPORT-12345"
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    export_uuid = (
+        client
+        .start_vulnerability_export(
+            filters={
+                "severity": [
+                    "HIGH",
+                    "CRITICAL",
+                ]
+            },
+
+            num_assets=500,
+
+            include_unlicensed=True,
+
+            include_plugin_output=False,
+        )
+    )
+
+    client.close()
+
+    assert (
+        captured["method"]
+        == "POST"
+    )
+
+    assert (
+        captured["url"]
+        == (
+            "https://cloud.tenable.com"
+            "/vulns/export"
+        )
+    )
+
+    assert (
+        export_uuid
+        == "EXPORT-12345"
+    )
+
+    body = (
+        captured["body"]
+        .decode(
+            "utf-8"
+        )
+    )
+
+    assert (
+        '"num_assets":500'
+        in body
+    )
+
+    assert (
+        '"include_unlicensed":true'
+        in body
+    )
+
+    assert (
+        '"include_plugin_output":false'
+        in body
+    )
+
+    assert (
+        '"CRITICAL"'
+        in body
+    )
+
+
+def test_start_vulnerability_export_requires_export_uuid():
+
+    def handler(
+        request
+    ):
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "status":
+                    "queued"
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    with pytest.raises(
+        TenableApiError,
+        match="export UUID",
+    ):
+
+        client.start_vulnerability_export()
+
+    client.close()
+
+
+# -------------------------------------------------
+# NUM ASSETS VALIDATION
+# -------------------------------------------------
+
+
+def test_num_assets_below_minimum_is_rejected():
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="50 and 5000",
+    ):
+
+        client.start_vulnerability_export(
+            num_assets=49
+        )
+
+    client.close()
+
+
+def test_num_assets_above_maximum_is_rejected():
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="50 and 5000",
+    ):
+
+        client.start_vulnerability_export(
+            num_assets=5001
+        )
+
+    client.close()
+
+
+# -------------------------------------------------
+# EXPORT STATUS
+# -------------------------------------------------
+
+
+def test_export_status_uses_expected_endpoint():
+
+    captured = {}
+
+    def handler(
+        request
+    ):
+
+        captured[
+            "method"
+        ] = request.method
+
+        captured[
+            "url"
+        ] = str(
+            request.url
+        )
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "status":
+                    "PROCESSING",
+
+                "chunks_available": [
+                    1,
+                    3,
+                ],
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    result = (
+        client
+        .get_vulnerability_export_status(
+            "EXPORT-12345"
+        )
+    )
+
+    client.close()
+
+    assert (
+        captured["method"]
+        == "GET"
+    )
+
+    assert (
+        captured["url"]
+        == (
+            "https://cloud.tenable.com"
+            "/vulns/export/"
+            "EXPORT-12345/status"
+        )
+    )
+
+    assert (
+        result["status"]
+        == "PROCESSING"
+    )
+
+
+def test_blank_export_uuid_is_rejected():
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="export UUID",
+    ):
+
+        client.get_vulnerability_export_status(
+            "   "
+        )
+
+    client.close()
+
+
+# -------------------------------------------------
+# AVAILABLE CHUNKS
+# -------------------------------------------------
+
+
+def test_available_chunk_ids_are_returned():
+
+    def handler(
+        request
+    ):
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "status":
+                    "PROCESSING",
+
+                "chunks_available": [
+                    2,
+                    7,
+                    4,
+                ],
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    chunks = (
+        client
+        .get_available_vulnerability_chunks(
+            "EXPORT-12345"
+        )
+    )
+
+    client.close()
+
+    assert chunks == [
+        2,
+        7,
+        4,
+    ]
+
+
+# -------------------------------------------------
+# DOWNLOAD CHUNK
+# -------------------------------------------------
+
+
+def test_download_vulnerability_chunk_uses_expected_endpoint():
+
+    captured = {}
+
+    records = [
+        {
+            "asset": {
+                "uuid":
+                    "ASSET-123"
+            },
+
+            "plugin": {
+                "id":
+                    12345
+            },
+        }
+    ]
+
+    def handler(
+        request
+    ):
+
+        captured[
+            "method"
+        ] = request.method
+
+        captured[
+            "url"
+        ] = str(
+            request.url
+        )
+
+        return httpx.Response(
+            status_code=200,
+            json=records,
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    result = (
+        client
+        .download_vulnerability_chunk(
+            export_uuid=
+                "EXPORT-12345",
+
+            chunk_id=
+                7,
+        )
+    )
+
+    client.close()
+
+    assert (
+        captured["method"]
+        == "GET"
+    )
+
+    assert (
+        captured["url"]
+        == (
+            "https://cloud.tenable.com"
+            "/vulns/export/"
+            "EXPORT-12345/chunks/7"
+        )
+    )
+
+    assert result == records
+
+
+def test_download_chunk_rejects_invalid_payload():
+
+    def handler(
+        request
+    ):
+
+        return httpx.Response(
+            status_code=200,
+
+            json={
+                "unexpected":
+                    "object"
+            },
+        )
+
+    client = TenableApiClient(
+        access_key="access",
+        secret_key="secret",
+
+        transport=httpx.MockTransport(
+            handler
+        ),
+    )
+
+    with pytest.raises(
+        TenableApiError,
+        match="unexpected response",
+    ):
+
+        client.download_vulnerability_chunk(
+            export_uuid=
+                "EXPORT-12345",
+
+            chunk_id=
+                1,
+        )
+
+    client.close()
