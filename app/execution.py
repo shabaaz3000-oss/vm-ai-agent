@@ -7,6 +7,8 @@ from app.ticketing import create_mock_ticket
 
 from app.workflow_store import (
     claim_workflow_for_execution,
+    mark_stale_processing_for_review,
+    mark_workflow_needs_review,
 )
 
 
@@ -58,14 +60,22 @@ def reject_workflow(
 
     updated_data.update(
         {
-            "status": "REJECTED",
-            "approval_id": None,
-            "ticket_id": None
+            "status":
+                "REJECTED",
+
+            "approval_id":
+                None,
+
+            "ticket_id":
+                None,
         }
     )
 
-    return WorkflowResult.model_validate(
-        updated_data
+    return (
+        WorkflowResult
+        .model_validate(
+            updated_data
+        )
     )
 
 
@@ -96,6 +106,9 @@ def _execute_ticket_bound_workflow(
             "workflow_id":
                 result.workflow_id,
 
+            "execution_attempt_id":
+                result.execution_attempt_id,
+
             "approval_id":
                 approval_record[
                     "approval_id"
@@ -120,7 +133,7 @@ def _execute_ticket_bound_workflow(
                 ticket.asset_name,
 
             "cve":
-                ticket.cve
+                ticket.cve,
         }
     )
 
@@ -143,6 +156,9 @@ def _execute_ticket_bound_workflow(
                 "workflow_id":
                     result.workflow_id,
 
+                "execution_attempt_id":
+                    result.execution_attempt_id,
+
                 "approval_id":
                     approval_record[
                         "approval_id"
@@ -152,7 +168,7 @@ def _execute_ticket_bound_workflow(
                     "PermissionError",
 
                 "message":
-                    str(error)
+                    str(error),
             }
         )
 
@@ -167,6 +183,9 @@ def _execute_ticket_bound_workflow(
         {
             "workflow_id":
                 result.workflow_id,
+
+            "execution_attempt_id":
+                result.execution_attempt_id,
 
             "ticket_id":
                 created_ticket[
@@ -186,7 +205,7 @@ def _execute_ticket_bound_workflow(
             "risk_rating":
                 created_ticket[
                     "risk_rating"
-                ]
+                ],
         }
     )
 
@@ -209,21 +228,23 @@ def _execute_ticket_bound_workflow(
             "ticket_id":
                 created_ticket[
                     "ticket_id"
-                ]
+                ],
+
+            "recovery_reason":
+                None,
         }
     )
 
-    return WorkflowResult.model_validate(
-        updated_data
+    return (
+        WorkflowResult
+        .model_validate(
+            updated_data
+        )
     )
 
 
 # -------------------------------------------------
 # DIRECT APPROVAL
-# -------------------------------------------------
-#
-# Used by the CLI, where the WorkflowResult already
-# exists locally and there is no shared HTTP race.
 # -------------------------------------------------
 
 
@@ -244,12 +265,6 @@ def approve_and_execute_workflow(
 
 # -------------------------------------------------
 # ATOMIC SERVER-SIDE APPROVAL
-# -------------------------------------------------
-#
-# Used by the API.
-#
-# The trusted SQLite workflow is atomically claimed
-# BEFORE any ticket or external action can occur.
 # -------------------------------------------------
 
 
@@ -278,7 +293,7 @@ def claim_and_execute_workflow(
                     "PermissionError",
 
                 "message":
-                    str(error)
+                    str(error),
             }
         )
 
@@ -293,12 +308,142 @@ def claim_and_execute_workflow(
             "status":
                 claimed_result.status,
 
+            "execution_attempt_id":
+                claimed_result.execution_attempt_id,
+
+            "processing_started_at":
+                (
+                    claimed_result
+                    .processing_started_at
+                    .isoformat()
+                    if claimed_result
+                    .processing_started_at
+                    else None
+                ),
+
             "approved_by":
-                approved_by
+                approved_by,
         }
     )
 
-    return _execute_ticket_bound_workflow(
-        result=claimed_result,
-        approved_by=approved_by
+    try:
+
+        return _execute_ticket_bound_workflow(
+            result=claimed_result,
+            approved_by=approved_by
+        )
+
+    except Exception as error:
+
+        recovery_reason = (
+            "Execution failed after the workflow "
+            "was claimed. External action outcome "
+            "requires manual reconciliation."
+        )
+
+        try:
+
+            review_result = (
+                mark_workflow_needs_review(
+                    workflow_id=
+                        workflow_id,
+
+                    reason=
+                        recovery_reason,
+                )
+            )
+
+        except Exception as recovery_error:
+
+            log_event(
+                "WORKFLOW_RECOVERY_MARK_FAILED",
+                {
+                    "workflow_id":
+                        workflow_id,
+
+                    "execution_attempt_id":
+                        claimed_result
+                        .execution_attempt_id,
+
+                    "original_error_type":
+                        type(error).__name__,
+
+                    "recovery_error_type":
+                        type(
+                            recovery_error
+                        ).__name__,
+                }
+            )
+
+        else:
+
+            log_event(
+                "WORKFLOW_EXECUTION_NEEDS_REVIEW",
+                {
+                    "workflow_id":
+                        workflow_id,
+
+                    "execution_attempt_id":
+                        review_result
+                        .execution_attempt_id,
+
+                    "status":
+                        review_result.status,
+
+                    "error_type":
+                        type(error).__name__,
+
+                    "recovery_reason":
+                        review_result
+                        .recovery_reason,
+                }
+            )
+
+        raise
+
+
+# -------------------------------------------------
+# STALE EXECUTION RECONCILIATION
+# -------------------------------------------------
+
+
+def reconcile_stale_workflow(
+    workflow_id: str,
+    stale_after_seconds: int = 300
+) -> WorkflowResult:
+
+    """
+    Detect a stale PROCESSING workflow and move it
+    to NEEDS_REVIEW.
+
+    This does NOT retry ticket creation.
+    """
+
+    result = (
+        mark_stale_processing_for_review(
+            workflow_id=
+                workflow_id,
+
+            stale_after_seconds=
+                stale_after_seconds,
+        )
     )
+
+    log_event(
+        "STALE_WORKFLOW_NEEDS_REVIEW",
+        {
+            "workflow_id":
+                result.workflow_id,
+
+            "execution_attempt_id":
+                result.execution_attempt_id,
+
+            "status":
+                result.status,
+
+            "recovery_reason":
+                result.recovery_reason,
+        }
+    )
+
+    return result

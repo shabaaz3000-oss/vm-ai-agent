@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 import importlib
 
 import pytest
@@ -476,4 +477,197 @@ def test_concurrent_execution_claim_allows_one_winner():
     assert (
         stored.status
         == "PROCESSING"
+    )
+
+# -------------------------------------------------
+# EXECUTION RECOVERY METADATA
+# -------------------------------------------------
+
+
+def test_execution_claim_records_recovery_metadata():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            "WF-TEST0001"
+        )
+    )
+
+    assert (
+        claimed.status
+        == "PROCESSING"
+    )
+
+    assert (
+        claimed.execution_attempt_id
+        is not None
+    )
+
+    assert (
+        claimed.execution_attempt_id
+        .startswith("EXEC-")
+    )
+
+    assert (
+        claimed.processing_started_at
+        is not None
+    )
+
+    assert (
+        claimed.recovery_reason
+        is None
+    )
+
+
+def test_processing_workflow_can_be_marked_needs_review():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            "WF-TEST0001"
+        )
+    )
+
+    reviewed = (
+        workflow_store
+        .mark_workflow_needs_review(
+            workflow_id=
+                "WF-TEST0001",
+
+            reason=
+                "Execution result is uncertain."
+        )
+    )
+
+    assert (
+        reviewed.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        reviewed.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert (
+        reviewed.processing_started_at
+        == claimed.processing_started_at
+    )
+
+    assert (
+        reviewed.recovery_reason
+        == "Execution result is uncertain."
+    )
+
+
+def test_fresh_processing_workflow_is_not_marked_stale():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            "WF-TEST0001"
+        )
+    )
+
+    now = (
+        claimed.processing_started_at
+        + timedelta(
+            seconds=60
+        )
+    )
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        workflow_store \
+            .mark_stale_processing_for_review(
+                workflow_id=
+                    "WF-TEST0001",
+
+                stale_after_seconds=
+                    300,
+
+                now=
+                    now,
+            )
+
+    stored = (
+        workflow_store.get_workflow(
+            "WF-TEST0001"
+        )
+    )
+
+    assert (
+        stored.status
+        == "PROCESSING"
+    )
+
+
+def test_stale_processing_moves_to_needs_review():
+
+    workflow_store.save_workflow(
+        make_result()
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            "WF-TEST0001"
+        )
+    )
+
+    now = (
+        claimed.processing_started_at
+        + timedelta(
+            seconds=301
+        )
+    )
+
+    reviewed = (
+        workflow_store
+        .mark_stale_processing_for_review(
+            workflow_id=
+                "WF-TEST0001",
+
+            stale_after_seconds=
+                300,
+
+            now=
+                now,
+        )
+    )
+
+    assert (
+        reviewed.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        reviewed.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert (
+        reviewed.recovery_reason
+        is not None
+    )
+
+    assert (
+        "reconciled"
+        in reviewed
+        .recovery_reason
+        .lower()
     )

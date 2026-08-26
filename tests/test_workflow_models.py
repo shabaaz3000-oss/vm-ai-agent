@@ -395,3 +395,50 @@ def test_processing_workflow_status_is_valid():
         result.status
         == "PROCESSING"
     )
+
+def test_needs_review_workflow_status_is_valid():
+
+    result = WorkflowResult(
+        workflow_id=
+            "WF-12345678",
+
+        status=
+            "NEEDS_REVIEW",
+
+        finding_id=
+            "FIND-0001",
+
+        asset_name=
+            "internet-web-01",
+
+        cve=
+            "CVE-2026-12345",
+
+        risk=
+            make_risk(),
+
+        security=
+            make_security(),
+
+        analysis=
+            make_analysis(),
+
+        ticket=
+            make_ticket(),
+
+        execution_attempt_id=
+            "EXEC-12345678",
+
+        recovery_reason=
+            "Manual reconciliation required."
+    )
+
+    assert (
+        result.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        result.execution_attempt_id
+        == "EXEC-12345678"
+    )

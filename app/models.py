@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -9,10 +10,12 @@ class VulnerabilityFinding(BaseModel):
     cve: str
     title: str
     description: str
+
     cvss: float = Field(
         ge=0,
         le=10
     )
+
     patch_available: bool
 
 
@@ -139,13 +142,14 @@ class WorkflowResult(BaseModel):
     workflow_id: str
 
     status: Literal[
-    "AWAITING_APPROVAL",
-    "PROCESSING",
-    "APPROVED",
-    "REJECTED",
-    "TICKET_CREATED",
-    "FAILED"
-]
+        "AWAITING_APPROVAL",
+        "PROCESSING",
+        "APPROVED",
+        "REJECTED",
+        "TICKET_CREATED",
+        "NEEDS_REVIEW",
+        "FAILED"
+    ]
 
     finding_id: str
     asset_name: str
@@ -162,3 +166,13 @@ class WorkflowResult(BaseModel):
     approval_id: str | None = None
 
     ticket_id: str | None = None
+
+    # -------------------------------------------------
+    # EXECUTION / RECOVERY METADATA
+    # -------------------------------------------------
+
+    execution_attempt_id: str | None = None
+
+    processing_started_at: datetime | None = None
+
+    recovery_reason: str | None = None

@@ -693,3 +693,313 @@ def test_failed_atomic_claim_prevents_ticket_execution(
         "MOCK_TICKET_CREATED"
         not in event_types
     )
+
+# -------------------------------------------------
+# EXECUTION RECOVERY
+# -------------------------------------------------
+
+
+def test_successful_atomic_execution_preserves_attempt_metadata(
+    monkeypatch
+):
+
+    events = capture_events(
+        monkeypatch
+    )
+
+    claimed_data = (
+        make_result()
+        .model_dump()
+    )
+
+    claimed_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+        }
+    )
+
+    claimed_result = (
+        WorkflowResult
+        .model_validate(
+            claimed_data
+        )
+    )
+
+    monkeypatch.setattr(
+        execution,
+        "claim_workflow_for_execution",
+        lambda workflow_id:
+            claimed_result,
+    )
+
+    def fake_ticket_creation(
+        ticket,
+        approval
+    ):
+
+        return {
+            "ticket_id":
+                "VM-TEST0001",
+
+            "approval_id":
+                approval[
+                    "approval_id"
+                ],
+
+            "approved_by":
+                approval[
+                    "approved_by"
+                ],
+
+            "approved_at":
+                approval[
+                    "approved_at"
+                ],
+
+            "status":
+                "OPEN",
+
+            "priority":
+                ticket.priority,
+
+            "risk_rating":
+                ticket.risk_rating,
+        }
+
+    monkeypatch.setattr(
+        execution,
+        "create_mock_ticket",
+        fake_ticket_creation,
+    )
+
+    result = (
+        execution
+        .claim_and_execute_workflow(
+            workflow_id=
+                "WF-TEST0001",
+
+            approved_by=
+                "api-approver",
+        )
+    )
+
+    assert (
+        result.status
+        == "TICKET_CREATED"
+    )
+
+    assert (
+        result.execution_attempt_id
+        == "EXEC-TEST0001"
+    )
+
+
+def test_execution_failure_moves_workflow_to_needs_review(
+    monkeypatch
+):
+
+    events = capture_events(
+        monkeypatch
+    )
+
+    claimed_data = (
+        make_result()
+        .model_dump()
+    )
+
+    claimed_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+        }
+    )
+
+    claimed_result = (
+        WorkflowResult
+        .model_validate(
+            claimed_data
+        )
+    )
+
+    monkeypatch.setattr(
+        execution,
+        "claim_workflow_for_execution",
+        lambda workflow_id:
+            claimed_result,
+    )
+
+    def failed_ticket_creation(
+        ticket,
+        approval
+    ):
+
+        raise RuntimeError(
+            "Simulated ticket provider failure."
+        )
+
+    monkeypatch.setattr(
+        execution,
+        "create_mock_ticket",
+        failed_ticket_creation,
+    )
+
+    review_calls = []
+
+    def fake_mark_review(
+        workflow_id,
+        reason
+    ):
+
+        review_calls.append(
+            (
+                workflow_id,
+                reason,
+            )
+        )
+
+        updated_data = (
+            claimed_result
+            .model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "NEEDS_REVIEW",
+
+                "recovery_reason":
+                    reason,
+            }
+        )
+
+        return (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+    monkeypatch.setattr(
+        execution,
+        "mark_workflow_needs_review",
+        fake_mark_review,
+    )
+
+    with pytest.raises(
+        RuntimeError
+    ):
+
+        execution \
+            .claim_and_execute_workflow(
+                workflow_id=
+                    "WF-TEST0001",
+
+                approved_by=
+                    "api-approver",
+            )
+
+    assert (
+        len(review_calls)
+        == 1
+    )
+
+    assert (
+        review_calls[0][0]
+        == "WF-TEST0001"
+    )
+
+    event_types = [
+        event["event_type"]
+        for event in events
+    ]
+
+    assert (
+        "WORKFLOW_EXECUTION_NEEDS_REVIEW"
+        in event_types
+    )
+
+
+def test_stale_reconciliation_never_executes_ticket(
+    monkeypatch
+):
+
+    ticket_creation_called = False
+
+    review_data = (
+        make_result()
+        .model_dump()
+    )
+
+    review_data.update(
+        {
+            "status":
+                "NEEDS_REVIEW",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+
+            "recovery_reason":
+                (
+                    "Execution remained PROCESSING "
+                    "too long."
+                ),
+        }
+    )
+
+    review_result = (
+        WorkflowResult
+        .model_validate(
+            review_data
+        )
+    )
+
+    monkeypatch.setattr(
+        execution,
+        "mark_stale_processing_for_review",
+        lambda workflow_id,
+        stale_after_seconds:
+            review_result,
+    )
+
+    def fake_ticket_creation(
+        ticket,
+        approval
+    ):
+
+        nonlocal ticket_creation_called
+
+        ticket_creation_called = True
+
+    monkeypatch.setattr(
+        execution,
+        "create_mock_ticket",
+        fake_ticket_creation,
+    )
+
+    result = (
+        execution
+        .reconcile_stale_workflow(
+            workflow_id=
+                "WF-TEST0001",
+
+            stale_after_seconds=
+                300,
+        )
+    )
+
+    assert (
+        result.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        ticket_creation_called
+        is False
+    )
