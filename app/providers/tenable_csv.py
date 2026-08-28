@@ -9,6 +9,7 @@ from app.models import AssetContext
 from app.models import ThreatIntel
 from app.models import VulnerabilityFinding
 
+from app.providers.asset_context_csv import AssetContextCsvLoader
 from app.providers.base import VulnerabilityProvider
 from app.providers.csv_import import SecureCsvReader
 from app.providers.tenable import TenableProvider
@@ -90,6 +91,11 @@ class TenableCsvProvider(
         r"\bCVE-\d{4}-\d{4,}\b",
         re.IGNORECASE,
     )
+
+
+    # -------------------------------------------------
+    # INITIALIZATION
+    # -------------------------------------------------
 
 
     def __init__(
@@ -210,6 +216,63 @@ class TenableCsvProvider(
 
             asset_context_by_uuid=
                 asset_context_by_uuid,
+        )
+
+
+    # -------------------------------------------------
+    # THREE-FILE CONVENIENCE CONSTRUCTOR
+    # -------------------------------------------------
+
+
+    @classmethod
+    def from_files(
+        cls,
+        vulnerability_csv_path: str | Path,
+        asset_csv_path: str | Path,
+        asset_context_csv_path: str | Path,
+        *,
+        patch_available_by_finding_id:
+            Mapping[str, bool] | None = None,
+        max_rows: int = 10_000,
+    ) -> "TenableCsvProvider":
+
+        """
+        Build a Tenable CSV provider entirely from
+        external files.
+
+        Inputs:
+
+        - Tenable vulnerability findings CSV
+        - Tenable asset inventory CSV
+        - enterprise asset-context CSV
+
+        No caller-written AssetContext objects are
+        required.
+        """
+
+        asset_context_by_uuid = (
+            AssetContextCsvLoader(
+                asset_context_csv_path,
+                max_rows=max_rows,
+            )
+            .load()
+        )
+
+        return cls(
+            vulnerability_csv_path=
+                vulnerability_csv_path,
+
+            asset_csv_path=
+                asset_csv_path,
+
+            asset_context_by_uuid=
+                asset_context_by_uuid,
+
+            patch_available_by_finding_id=
+                patch_available_by_finding_id,
+
+            max_rows=
+                max_rows,
         )
 
 
