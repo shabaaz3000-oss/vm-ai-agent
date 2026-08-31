@@ -1,0 +1,2 @@
+asset_uuid,asset_name,owner,application,environment,business_criticality,internet_exposed,data_classification,current_controls
+11111111-1111-1111-1111-111111111111,demo-web-01,Web Platform Team,Customer Portal,production,critical,true,confidential,WAF enabled;EDR installed;SIEM logging enabled

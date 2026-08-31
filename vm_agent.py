@@ -6,6 +6,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from app.demo_analyzer import (
+    analyze_demo_vulnerability,
+)
+
 from app.providers.asset_context_csv import (
     AssetContextCsvError,
 )
@@ -20,6 +24,43 @@ from app.providers.tenable_csv import (
 )
 
 from app.workflow import prepare_workflow
+
+
+# -------------------------------------------------
+# PROJECT PATHS
+# -------------------------------------------------
+
+
+PROJECT_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parent
+)
+
+DEMO_DATA_DIR = (
+    PROJECT_ROOT
+    / "data"
+    / "demo"
+)
+
+DEMO_FINDINGS_PATH = (
+    DEMO_DATA_DIR
+    / "tenable-findings.csv"
+)
+
+DEMO_ASSETS_PATH = (
+    DEMO_DATA_DIR
+    / "tenable-assets.csv"
+)
+
+DEMO_CONTEXT_PATH = (
+    DEMO_DATA_DIR
+    / "asset-context.csv"
+)
+
+DEMO_FINDING_ID = (
+    "FIND-DEMO-0001"
+)
 
 
 # -------------------------------------------------
@@ -85,6 +126,23 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
 
+    # -------------------------------------------------
+    # PORTFOLIO DEMO
+    # -------------------------------------------------
+
+    subparsers.add_parser(
+        "demo",
+        help=(
+            "Run the credential-free portfolio "
+            "demonstration using sanitized sample "
+            "data and a deterministic local analyzer."
+        ),
+    )
+
+    # -------------------------------------------------
+    # TENABLE CSV ANALYSIS
+    # -------------------------------------------------
+
     tenable_csv_parser = (
         subparsers.add_parser(
             "analyze-tenable-csv",
@@ -137,17 +195,69 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # -------------------------------------------------
+# DISPLAY PORTFOLIO DEMO NOTICE
+# -------------------------------------------------
+
+
+def display_demo_notice() -> None:
+
+    print()
+    print("=" * 70)
+    print("VM AI AGENT - PORTFOLIO DEMO")
+    print("=" * 70)
+
+    print()
+    print(
+        "This demonstration uses synthetic, "
+        "sanitized vulnerability data."
+    )
+
+    print(
+        "No Tenable account or Tenable API "
+        "credentials are required."
+    )
+
+    print(
+        "No OpenAI API credentials are required."
+    )
+
+    print()
+    print(
+        "The demo analyzer is deterministic and "
+        "runs locally."
+    )
+
+    print(
+        "The deterministic Python risk engine "
+        "remains authoritative."
+    )
+
+    print(
+        "No approval or external execution occurs "
+        "in this command."
+    )
+
+
+# -------------------------------------------------
 # DISPLAY RESULT
 # -------------------------------------------------
 
 
 def display_analysis_result(
     result,
+    *,
+    title: str = (
+        "VM AI AGENT - TENABLE CSV ANALYSIS"
+    ),
 ) -> None:
 
     print()
     print("=" * 70)
-    print("VM AI AGENT - TENABLE CSV ANALYSIS")
+    print(
+        _safe_text(
+            title
+        )
+    )
     print("=" * 70)
 
     print()
@@ -268,12 +378,12 @@ def display_analysis_result(
         )
 
     # -------------------------------------------------
-    # AI ADVISORY
+    # AI / ADVISORY ANALYSIS
     # -------------------------------------------------
 
     print()
     print("=" * 70)
-    print("AI ADVISORY ANALYSIS")
+    print("AI / ADVISORY ANALYSIS")
     print("=" * 70)
 
     print()
@@ -373,6 +483,67 @@ def display_analysis_result(
 
 
 # -------------------------------------------------
+# PORTFOLIO DEMO
+# -------------------------------------------------
+
+
+def run_demo() -> int:
+
+    """
+    Run the fully reproducible credential-free
+    portfolio demonstration.
+
+    The demonstration uses:
+
+    - sanitized sample Tenable vulnerability CSV
+    - sanitized sample Tenable asset CSV
+    - sanitized enterprise asset-context CSV
+    - deterministic local advisory analyzer
+
+    It deliberately does not:
+
+    - use Tenable API credentials
+    - call the Tenable cloud API
+    - call OpenAI
+    - approve the workflow
+    - create a ticket
+    - execute remediation
+    """
+
+    display_demo_notice()
+
+    provider = (
+        TenableCsvProvider
+        .from_files(
+            vulnerability_csv_path=
+                DEMO_FINDINGS_PATH,
+
+            asset_csv_path=
+                DEMO_ASSETS_PATH,
+
+            asset_context_csv_path=
+                DEMO_CONTEXT_PATH,
+        )
+    )
+
+    result = prepare_workflow(
+        provider=provider,
+        finding_id=DEMO_FINDING_ID,
+        analyzer=
+            analyze_demo_vulnerability,
+    )
+
+    display_analysis_result(
+        result,
+        title=(
+            "VM AI AGENT - DEMO RESULT"
+        ),
+    )
+
+    return 0
+
+
+# -------------------------------------------------
 # TENABLE CSV ANALYSIS
 # -------------------------------------------------
 
@@ -434,6 +605,13 @@ def main(
     )
 
     try:
+
+        if (
+            args.command
+            == "demo"
+        ):
+
+            return run_demo()
 
         if (
             args.command
