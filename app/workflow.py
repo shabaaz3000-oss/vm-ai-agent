@@ -1,9 +1,15 @@
+from collections.abc import Callable
 from uuid import uuid4
 
 from app.ai_analyzer import analyze_vulnerability
 from app.audit import log_event
 from app.input_security import detect_prompt_injection
 
+from app.models import AIAnalysis
+from app.models import AssetContext
+from app.models import RiskResult
+from app.models import ThreatIntel
+from app.models import VulnerabilityFinding
 from app.models import WorkflowResult
 from app.models import WorkflowSecurity
 
@@ -20,6 +26,22 @@ from app.ticketing import build_ticket
 
 
 DEFAULT_FINDING_ID = "FIND-0001"
+
+
+# -------------------------------------------------
+# ANALYZER CONTRACT
+# -------------------------------------------------
+
+
+VulnerabilityAnalyzer = Callable[
+    [
+        VulnerabilityFinding,
+        AssetContext,
+        ThreatIntel,
+        RiskResult,
+    ],
+    AIAnalysis,
+]
 
 
 # -------------------------------------------------
@@ -84,7 +106,8 @@ def validate_provider_relationships(
 
 def prepare_workflow(
     provider: VulnerabilityProvider | None = None,
-    finding_id: str = DEFAULT_FINDING_ID
+    finding_id: str = DEFAULT_FINDING_ID,
+    analyzer: VulnerabilityAnalyzer | None = None,
 ) -> WorkflowResult:
 
     """
@@ -94,6 +117,13 @@ def prepare_workflow(
     Security data is retrieved through a vulnerability
     provider and normalized into validated Pydantic
     models.
+
+    The AI analyzer is injectable so deterministic
+    local/demo analyzers can be used without external
+    AI credentials.
+
+    If no analyzer is supplied, the normal OpenAI
+    vulnerability analyzer is used.
 
     This function:
 
@@ -259,10 +289,20 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 7. GENERATE AI ANALYSIS
+    # 7. SELECT ANALYZER
     # -------------------------------------------------
 
-    analysis = analyze_vulnerability(
+    analysis_function = (
+        analyzer
+        if analyzer is not None
+        else analyze_vulnerability
+    )
+
+    # -------------------------------------------------
+    # 8. GENERATE AI / ADVISORY ANALYSIS
+    # -------------------------------------------------
+
+    analysis = analysis_function(
         finding=finding,
         asset=asset,
         threat=threat,
@@ -284,7 +324,7 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 8. BUILD DETERMINISTIC TICKET DRAFT
+    # 9. BUILD DETERMINISTIC TICKET DRAFT
     # -------------------------------------------------
 
     ticket = build_ticket(
@@ -315,7 +355,7 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 9. BUILD SECURITY METADATA
+    # 10. BUILD SECURITY METADATA
     # -------------------------------------------------
 
     security = WorkflowSecurity(
@@ -331,7 +371,7 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 10. RETURN STRUCTURED RESULT
+    # 11. RETURN STRUCTURED RESULT
     # -------------------------------------------------
 
     return WorkflowResult(
