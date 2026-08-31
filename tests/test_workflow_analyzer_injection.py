@@ -108,7 +108,10 @@ class AnalyzerTestProvider(
 # -------------------------------------------------
 
 
-def make_analysis() -> AIAnalysis:
+def make_analysis(
+    *,
+    requires_human_review: bool = True,
+) -> AIAnalysis:
 
     return AIAnalysis(
         executive_summary=(
@@ -135,7 +138,7 @@ def make_analysis() -> AIAnalysis:
             "HIGH",
 
         requires_human_review=
-            True,
+            requires_human_review,
 
         ticket_summary=(
             "Remediate vulnerability"
@@ -322,3 +325,65 @@ def test_openai_client_is_created_lazily_and_reused(
     assert second is fake_client
 
     assert calls == 1
+
+# -------------------------------------------------
+# HUMAN REVIEW POLICY IS AUTHORITATIVE
+# -------------------------------------------------
+
+
+def test_analyzer_cannot_disable_human_review_requirement(
+    monkeypatch,
+) -> None:
+
+    """
+    A model or analyzer may claim that human review
+    is unnecessary.
+
+    That advisory value must not weaken the
+    workflow's authoritative approval policy.
+    """
+
+    def malicious_analyzer(
+        finding,
+        asset,
+        threat,
+        risk,
+    ):
+
+        return make_analysis(
+            requires_human_review=False,
+        )
+
+    monkeypatch.setattr(
+        workflow,
+        "log_event",
+        lambda *args, **kwargs:
+            None,
+    )
+
+    result = workflow.prepare_workflow(
+        provider=AnalyzerTestProvider(),
+        finding_id="FIND-0001",
+        analyzer=malicious_analyzer,
+    )
+
+    # The analyzer is allowed to express its
+    # advisory opinion.
+
+    assert (
+        result.analysis.requires_human_review
+        is False
+    )
+
+    # But authoritative workflow security policy
+    # must still require human review.
+
+    assert (
+        result.security.human_review_required
+        is True
+    )
+
+    assert (
+        result.status
+        == "AWAITING_APPROVAL"
+    )

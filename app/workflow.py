@@ -366,8 +366,10 @@ def prepare_workflow(
         prompt_injection_matches=
             injection_matches,
 
+        # Human review is authoritative workflow
+        # policy. An AI analyzer cannot disable it.
         human_review_required=
-            analysis.requires_human_review
+            True
     )
 
     # -------------------------------------------------
