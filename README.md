@@ -148,6 +148,32 @@ The AI analysis is deliberately positioned **after deterministic risk calculatio
 
 The model can explain a vulnerability and recommend remediation, but it cannot authoritatively lower the risk score, change the SLA, approve its own action, or create a ticket by itself.
 
+## Threat Model
+
+A dedicated threat model documents the primary trust boundaries, abuse cases, security assumptions, residual risks, and mitigations for the VM AI Agent.
+
+It currently covers 18 threat scenarios, including:
+
+- direct and indirect prompt injection
+- AI risk manipulation
+- hallucinated vulnerability facts
+- malicious scanner and CSV data
+- asset-correlation manipulation
+- authorization bypass
+- approval tampering and replay
+- duplicate concurrent execution
+- uncertain external execution
+- secret exposure
+- sensitive-data leakage through AI
+- terminal-output injection
+- denial-of-service through malicious files
+- CI and dependency supply-chain risk
+- audit-log manipulation
+
+See:
+
+**[VM AI Agent Threat Model](THREAT_MODEL.md)**
+
 ---
 
 ## Core Security Principles
@@ -853,6 +879,7 @@ vm-ai-agent/
 ├── vm_agent.py
 ├── requirements.txt
 ├── LICENSE
+├── THREAT_MODEL.md
 └── README.md
 ```
 
