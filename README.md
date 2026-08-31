@@ -100,49 +100,46 @@ The CVE and infrastructure data used by the portfolio demo are synthetic and are
 
 The high-level workflow is:
 
-```text
-                   UNTRUSTED INPUT
-                         │
-                         ▼
-              Vulnerability Provider
-                         │
-                         ▼
-                  Pydantic Models
-                         │
-                         ▼
-             Relationship Validation
-                         │
-                         ▼
-             Prompt Injection Detection
-                         │
-                         ▼
-              Deterministic Risk Engine
-                         │
-                         │ authoritative
-                         ▼
-              ┌─────────────────────┐
-              │ Risk Score / Rating │
-              │ Priority / SLA      │
-              └──────────┬──────────┘
-                         │
-                         ▼
-                 AI Advisory Layer
-                         │
-                  non-authoritative
-                         ▼
-                  Ticket Proposal
-                         │
-                         ▼
-                 Human Approval
-                         │
-                         ▼
-              Approval Fingerprinting
-                         │
-                         ▼
-                Atomic Execution Claim
-                         │
-                         ▼
-                 Ticket Execution
+```mermaid
+flowchart TD
+    A["Untrusted Vulnerability Data<br/>Scanner API / CSV / Local Data"] --> B["Vulnerability Provider"]
+
+    B --> C["Pydantic Validation"]
+    C --> D["Asset + CVE Relationship Validation"]
+    D --> E["Prompt Injection Detection"]
+
+    E --> F["Deterministic Risk Engine"]
+
+    F --> G["Authoritative Security Decision<br/>Risk Score / Rating / SLA / Priority"]
+
+    G --> H["AI Advisory Analyzer<br/>Non-Authoritative"]
+
+    H --> I["Proposed Remediation + Ticket Draft"]
+
+    I --> J["Human Approval Boundary"]
+
+    J --> K["SHA-256 Ticket Fingerprint<br/>Approval Bound to Exact Ticket"]
+
+    K --> L["Atomic Execution Claim"]
+
+    L --> M["Controlled Ticket Execution"]
+
+    L -. "uncertain external outcome" .-> N["NEEDS_REVIEW"]
+
+    N --> O["Human Reconciliation"]
+
+    subgraph Authority["Authoritative Controls"]
+        F
+        G
+        J
+        K
+        L
+    end
+
+    subgraph Advisory["AI Advisory Boundary"]
+        H
+        I
+    end
 ```
 
 The AI analysis is deliberately positioned **after deterministic risk calculation**.
@@ -760,6 +757,8 @@ VM_AI_DB_PATH=data/workflows.db
 Runtime database files are excluded from Git.
 
 The workflow store also uses transaction controls to support atomic execution claims and prevent duplicate concurrent execution.
+
+---
 
 ## Running the Project
 
