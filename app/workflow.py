@@ -3,7 +3,8 @@ from uuid import uuid4
 
 from app.ai_analyzer import analyze_vulnerability
 from app.audit import log_event
-from app.input_security import detect_prompt_injection
+from app.input_security import aggregate_prompt_injection_matches
+from app.input_security import inspect_prompt_injection_data
 
 from app.models import AIAnalysis
 from app.models import AssetContext
@@ -206,12 +207,29 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 4. INSPECT UNTRUSTED TEXT
+    # 4. INSPECT UNTRUSTED PROVIDER DATA
     # -------------------------------------------------
 
+    provider_security_data = {
+        "finding":
+            finding.model_dump(),
+
+        "asset":
+            asset.model_dump(),
+
+        "threat":
+            threat.model_dump(),
+    }
+
+    injection_field_matches = (
+        inspect_prompt_injection_data(
+            provider_security_data
+        )
+    )
+
     injection_matches = (
-        detect_prompt_injection(
-            finding.description
+        aggregate_prompt_injection_matches(
+            injection_field_matches
         )
     )
 
@@ -226,8 +244,14 @@ def prepare_workflow(
                 "finding_id":
                     finding.finding_id,
 
-                "field":
-                    "description",
+                "fields":
+                    list(
+                        injection_field_matches
+                        .keys()
+                    ),
+
+                "field_matches":
+                    injection_field_matches,
 
                 "matches":
                     injection_matches,

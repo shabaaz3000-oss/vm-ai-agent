@@ -85,3 +85,118 @@ def detect_prompt_injection(text: str) -> list[str]:
                 break
 
     return matches
+
+# -------------------------------------------------
+# STRUCTURED UNTRUSTED-DATA INSPECTION
+# -------------------------------------------------
+
+
+def inspect_prompt_injection_data(
+    data: object,
+    path: str = "",
+) -> dict[str, list[str]]:
+
+    """
+    Recursively inspect strings contained in
+    provider-controlled structured data.
+
+    Returns a mapping of field paths to detected
+    prompt-injection categories.
+
+    Non-string scalar values are ignored.
+    """
+
+    field_matches = {}
+
+    if isinstance(
+        data,
+        str
+    ):
+
+        matches = (
+            detect_prompt_injection(
+                data
+            )
+        )
+
+        if matches:
+
+            field_matches[
+                path or "$"
+            ] = matches
+
+        return field_matches
+
+    if isinstance(
+        data,
+        dict
+    ):
+
+        for key, value in data.items():
+
+            child_path = (
+                f"{path}.{key}"
+                if path
+                else str(key)
+            )
+
+            field_matches.update(
+                inspect_prompt_injection_data(
+                    data=value,
+                    path=child_path,
+                )
+            )
+
+        return field_matches
+
+    if isinstance(
+        data,
+        (list, tuple)
+    ):
+
+        for index, value in enumerate(
+            data
+        ):
+
+            child_path = (
+                f"{path}[{index}]"
+                if path
+                else f"[{index}]"
+            )
+
+            field_matches.update(
+                inspect_prompt_injection_data(
+                    data=value,
+                    path=child_path,
+                )
+            )
+
+        return field_matches
+
+    return field_matches
+
+
+def aggregate_prompt_injection_matches(
+    field_matches: dict[str, list[str]],
+) -> list[str]:
+
+    """
+    Convert field-level prompt-injection findings
+    into one de-duplicated category list.
+    """
+
+    matches = []
+
+    for categories in (
+        field_matches.values()
+    ):
+
+        for category in categories:
+
+            if category not in matches:
+
+                matches.append(
+                    category
+                )
+
+    return matches
