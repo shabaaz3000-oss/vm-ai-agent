@@ -530,6 +530,236 @@ The demo scanner and asset records correlate correctly
 ```
 
 ---
+## Configuration
+
+The repository includes:
+
+```text
+.env.example
+```
+
+as a public-safe configuration template.
+
+The real local configuration file:
+
+```text
+.env
+```
+
+is intentionally excluded from Git.
+
+Never commit real API keys, bearer tokens, passwords, or other credentials.
+
+To create a local configuration file, copy the example:
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS / Linux:
+
+```bash
+cp .env.example .env
+```
+
+Then replace only the placeholder values needed for the operating mode you intend to use.
+
+---
+
+### Mode 1: Credential-Free Portfolio Demo
+
+The recommended first-run experience is:
+
+```bash
+python vm_agent.py demo
+```
+
+This mode requires **no external credentials**.
+
+You do not need:
+
+```text
+OPENAI_API_KEY
+TENABLE_ACCESS_KEY
+TENABLE_SECRET_KEY
+VM_AI_ANALYST_TOKEN
+VM_AI_APPROVER_TOKEN
+```
+
+The demo uses:
+
+```text
+synthetic Tenable-style vulnerability data
+synthetic asset inventory data
+synthetic enterprise asset context
+a deterministic local advisory analyzer
+the deterministic Python risk engine
+```
+
+It stops at:
+
+```text
+AWAITING_APPROVAL
+```
+
+and does not approve or create a ticket.
+
+---
+
+### Mode 2: OpenAI-Backed Advisory Analysis
+
+The normal workflow can use the OpenAI-backed analyzer instead of the deterministic portfolio analyzer.
+
+Configure:
+
+```dotenv
+OPENAI_API_KEY=your-real-api-key
+```
+
+The model can optionally be selected with:
+
+```dotenv
+OPENAI_MODEL=gpt-5.6
+```
+
+`OPENAI_MODEL` currently defaults to:
+
+```text
+gpt-5.6
+```
+
+if no value is supplied.
+
+The OpenAI model is an **advisory component only**.
+
+It does not own:
+
+```text
+risk score
+risk rating
+remediation SLA
+ticket priority
+human approval
+execution authority
+```
+
+Those controls remain outside the model.
+
+---
+
+### Mode 3: File-Based Tenable Analysis
+
+Tenable vulnerability and asset exports can be analyzed without live Tenable API credentials.
+
+Example:
+
+```powershell
+python .\vm_agent.py analyze-tenable-csv --findings .\path\to\tenable-findings.csv --assets .\path\to\tenable-assets.csv --context .\path\to\asset-context.csv --finding-id FINDING-ID
+```
+
+This mode does not require:
+
+```text
+TENABLE_ACCESS_KEY
+TENABLE_SECRET_KEY
+```
+
+unless some separate live Tenable operation is being performed.
+
+The file-driven analysis path still applies the project's normal security controls:
+
+```text
+CSV structural validation
+Pydantic validation
+asset correlation
+enterprise context correlation
+prompt-injection detection
+deterministic risk calculation
+advisory AI analysis
+human approval boundary
+```
+
+---
+
+### Mode 4: Live Tenable API Integration
+
+Authorized live Tenable connectivity requires:
+
+```dotenv
+TENABLE_ACCESS_KEY=your-access-key
+TENABLE_SECRET_KEY=your-secret-key
+```
+
+Optional Tenable configuration:
+
+```dotenv
+TENABLE_BASE_URL=https://cloud.tenable.com
+TENABLE_TIMEOUT_SECONDS=30
+TENABLE_POLL_INTERVAL_SECONDS=1
+TENABLE_MAX_POLL_ATTEMPTS=60
+TENABLE_VULNERABILITY_NUM_ASSETS=500
+TENABLE_ASSET_CHUNK_SIZE=5000
+```
+
+The project requires an HTTPS Tenable base URL and validates configuration before constructing the integration.
+
+A read-only connectivity check is available through:
+
+```bash
+python tenable_check.py
+```
+
+Only use Tenable credentials from an account and environment you are authorized to access.
+
+---
+
+### API Authentication
+
+The FastAPI workflow interface currently uses development/demo bearer tokens.
+
+Configure two separate values:
+
+```dotenv
+VM_AI_ANALYST_TOKEN=replace-with-a-high-entropy-analyst-token
+VM_AI_APPROVER_TOKEN=replace-with-a-different-high-entropy-approver-token
+```
+
+The roles are intentionally separated:
+
+```text
+ANALYST
+APPROVER
+```
+
+An analyst token does not grant approval authority.
+
+The current bearer-token implementation is intended for development and portfolio demonstration.
+
+Enterprise identity federation such as OIDC is a future enhancement.
+
+---
+
+### Workflow Database
+
+Workflow state is stored in SQLite.
+
+The default path is:
+
+```text
+data/workflows.db
+```
+
+It can be changed with:
+
+```dotenv
+VM_AI_DB_PATH=data/workflows.db
+```
+
+Runtime database files are excluded from Git.
+
+The workflow store also uses transaction controls to support atomic execution claims and prevent duplicate concurrent execution.
 
 ## Running the Project
 
