@@ -1,5 +1,7 @@
 # VM AI Agent
 
+[![Security CI](https://github.com/shabaaz3000-oss/vm-ai-agent/actions/workflows/security-ci.yml/badge.svg)](https://github.com/shabaaz3000-oss/vm-ai-agent/actions/workflows/security-ci.yml)
+
 A security-focused AI-assisted vulnerability management workflow that combines vulnerability scanner data, enterprise asset context, deterministic risk policy, AI advisory analysis, human approval, and controlled ticket execution.
 
 The project is designed to demonstrate how an AI agent can assist a vulnerability management program **without allowing the model to become the security decision-maker**.
