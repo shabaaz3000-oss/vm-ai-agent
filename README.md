@@ -765,7 +765,7 @@ The workflow store also uses transaction controls to support atomic execution cl
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/shabaaz3000-oss/vm-ai-agent.git
 cd vm-ai-agent
 ```
 
@@ -845,10 +845,12 @@ vm-ai-agent/
 │
 ├── tests/
 │
+├── .env.example
 ├── ai_demo.py
 ├── tenable_check.py
 ├── vm_agent.py
 ├── requirements.txt
+├── LICENSE
 └── README.md
 ```
 
