@@ -144,7 +144,7 @@ def test_build_ticket_uses_expected_fields():
 
     assert (
         ticket.assignment_group
-        == "Web Platform Team"
+        == "Vulnerability Management"
     )
 
     assert ticket.priority == "P1"
@@ -168,6 +168,28 @@ def test_build_ticket_uses_expected_fields():
         "Run authenticated rescan."
     ]
 
+# -------------------------------------------------
+# TICKET ROUTING INTEGRITY
+# -------------------------------------------------
+
+
+def test_untrusted_asset_owner_cannot_control_assignment_group():
+
+    malicious_asset = SimpleNamespace(
+        owner="External Attacker Queue"
+    )
+
+    ticket = build_ticket(
+        finding=make_finding(),
+        asset=malicious_asset,
+        risk=make_risk(),
+        analysis=make_analysis()
+    )
+
+    assert (
+        ticket.assignment_group
+        == "Vulnerability Management"
+    )
 
 def test_ai_text_cannot_override_authoritative_risk_fields():
 

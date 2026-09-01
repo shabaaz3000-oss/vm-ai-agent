@@ -17,6 +17,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 TICKET_FILE = BASE_DIR / "data" / "tickets.jsonl"
 
+# -------------------------------------------------
+# AUTHORITATIVE TICKET ROUTING
+# -------------------------------------------------
+
+
+DEFAULT_ASSIGNMENT_GROUP = (
+    "Vulnerability Management"
+)
+
 
 def risk_to_priority(risk_rating: str) -> str:
 
@@ -48,7 +57,11 @@ def build_ticket(
 
         cve=finding.cve,
 
-        assignment_group=asset.owner,
+        # Asset ownership is provider-controlled
+        # business context and is not authoritative
+        # for external ticket routing.
+        assignment_group=
+            DEFAULT_ASSIGNMENT_GROUP,
 
         risk_rating=risk.rating,
 
