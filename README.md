@@ -6,7 +6,7 @@ A security-focused AI-assisted vulnerability management workflow that combines v
 
 The project is designed to demonstrate how an AI agent can assist a vulnerability management program **without allowing the model to become the security decision-maker**.
 
-> **Portfolio demo:** No Tenable account, OpenAI API key, or ServiceNow instance is required to run the included demonstration.
+> **Portfolio demo:** No Tenable account, OpenAI API key, or ServiceNow instance is required to run the included demonstration or adversarial security evaluation.
 
 ---
 
@@ -39,9 +39,9 @@ The demo uses synthetic, sanitized vulnerability data stored in:
 
 ```text
 data/demo/
-├── tenable-findings.csv
-├── tenable-assets.csv
-└── asset-context.csv
+|-- tenable-findings.csv
+|-- tenable-assets.csv
+`-- asset-context.csv
 ```
 
 The command requires:
@@ -98,6 +98,72 @@ The CVE and infrastructure data used by the portfolio demo are synthetic and are
 
 ---
 
+## Adversarial Security Evaluation
+
+The repository includes a credential-free adversarial evaluation command for testing the prompt-injection detection layer:
+
+```bash
+python vm_agent.py security-eval
+```
+
+The evaluation uses the repository's synthetic adversarial corpus and requires:
+
+```text
+No Tenable API credentials
+No OpenAI API credentials
+No ServiceNow credentials
+No external execution
+```
+
+The current corpus contains malicious and benign inputs that exercise security categories including:
+
+- instruction override attempts
+- authority impersonation
+- human-approval bypass
+- risk manipulation
+- SLA manipulation
+- ticket-priority manipulation
+- system-prompt requests
+- normal benign vulnerability and remediation text
+
+The evaluator tracks three important failure modes:
+
+```text
+False Negative
+A malicious case was not detected.
+
+False Positive
+Benign content was incorrectly detected as malicious.
+
+Category Mismatch
+An attack was detected, but the expected security category was not identified.
+```
+
+A detection under the wrong category is therefore **not counted as a successful evaluation case**.
+
+Current credential-free evaluation result:
+
+```text
+Total Cases: 12
+Adversarial Cases: 10
+Benign Cases: 2
+
+Passed Cases: 12
+Failed Cases: 0
+
+False Negatives: 0
+False Positives: 0
+Category Mismatches: 0
+
+RESULT: PASS
+```
+
+The evaluation command returns a non-zero process exit code when an evaluation fails, allowing the same security checks to be incorporated into automated validation and CI workflows.
+
+The evaluation performs no workflow approval, ticket creation, or external execution.
+
+---
+
 ## Security Architecture
 
 The high-level workflow is:
@@ -108,7 +174,7 @@ flowchart TD
 
     B --> C["Pydantic Validation"]
     C --> D["Asset + CVE Relationship Validation"]
-    D --> E["Prompt Injection Detection"]
+    D --> E["Recursive Prompt Injection Inspection"]
 
     E --> F["Deterministic Risk Engine"]
 
@@ -118,7 +184,9 @@ flowchart TD
 
     H --> I["Proposed Remediation + Ticket Draft"]
 
-    I --> J["Human Approval Boundary"]
+    I --> R["Server-Controlled Ticket Routing"]
+
+    R --> J["Human Approval Boundary"]
 
     J --> K["SHA-256 Ticket Fingerprint<br/>Approval Bound to Exact Ticket"]
 
@@ -133,6 +201,7 @@ flowchart TD
     subgraph Authority["Authoritative Controls"]
         F
         G
+        R
         J
         K
         L
@@ -146,7 +215,9 @@ flowchart TD
 
 The AI analysis is deliberately positioned **after deterministic risk calculation**.
 
-The model can explain a vulnerability and recommend remediation, but it cannot authoritatively lower the risk score, change the SLA, approve its own action, or create a ticket by itself.
+The model can explain a vulnerability and recommend remediation, but it cannot authoritatively lower the risk score, change the SLA, remove human review, choose an external assignment group, approve its own action, or create a ticket by itself.
+
+---
 
 ## Threat Model
 
@@ -180,9 +251,11 @@ See:
 
 ### 1. Vulnerability Data Is Untrusted
 
-Scanner data, CSV data, vulnerability descriptions, asset names, and other external fields are treated as untrusted input.
+Scanner data, CSV data, vulnerability descriptions, asset names, identifiers, business context, threat-intelligence metadata, and other provider-controlled fields are treated as untrusted input.
 
 Inputs are validated before they enter the workflow.
+
+Validation establishes structural correctness. It does **not** make externally supplied text trustworthy.
 
 ---
 
@@ -233,11 +306,28 @@ The portfolio demo injects a deterministic local analyzer so the entire security
 
 ### 4. Prompt Injection Detection
 
-Vulnerability descriptions are potentially attacker-controlled.
+Validated provider-controlled data is still treated as untrusted content.
 
-The workflow checks incoming content for prompt-injection indicators before advisory AI analysis occurs.
+The workflow recursively inspects structured text from vulnerability findings, asset context, and threat-intelligence records for prompt-injection indicators before advisory AI analysis occurs.
 
-A detected injection does not transfer authority to the model and does not alter deterministic risk policy.
+This includes fields such as:
+
+```text
+finding descriptions
+finding identifiers
+finding titles
+asset names
+CVEs
+asset owners
+applications
+data classifications
+security controls
+provider source metadata
+```
+
+Detected indicators are recorded by field and aggregated into workflow security metadata.
+
+A detected injection does not transfer authority to the model and cannot alter deterministic risk policy, human-review requirements, or server-controlled ticket routing.
 
 ---
 
@@ -250,6 +340,10 @@ AWAITING_APPROVAL
 ```
 
 Analysis and approval are intentionally separated.
+
+Human review is an authoritative workflow requirement rather than an AI-controlled recommendation.
+
+Even if an advisory analyzer attempts to indicate that review is unnecessary, the workflow still requires human approval.
 
 The file-driven `vm_agent.py` analysis CLI does not import workflow approval or ticket-execution functions.
 
@@ -278,13 +372,34 @@ risk score
 risk rating
 SLA
 ticket priority
+human-review requirement
 approval state
 execution state
 ```
 
+Client attempts to supply authoritative workflow fields do not replace server-controlled state.
+
 ---
 
-### 8. RBAC
+### 8. Ticket Routing Is Server-Controlled
+
+Asset ownership can come from provider-controlled business context.
+
+That information is useful for analysis, but it is not trusted as authoritative external ticket-routing policy.
+
+The ticket builder therefore uses server-controlled routing rather than directly assigning tickets based on untrusted `asset.owner` data.
+
+The current portfolio policy routes proposed tickets to:
+
+```text
+Vulnerability Management
+```
+
+A future production implementation could replace this fallback with an authoritative CMDB or ServiceNow routing policy.
+
+---
+
+### 9. RBAC
 
 The API distinguishes security roles such as:
 
@@ -295,21 +410,25 @@ APPROVER
 
 Authenticated identity flows into approval operations.
 
+An analyst identity does not automatically receive approval authority.
+
 The current project authentication mechanism uses environment-provided bearer tokens for demonstration and development purposes.
 
 Production identity federation such as OIDC is a future enhancement.
 
 ---
 
-### 9. Atomic Execution Claim
+### 10. Atomic Execution Claim
 
 The workflow uses SQLite transaction controls to claim execution before performing an external action.
 
 This is intended to prevent two concurrent requests from creating duplicate tickets from the same approved workflow.
 
+Execution attempts receive server-controlled state and execution metadata rather than trusting client claims that an action has already occurred.
+
 ---
 
-### 10. Uncertain Execution Is Not Blindly Retried
+### 11. Uncertain Execution Is Not Blindly Retried
 
 If execution enters an uncertain state, the workflow can move to:
 
@@ -321,6 +440,8 @@ rather than automatically replaying a potentially successful external operation.
 
 This is important because blindly retrying an uncertain ticket-creation request could create duplicate external actions.
 
+Human reconciliation is required before continuing from an uncertain external outcome.
+
 ---
 
 ## Vulnerability Provider Architecture
@@ -329,14 +450,14 @@ The workflow is scanner-independent at its core.
 
 ```text
 VulnerabilityProvider
-│
-├── LocalJsonProvider
-│
-├── CsvImportProvider
-│
-├── TenableProvider
-│
-└── TenableCsvProvider
+|
+|-- LocalJsonProvider
+|
+|-- CsvImportProvider
+|
+|-- TenableProvider
+|
+`-- TenableCsvProvider
 ```
 
 Each provider is responsible for returning normalized models:
@@ -446,6 +567,8 @@ The project correlates this context to vulnerability scanner assets using stable
 
 This allows technical vulnerability severity to be combined with business context before remediation priority is determined.
 
+Business context is still treated according to its trust boundary. For example, an asset-owner field may inform analysis without being allowed to directly control an external ticket assignment group.
+
 ---
 
 ## Example Risk Decision
@@ -510,14 +633,16 @@ reconcile uncertain workflow state
 
 The API applies authentication and role-based authorization before privileged workflow actions.
 
+Authoritative workflow state is loaded server-side rather than accepted from client-submitted risk, approval, or execution claims.
+
 ---
 
 ## Testing
 
-The project currently includes:
+The current verified baseline is:
 
 ```text
-291 automated tests
+322 automated tests
 ```
 
 Run the complete suite with:
@@ -530,19 +655,39 @@ The test suite covers areas including:
 
 - Pydantic validation
 - deterministic risk calculation
-- prompt-injection handling
+- prompt-injection detection and classification
+- adversarial security evaluation
+- false-negative detection
+- false-positive detection
+- prompt-injection category integrity
+- inspection of provider-controlled structured text
 - provider normalization
 - CSV security validation
 - Tenable normalization
 - Tenable export synchronization
 - approval fingerprinting
+- authoritative human-review enforcement
+- server-controlled ticket routing
 - workflow persistence
 - RBAC
 - atomic execution claims
-- recovery behavior
+- uncertain-execution recovery
 - analyzer injection
 - credential-free demo behavior
+- credential-free security-evaluation behavior
 - prevention of AI execution authority
+
+The adversarial security evaluator specifically verifies that:
+
+```text
+Malicious cases must be detected
+Benign cases must remain undetected
+Expected attack categories must be identified
+Wrong-category detections are evaluation failures
+False negatives are counted
+False positives are counted
+Evaluation failures return a non-zero CLI exit code
+```
 
 The portfolio demo specifically includes tests proving that:
 
@@ -555,6 +700,30 @@ The demo scanner and asset records correlate correctly
 ```
 
 ---
+
+## Security CI
+
+The repository includes a GitHub Actions security workflow:
+
+```text
+.github/workflows/security-ci.yml
+```
+
+Security CI runs on the repository's main development workflow and validates:
+
+```text
+Python automated test suite
+Gitleaks secret scanning
+```
+
+The workflow uses read-only repository permissions where possible.
+
+A Gitleaks SARIF artifact is produced for security-scan results.
+
+The Security CI badge at the top of this README provides the current workflow status.
+
+---
+
 ## Configuration
 
 The repository includes:
@@ -575,7 +744,7 @@ is intentionally excluded from Git.
 
 Never commit real API keys, bearer tokens, passwords, or other credentials.
 
-To create a local configuration file, copy the example:
+To create a local configuration file, copy the example.
 
 Windows PowerShell:
 
@@ -633,7 +802,56 @@ and does not approve or create a ticket.
 
 ---
 
-### Mode 2: OpenAI-Backed Advisory Analysis
+### Mode 2: Credential-Free Adversarial Security Evaluation
+
+Run:
+
+```bash
+python vm_agent.py security-eval
+```
+
+This mode also requires **no external credentials**.
+
+It loads:
+
+```text
+evals/adversarial_cases.json
+```
+
+and evaluates prompt-injection detection behavior locally.
+
+The command reports:
+
+```text
+total cases
+adversarial cases
+benign cases
+passed cases
+failed cases
+false negatives
+false positives
+category mismatches
+```
+
+A successful evaluation returns:
+
+```text
+RESULT: PASS
+```
+
+with process exit code:
+
+```text
+0
+```
+
+An evaluation failure returns a non-zero exit code.
+
+No approval, ticket creation, network integration, or external execution occurs.
+
+---
+
+### Mode 3: OpenAI-Backed Advisory Analysis
 
 The normal workflow can use the OpenAI-backed analyzer instead of the deterministic portfolio analyzer.
 
@@ -666,6 +884,8 @@ risk score
 risk rating
 remediation SLA
 ticket priority
+human-review requirement
+ticket routing
 human approval
 execution authority
 ```
@@ -674,7 +894,7 @@ Those controls remain outside the model.
 
 ---
 
-### Mode 3: File-Based Tenable Analysis
+### Mode 4: File-Based Tenable Analysis
 
 Tenable vulnerability and asset exports can be analyzed without live Tenable API credentials.
 
@@ -700,15 +920,16 @@ CSV structural validation
 Pydantic validation
 asset correlation
 enterprise context correlation
-prompt-injection detection
+recursive prompt-injection inspection
 deterministic risk calculation
 advisory AI analysis
+server-controlled ticket routing
 human approval boundary
 ```
 
 ---
 
-### Mode 4: Live Tenable API Integration
+### Mode 5: Live Tenable API Integration
 
 Authorized live Tenable connectivity requires:
 
@@ -784,7 +1005,7 @@ VM_AI_DB_PATH=data/workflows.db
 
 Runtime database files are excluded from Git.
 
-The workflow store also uses transaction controls to support atomic execution claims and prevent duplicate concurrent execution.
+The workflow store uses transaction controls to support atomic execution claims and prevent duplicate concurrent execution.
 
 ---
 
@@ -819,13 +1040,27 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-### 4. Run the credential-free demo
+### 4. Run the credential-free portfolio demo
 
 ```bash
 python vm_agent.py demo
 ```
 
-### 5. Run the tests
+### 5. Run the credential-free adversarial security evaluation
+
+```bash
+python vm_agent.py security-eval
+```
+
+A successful evaluation returns:
+
+```text
+RESULT: PASS
+```
+
+and process exit code `0`.
+
+### 6. Run the complete test suite
 
 ```bash
 python -m pytest -q
@@ -837,50 +1072,62 @@ python -m pytest -q
 
 ```text
 vm-ai-agent/
-│
-├── app/
-│   ├── ai_analyzer.py
-│   ├── approval.py
-│   ├── audit.py
-│   ├── auth.py
-│   ├── demo_analyzer.py
-│   ├── execution.py
-│   ├── input_security.py
-│   ├── models.py
-│   ├── risk_engine.py
-│   ├── ticketing.py
-│   ├── workflow.py
-│   ├── workflow_store.py
-│   │
-│   └── providers/
-│       ├── base.py
-│       ├── local_json.py
-│       ├── csv_import.py
-│       ├── asset_context_csv.py
-│       ├── tenable.py
-│       ├── tenable_client.py
-│       ├── tenable_config.py
-│       ├── tenable_connectivity.py
-│       ├── tenable_csv.py
-│       ├── tenable_factory.py
-│       └── tenable_sync.py
-│
-├── data/
-│   └── demo/
-│       ├── asset-context.csv
-│       ├── tenable-assets.csv
-│       └── tenable-findings.csv
-│
-├── tests/
-│
-├── .env.example
-├── ai_demo.py
-├── tenable_check.py
-├── vm_agent.py
-├── requirements.txt
-├── LICENSE
-├── THREAT_MODEL.md
-└── README.md
+|
+|-- .github/
+|   `-- workflows/
+|       `-- security-ci.yml
+|
+|-- app/
+|   |-- ai_analyzer.py
+|   |-- approval.py
+|   |-- audit.py
+|   |-- auth.py
+|   |-- demo_analyzer.py
+|   |-- execution.py
+|   |-- input_security.py
+|   |-- models.py
+|   |-- risk_engine.py
+|   |-- security_evaluator.py
+|   |-- ticketing.py
+|   |-- workflow.py
+|   |-- workflow_store.py
+|   |
+|   `-- providers/
+|       |-- base.py
+|       |-- local_json.py
+|       |-- csv_import.py
+|       |-- asset_context_csv.py
+|       |-- tenable.py
+|       |-- tenable_client.py
+|       |-- tenable_config.py
+|       |-- tenable_connectivity.py
+|       |-- tenable_csv.py
+|       |-- tenable_factory.py
+|       `-- tenable_sync.py
+|
+|-- data/
+|   `-- demo/
+|       |-- asset-context.csv
+|       |-- tenable-assets.csv
+|       `-- tenable-findings.csv
+|
+|-- evals/
+|   `-- adversarial_cases.json
+|
+|-- tests/
+|   |-- test_security_evaluations.py
+|   |-- test_security_evaluator.py
+|   |-- test_workflow_security_evaluations.py
+|   `-- ...
+|
+|-- .env.example
+|-- ai_demo.py
+|-- tenable_check.py
+|-- vm_agent.py
+|-- requirements.txt
+|-- LICENSE
+|-- THREAT_MODEL.md
+`-- README.md
 ```
 
 ---
@@ -895,8 +1142,10 @@ Current limitations include:
 - Demo API authentication uses environment-provided bearer tokens rather than enterprise OIDC.
 - The credential-free demo uses a deterministic local advisory analyzer rather than a live LLM.
 - Live Tenable API functionality requires authorized Tenable credentials.
-- Production secret management, distributed locking, enterprise observability, and high-availability infrastructure are not yet implemented.
 - Prompt-injection detection is currently pattern-based and should be one layer within a broader defense-in-depth strategy.
+- The current adversarial evaluation corpus is intentionally small and does not represent a comprehensive production AI red-team program.
+- The current server-controlled ticket assignment uses a conservative fallback rather than production CMDB or ServiceNow routing.
+- Production secret management, distributed execution coordination, enterprise observability, and high-availability infrastructure are not yet implemented.
 
 These limitations are kept explicit so the project does not imply production capabilities that have not been implemented.
 
@@ -907,19 +1156,23 @@ These limitations are kept explicit so the project does not imply production cap
 Potential next steps include:
 
 ```text
-ServiceNow REST integration
+Production ServiceNow REST integration
 OIDC / enterprise identity integration
 Additional vulnerability scanner providers
 Live CISA KEV enrichment
 Live EPSS enrichment
 NVD enrichment
-AI evaluation and red-team harness
+Expanded adversarial evaluation corpus
+Automated evaluation trend reporting
+Trusted CMDB-backed ticket routing
 Structured security telemetry
 OpenTelemetry integration
 Policy-as-code controls
 Containerization
-CI/CD security gates
+Additional software-supply-chain controls
 Cloud deployment architecture
+Production secret management
+Distributed execution coordination
 ```
 
 ---
