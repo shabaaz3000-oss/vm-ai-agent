@@ -10,6 +10,10 @@ from app.demo_analyzer import (
     analyze_demo_vulnerability,
 )
 
+from app.security_evaluator import (
+    run_security_evaluation,
+)
+
 from app.providers.asset_context_csv import (
     AssetContextCsvError,
 )
@@ -136,6 +140,18 @@ def build_parser() -> argparse.ArgumentParser:
             "Run the credential-free portfolio "
             "demonstration using sanitized sample "
             "data and a deterministic local analyzer."
+        ),
+    )
+
+    # -------------------------------------------------
+    # SECURITY EVALUATION
+    # -------------------------------------------------
+
+    subparsers.add_parser(
+        "security-eval",
+        help=(
+            "Run the credential-free adversarial "
+            "security evaluation corpus."
         ),
     )
 
@@ -481,6 +497,87 @@ def display_analysis_result(
         "is required before execution."
     )
 
+# -------------------------------------------------
+# DISPLAY SECURITY EVALUATION
+# -------------------------------------------------
+
+
+def display_security_evaluation(
+    result,
+) -> None:
+
+    print()
+    print("=" * 70)
+    print(
+        "VM AI AGENT - SECURITY EVALUATION"
+    )
+    print("=" * 70)
+
+    print()
+    print(
+        "Total Cases:",
+        result.total_cases,
+    )
+
+    print(
+        "Adversarial Cases:",
+        result.adversarial_cases,
+    )
+
+    print(
+        "Benign Cases:",
+        result.benign_cases,
+    )
+
+    print()
+    print(
+        "Passed Cases:",
+        result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        result.failed_cases,
+    )
+
+    print()
+    print(
+        "False Negatives:",
+        result.false_negatives,
+    )
+
+    print(
+        "False Positives:",
+        result.false_positives,
+    )
+
+    print(
+        "Category Mismatches:",
+        result.category_mismatches,
+    )
+
+    print()
+    print("=" * 70)
+
+    if result.passed:
+
+        print(
+            "RESULT: PASS"
+        )
+
+    else:
+
+        print(
+            "RESULT: FAIL"
+        )
+
+    print("=" * 70)
+
+    print()
+    print(
+        "This evaluation performs no approval, "
+        "ticket creation, or external execution."
+    )
 
 # -------------------------------------------------
 # PORTFOLIO DEMO
@@ -542,6 +639,38 @@ def run_demo() -> int:
 
     return 0
 
+# -------------------------------------------------
+# SECURITY EVALUATION
+# -------------------------------------------------
+
+
+def run_security_eval() -> int:
+
+    """
+    Run the local adversarial security evaluation.
+
+    This command:
+
+    - reads the repository evaluation corpus
+    - runs prompt-injection detection
+    - reports false negatives and false positives
+    - requires no external credentials
+    - performs no approval or ticket execution
+    """
+
+    result = (
+        run_security_evaluation()
+    )
+
+    display_security_evaluation(
+        result
+    )
+
+    if result.passed:
+
+        return 0
+
+    return 1
 
 # -------------------------------------------------
 # TENABLE CSV ANALYSIS
@@ -612,6 +741,13 @@ def main(
         ):
 
             return run_demo()
+
+        if (
+            args.command
+            == "security-eval"
+        ):
+
+            return run_security_eval()
 
         if (
             args.command

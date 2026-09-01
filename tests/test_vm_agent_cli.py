@@ -246,6 +246,151 @@ def test_cli_analyzes_three_file_tenable_workflow(
         in output
     )
 
+# -------------------------------------------------
+# SECURITY EVALUATION COMMAND
+# -------------------------------------------------
+
+
+def test_security_eval_command_returns_zero_on_pass(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    result = SimpleNamespace(
+        total_cases=12,
+        adversarial_cases=10,
+        benign_cases=2,
+        passed_cases=12,
+        failed_cases=0,
+        false_negatives=0,
+        false_positives=0,
+        category_mismatches=0,
+        passed=True,
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda: result,
+    )
+
+    exit_code = vm_agent.main(
+        [
+            "security-eval",
+        ]
+    )
+
+    output = (
+        capsys
+        .readouterr()
+        .out
+    )
+
+    assert exit_code == 0
+
+    assert (
+        "VM AI AGENT - SECURITY EVALUATION"
+        in output
+    )
+
+    assert (
+        "Total Cases: 12"
+        in output
+    )
+
+    assert (
+        "Adversarial Cases: 10"
+        in output
+    )
+
+    assert (
+        "Benign Cases: 2"
+        in output
+    )
+
+    assert (
+        "False Negatives: 0"
+        in output
+    )
+
+    assert (
+        "False Positives: 0"
+        in output
+    )
+
+    assert (
+        "Category Mismatches: 0"
+        in output
+    )
+
+    assert (
+        "RESULT: PASS"
+        in output
+    )
+
+    assert (
+        "no approval, ticket creation, "
+        "or external execution"
+        in output
+    )
+
+
+def test_security_eval_command_returns_one_on_fail(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    result = SimpleNamespace(
+        total_cases=12,
+        adversarial_cases=10,
+        benign_cases=2,
+        passed_cases=11,
+        failed_cases=1,
+        false_negatives=1,
+        false_positives=0,
+        category_mismatches=0,
+        passed=False,
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda: result,
+    )
+
+    exit_code = vm_agent.main(
+        [
+            "security-eval",
+        ]
+    )
+
+    output = (
+        capsys
+        .readouterr()
+        .out
+    )
+
+    assert exit_code == 1
+
+    assert (
+        "Passed Cases: 11"
+        in output
+    )
+
+    assert (
+        "Failed Cases: 1"
+        in output
+    )
+
+    assert (
+        "False Negatives: 1"
+        in output
+    )
+
+    assert (
+        "RESULT: FAIL"
+        in output
+    )
 
 # -------------------------------------------------
 # PROMPT INJECTION WARNING
