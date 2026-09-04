@@ -49,6 +49,84 @@ def display_security_warning(result):
 
 
 # -------------------------------------------------
+# DISPLAY RETRIEVED SECURITY REFERENCES
+# -------------------------------------------------
+
+
+def display_retrieved_evidence(result):
+
+    evidence = (
+        result.retrieved_evidence
+    )
+
+    print()
+    print("=" * 70)
+    print(
+        "RETRIEVED SECURITY REFERENCES"
+    )
+    print("=" * 70)
+
+    if not evidence:
+
+        print()
+        print(
+            "No security reference evidence "
+            "was retrieved."
+        )
+
+        return
+
+    for position, item in enumerate(
+        evidence,
+        start=1,
+    ):
+
+        print()
+        print(
+            f"EVIDENCE {position}"
+        )
+
+        print()
+        print(
+            "Source:",
+            item.source_name
+        )
+
+        print(
+            "Source ID:",
+            item.source_id
+        )
+
+        print(
+            "Chunk:",
+            item.chunk_number
+        )
+
+        print(
+            "Chunk ID:",
+            item.chunk_id
+        )
+
+        print(
+            "Similarity:",
+            round(
+                item.similarity,
+                4
+            )
+        )
+
+        print(
+            "Trust Tier:",
+            item.trust_tier
+        )
+
+        print(
+            "Source SHA-256:",
+            item.source_sha256
+        )
+
+
+# -------------------------------------------------
 # DISPLAY PREPARED WORKFLOW
 # -------------------------------------------------
 
@@ -69,11 +147,30 @@ def display_prepared_workflow(result):
     print("=" * 70)
 
     print()
-    print("Workflow ID:", result.workflow_id)
-    print("Asset:", result.asset_name)
-    print("CVE:", result.cve)
-    print("Risk Score:", risk.score)
-    print("Risk Rating:", risk.rating)
+    print(
+        "Workflow ID:",
+        result.workflow_id
+    )
+
+    print(
+        "Asset:",
+        result.asset_name
+    )
+
+    print(
+        "CVE:",
+        result.cve
+    )
+
+    print(
+        "Risk Score:",
+        risk.score
+    )
+
+    print(
+        "Risk Rating:",
+        risk.rating
+    )
 
     print(
         "Remediation SLA:",
@@ -91,38 +188,77 @@ def display_prepared_workflow(result):
     print("=" * 70)
 
     print()
-    print("Executive Summary:")
-    print(analysis.executive_summary)
+    print(
+        "Executive Summary:"
+    )
+
+    print(
+        analysis.executive_summary
+    )
 
     print()
-    print("Rationale:")
+    print(
+        "Rationale:"
+    )
 
     for item in analysis.rationale:
-        print("-", item)
+        print(
+            "-",
+            item
+        )
 
     print()
-    print("Recommended Remediation:")
-    print(analysis.remediation)
+    print(
+        "Recommended Remediation:"
+    )
+
+    print(
+        analysis.remediation
+    )
 
     print()
-    print("Compensating Controls:")
+    print(
+        "Compensating Controls:"
+    )
 
-    for control in analysis.compensating_controls:
-        print("-", control)
-
-    print()
-    print("Validation Steps:")
-
-    for step in analysis.validation_steps:
-        print("-", step)
-
-    print()
-    print("AI Confidence:")
-    print(analysis.confidence)
+    for control in (
+        analysis.compensating_controls
+    ):
+        print(
+            "-",
+            control
+        )
 
     print()
-    print("Human Review Required:")
-    print(analysis.requires_human_review)
+    print(
+        "Validation Steps:"
+    )
+
+    for step in (
+        analysis.validation_steps
+    ):
+        print(
+            "-",
+            step
+        )
+
+    print()
+    print(
+        "AI Confidence:"
+    )
+
+    print(
+        analysis.confidence
+    )
+
+    print()
+    print(
+        "Human Review Required:"
+    )
+
+    print(
+        analysis.requires_human_review
+    )
 
     # -------------------------------------------------
     # VALIDATED TICKET DRAFT
@@ -134,50 +270,108 @@ def display_prepared_workflow(result):
     print("=" * 70)
 
     print()
-    print("Short Description:")
-    print(ticket.short_description)
+    print(
+        "Short Description:"
+    )
+
+    print(
+        ticket.short_description
+    )
 
     print()
-    print("Priority:")
-    print(ticket.priority)
+    print(
+        "Priority:"
+    )
+
+    print(
+        ticket.priority
+    )
 
     print()
-    print("Assignment Group:")
-    print(ticket.assignment_group)
+    print(
+        "Assignment Group:"
+    )
+
+    print(
+        ticket.assignment_group
+    )
 
     print()
-    print("Asset:")
-    print(ticket.asset_name)
+    print(
+        "Asset:"
+    )
+
+    print(
+        ticket.asset_name
+    )
 
     print()
-    print("CVE:")
-    print(ticket.cve)
+    print(
+        "CVE:"
+    )
+
+    print(
+        ticket.cve
+    )
 
     print()
-    print("Risk Rating:")
-    print(ticket.risk_rating)
+    print(
+        "Risk Rating:"
+    )
+
+    print(
+        ticket.risk_rating
+    )
 
     print()
-    print("Risk Score:")
-    print(ticket.risk_score)
+    print(
+        "Risk Score:"
+    )
+
+    print(
+        ticket.risk_score
+    )
 
     print()
-    print("SLA:")
-    print(ticket.sla_hours, "hours")
+    print(
+        "SLA:"
+    )
+
+    print(
+        ticket.sla_hours,
+        "hours"
+    )
 
     print()
-    print("Description:")
-    print(ticket.description)
+    print(
+        "Description:"
+    )
+
+    print(
+        ticket.description
+    )
 
     print()
-    print("Remediation:")
-    print(ticket.remediation)
+    print(
+        "Remediation:"
+    )
+
+    print(
+        ticket.remediation
+    )
 
     print()
-    print("Validation Steps:")
+    print(
+        "Validation Steps:"
+    )
 
-    for step in ticket.validation_steps:
-        print("-", step)
+    for step in (
+        ticket.validation_steps
+    ):
+        print(
+            "-",
+            step
+        )
 
 
 # -------------------------------------------------
@@ -246,7 +440,15 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 3. DISPLAY PREPARED RESULT
+    # 3. DISPLAY RETRIEVED SECURITY REFERENCES
+    # -------------------------------------------------
+
+    display_retrieved_evidence(
+        result
+    )
+
+    # -------------------------------------------------
+    # 4. DISPLAY PREPARED RESULT
     # -------------------------------------------------
 
     display_prepared_workflow(
@@ -254,7 +456,7 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 4. HUMAN APPROVAL GATE
+    # 5. HUMAN APPROVAL GATE
     # -------------------------------------------------
 
     print()
@@ -263,7 +465,9 @@ def run_workflow():
     print("=" * 70)
 
     print()
-    print("No ticket has been created.")
+    print(
+        "No ticket has been created."
+    )
 
     approval_input = input(
         "\nType APPROVE to create the mock ticket, "
@@ -271,7 +475,7 @@ def run_workflow():
     )
 
     # -------------------------------------------------
-    # 5. APPROVE OR REJECT THROUGH EXECUTION SERVICE
+    # 6. APPROVE OR REJECT THROUGH EXECUTION SERVICE
     # -------------------------------------------------
 
     if (
@@ -317,7 +521,9 @@ def run_workflow():
         )
 
         print()
-        print("No ticket was created.")
+        print(
+            "No ticket was created."
+        )
 
 
 # -------------------------------------------------
@@ -366,7 +572,9 @@ def main():
         )
 
         print()
-        print("Error location:")
+        print(
+            "Error location:"
+        )
 
         print(
             "Line:",

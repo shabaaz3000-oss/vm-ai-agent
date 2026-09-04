@@ -3,8 +3,10 @@ from uuid import uuid4
 
 from app.ai_analyzer import analyze_vulnerability
 from app.audit import log_event
-from app.input_security import aggregate_prompt_injection_matches
-from app.input_security import inspect_prompt_injection_data
+from app.input_security import (
+    aggregate_prompt_injection_matches,
+    inspect_prompt_injection_data,
+)
 
 from app.models import AIAnalysis
 from app.models import AssetContext
@@ -17,6 +19,9 @@ from app.models import WorkflowSecurity
 from app.providers.base import VulnerabilityProvider
 from app.providers.local_json import LocalJsonProvider
 
+from app.rag_security import secure_retrieved_evidence
+from app.retrieval_query import build_retrieval_query
+from app.retriever import KnowledgeRetriever
 from app.risk_engine import calculate_risk
 from app.ticketing import build_ticket
 
@@ -27,6 +32,16 @@ from app.ticketing import build_ticket
 
 
 DEFAULT_FINDING_ID = "FIND-0001"
+
+
+# -------------------------------------------------
+# RAG CONFIGURATION
+# -------------------------------------------------
+
+
+RAG_TOP_K = 2
+
+RAG_MIN_SIMILARITY = 0.20
 
 
 # -------------------------------------------------
@@ -124,7 +139,8 @@ def prepare_workflow(
     AI credentials.
 
     If no analyzer is supplied, the normal OpenAI
-    vulnerability analyzer is used.
+    vulnerability analyzer is used together with
+    authorized and security-inspected RAG evidence.
 
     This function:
 
@@ -132,9 +148,13 @@ def prepare_workflow(
     2. Validates relationships between provider records
     3. Detects suspicious prompt-injection content
     4. Calculates authoritative deterministic risk
-    5. Generates AI-assisted security analysis
-    6. Builds a validated ticket draft
-    7. Returns one structured WorkflowResult
+    5. Builds a constrained RAG retrieval query
+    6. Retrieves authorized security reference evidence
+    7. Inspects retrieved evidence for prompt injection
+    8. Quarantines suspicious retrieved evidence
+    9. Generates AI-assisted security analysis
+    10. Builds a validated ticket draft
+    11. Returns one structured WorkflowResult
 
     It does NOT:
 
@@ -313,25 +333,187 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 7. SELECT ANALYZER
+    # 7. RETRIEVE SECURITY REFERENCE EVIDENCE
     # -------------------------------------------------
 
-    analysis_function = (
-        analyzer
-        if analyzer is not None
-        else analyze_vulnerability
-    )
+    retrieved_evidence = []
+
+    safe_retrieved_evidence = []
+
+    if analyzer is None:
+
+        retrieval_query = (
+            build_retrieval_query(
+                finding=finding,
+                asset=asset,
+                risk=risk,
+            )
+        )
+
+        try:
+
+            knowledge_retriever = (
+                KnowledgeRetriever
+                .from_trusted_knowledge()
+            )
+
+            retrieved_evidence = (
+                knowledge_retriever.retrieve(
+                    query=
+                        retrieval_query,
+
+                    top_k=
+                        RAG_TOP_K,
+
+                    min_similarity=
+                        RAG_MIN_SIMILARITY,
+
+                    caller_access=
+                        "standard",
+                )
+            )
+
+            log_event(
+                "RAG_EVIDENCE_RETRIEVED",
+                {
+                    "workflow_id":
+                        workflow_id,
+
+                    "finding_id":
+                        finding.finding_id,
+
+                    "evidence_count":
+                        len(
+                            retrieved_evidence
+                        ),
+
+                    "sources":
+                        [
+                            {
+                                "source_id":
+                                    item.source_id,
+
+                                "source_name":
+                                    item.source_name,
+
+                                "chunk_id":
+                                    item.chunk_id,
+
+                                "similarity":
+                                    round(
+                                        item.similarity,
+                                        4
+                                    ),
+
+                                "trust_tier":
+                                    item.trust_tier,
+
+                                "access_level":
+                                    item.access_level,
+                            }
+
+                            for item in
+                            retrieved_evidence
+                        ],
+                }
+            )
+
+            # -------------------------------------------------
+            # 8. INSPECT AND QUARANTINE RAG EVIDENCE
+            # -------------------------------------------------
+
+            rag_security_result = (
+                secure_retrieved_evidence(
+                    retrieved_evidence
+                )
+            )
+
+            safe_retrieved_evidence = (
+                rag_security_result
+                .safe_evidence
+            )
+
+            if (
+                rag_security_result
+                .quarantined_chunk_ids
+            ):
+
+                log_event(
+                    "RAG_PROMPT_INJECTION_QUARANTINED",
+                    {
+                        "workflow_id":
+                            workflow_id,
+
+                        "finding_id":
+                            finding.finding_id,
+
+                        "quarantined_chunk_ids":
+                            rag_security_result
+                            .quarantined_chunk_ids,
+
+                        "categories":
+                            rag_security_result
+                            .categories,
+
+                        "retrieved_count":
+                            len(
+                                retrieved_evidence
+                            ),
+
+                        "safe_count":
+                            len(
+                                safe_retrieved_evidence
+                            ),
+                    }
+                )
+
+        except Exception as error:
+
+            log_event(
+                "RAG_RETRIEVAL_FAILED",
+                {
+                    "workflow_id":
+                        workflow_id,
+
+                    "finding_id":
+                        finding.finding_id,
+
+                    "error_type":
+                        type(error).__name__,
+                }
+            )
+
+            retrieved_evidence = []
+
+            safe_retrieved_evidence = []
 
     # -------------------------------------------------
-    # 8. GENERATE AI / ADVISORY ANALYSIS
+    # 9. GENERATE AI / ADVISORY ANALYSIS
     # -------------------------------------------------
 
-    analysis = analysis_function(
-        finding=finding,
-        asset=asset,
-        threat=threat,
-        risk=risk
-    )
+    if analyzer is None:
+
+        analysis = analyze_vulnerability(
+            finding=finding,
+            asset=asset,
+            threat=threat,
+            risk=risk,
+
+            # Only evidence that passed the
+            # deterministic RAG security gate
+            # is allowed to reach the LLM.
+            evidence=
+                safe_retrieved_evidence,
+        )
+
+    else:
+
+        analysis = analyzer(
+            finding=finding,
+            asset=asset,
+            threat=threat,
+            risk=risk,
+        )
 
     log_event(
         "AI_ANALYSIS_GENERATED",
@@ -344,11 +526,16 @@ def prepare_workflow(
 
             "requires_human_review":
                 analysis.requires_human_review,
+
+            "rag_evidence_count":
+                len(
+                    safe_retrieved_evidence
+                ),
         }
     )
 
     # -------------------------------------------------
-    # 9. BUILD DETERMINISTIC TICKET DRAFT
+    # 10. BUILD DETERMINISTIC TICKET DRAFT
     # -------------------------------------------------
 
     ticket = build_ticket(
@@ -379,7 +566,7 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 10. BUILD SECURITY METADATA
+    # 11. BUILD SECURITY METADATA
     # -------------------------------------------------
 
     security = WorkflowSecurity(
@@ -397,7 +584,7 @@ def prepare_workflow(
     )
 
     # -------------------------------------------------
-    # 11. RETURN STRUCTURED RESULT
+    # 12. RETURN STRUCTURED RESULT
     # -------------------------------------------------
 
     return WorkflowResult(
@@ -424,6 +611,12 @@ def prepare_workflow(
 
         analysis=
             analysis,
+
+        # Only evidence that was actually permitted
+        # to reach the AI is exposed as source
+        # attribution in the workflow result.
+        retrieved_evidence=
+            safe_retrieved_evidence,
 
         ticket=
             ticket

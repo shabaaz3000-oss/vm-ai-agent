@@ -11,6 +11,7 @@ from app.demo_analyzer import (
 )
 
 from app.security_evaluator import (
+    run_rag_security_evaluation,
     run_security_evaluation,
 )
 
@@ -150,8 +151,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "security-eval",
         help=(
-            "Run the credential-free adversarial "
-            "security evaluation corpus."
+            "Run credential-free adversarial "
+            "security evaluations for prompt "
+            "injection and RAG quarantine controls."
         ),
     )
 
@@ -497,13 +499,15 @@ def display_analysis_result(
         "is required before execution."
     )
 
+
 # -------------------------------------------------
 # DISPLAY SECURITY EVALUATION
 # -------------------------------------------------
 
 
 def display_security_evaluation(
-    result,
+    prompt_result,
+    rag_result,
 ) -> None:
 
     print()
@@ -513,62 +517,162 @@ def display_security_evaluation(
     )
     print("=" * 70)
 
+    # -------------------------------------------------
+    # PROMPT-INJECTION DETECTION
+    # -------------------------------------------------
+
+    print()
+    print(
+        "PROMPT-INJECTION DETECTION"
+    )
+    print("-" * 70)
+
     print()
     print(
         "Total Cases:",
-        result.total_cases,
+        prompt_result.total_cases,
     )
 
     print(
         "Adversarial Cases:",
-        result.adversarial_cases,
+        prompt_result.adversarial_cases,
     )
 
     print(
         "Benign Cases:",
-        result.benign_cases,
+        prompt_result.benign_cases,
     )
 
     print()
     print(
         "Passed Cases:",
-        result.passed_cases,
+        prompt_result.passed_cases,
     )
 
     print(
         "Failed Cases:",
-        result.failed_cases,
+        prompt_result.failed_cases,
     )
 
     print()
     print(
         "False Negatives:",
-        result.false_negatives,
+        prompt_result.false_negatives,
     )
 
     print(
         "False Positives:",
-        result.false_positives,
+        prompt_result.false_positives,
     )
 
     print(
         "Category Mismatches:",
-        result.category_mismatches,
+        prompt_result.category_mismatches,
     )
 
     print()
-    print("=" * 70)
 
-    if result.passed:
+    if prompt_result.passed:
 
         print(
-            "RESULT: PASS"
+            "Prompt-Injection Result: PASS"
         )
 
     else:
 
         print(
-            "RESULT: FAIL"
+            "Prompt-Injection Result: FAIL"
+        )
+
+    # -------------------------------------------------
+    # RAG QUARANTINE ENFORCEMENT
+    # -------------------------------------------------
+
+    print()
+    print(
+        "RAG QUARANTINE ENFORCEMENT"
+    )
+    print("-" * 70)
+
+    print()
+    print(
+        "Total Cases:",
+        rag_result.total_cases,
+    )
+
+    print(
+        "Malicious Cases:",
+        rag_result.malicious_cases,
+    )
+
+    print(
+        "Benign Cases:",
+        rag_result.benign_cases,
+    )
+
+    print()
+    print(
+        "Passed Cases:",
+        rag_result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        rag_result.failed_cases,
+    )
+
+    print()
+    print(
+        "Missed Quarantines:",
+        rag_result.missed_quarantines,
+    )
+
+    print(
+        "False Quarantines:",
+        rag_result.false_quarantines,
+    )
+
+    print(
+        "Category Mismatches:",
+        rag_result.category_mismatches,
+    )
+
+    print()
+
+    if rag_result.passed:
+
+        print(
+            "RAG Quarantine Result: PASS"
+        )
+
+    else:
+
+        print(
+            "RAG Quarantine Result: FAIL"
+        )
+
+    # -------------------------------------------------
+    # OVERALL RESULT
+    # -------------------------------------------------
+
+    overall_passed = (
+        prompt_result.passed
+        and rag_result.passed
+    )
+
+    print()
+    print("=" * 70)
+
+    if overall_passed:
+
+        print(
+            "OVERALL SECURITY EVALUATION: PASS"
+        )
+
+    else:
+
+        print(
+            "OVERALL SECURITY EVALUATION: FAIL"
         )
 
     print("=" * 70)
@@ -578,6 +682,7 @@ def display_security_evaluation(
         "This evaluation performs no approval, "
         "ticket creation, or external execution."
     )
+
 
 # -------------------------------------------------
 # PORTFOLIO DEMO
@@ -639,6 +744,7 @@ def run_demo() -> int:
 
     return 0
 
+
 # -------------------------------------------------
 # SECURITY EVALUATION
 # -------------------------------------------------
@@ -647,30 +753,43 @@ def run_demo() -> int:
 def run_security_eval() -> int:
 
     """
-    Run the local adversarial security evaluation.
+    Run the local adversarial security evaluations.
 
     This command:
 
-    - reads the repository evaluation corpus
-    - runs prompt-injection detection
-    - reports false negatives and false positives
+    - evaluates prompt-injection detection
+    - evaluates RAG quarantine enforcement
+    - reports false negatives
+    - reports false positives
+    - reports missed quarantines
+    - reports false quarantines
+    - reports category mismatches
     - requires no external credentials
     - performs no approval or ticket execution
     """
 
-    result = (
+    prompt_result = (
         run_security_evaluation()
     )
 
-    display_security_evaluation(
-        result
+    rag_result = (
+        run_rag_security_evaluation()
     )
 
-    if result.passed:
+    display_security_evaluation(
+        prompt_result,
+        rag_result,
+    )
+
+    if (
+        prompt_result.passed
+        and rag_result.passed
+    ):
 
         return 0
 
     return 1
+
 
 # -------------------------------------------------
 # TENABLE CSV ANALYSIS

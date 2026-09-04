@@ -72,6 +72,130 @@ class RiskResult(BaseModel):
     factors: list[str]
 
 
+# -------------------------------------------------
+# RAG KNOWLEDGE MODELS
+# -------------------------------------------------
+
+
+class KnowledgeDocument(BaseModel):
+
+    source_id: str = Field(
+        min_length=1,
+        max_length=128
+    )
+
+    source_name: str = Field(
+        min_length=1,
+        max_length=255
+    )
+
+    content: str = Field(
+        min_length=1,
+        max_length=100_000
+    )
+
+    content_sha256: str = Field(
+        pattern=r"^[a-f0-9]{64}$"
+    )
+
+    trust_tier: Literal[
+        "trusted_reference"
+    ] = "trusted_reference"
+
+    access_level: Literal[
+        "standard",
+        "restricted"
+    ] = "standard"
+
+
+class KnowledgeChunk(BaseModel):
+
+    chunk_id: str = Field(
+        min_length=1,
+        max_length=255
+    )
+
+    source_id: str = Field(
+        min_length=1,
+        max_length=128
+    )
+
+    source_name: str = Field(
+        min_length=1,
+        max_length=255
+    )
+
+    chunk_number: int = Field(
+        ge=0
+    )
+
+    content: str = Field(
+        min_length=1
+    )
+
+    source_sha256: str = Field(
+        pattern=r"^[a-f0-9]{64}$"
+    )
+
+    trust_tier: Literal[
+        "trusted_reference"
+    ] = "trusted_reference"
+
+    access_level: Literal[
+        "standard",
+        "restricted"
+    ] = "standard"
+
+
+class RetrievedEvidence(BaseModel):
+
+    source_id: str = Field(
+        min_length=1,
+        max_length=128
+    )
+
+    source_name: str = Field(
+        min_length=1,
+        max_length=255
+    )
+
+    chunk_id: str = Field(
+        min_length=1,
+        max_length=255
+    )
+
+    chunk_number: int = Field(
+        ge=0
+    )
+
+    content: str = Field(
+        min_length=1
+    )
+
+    similarity: float = Field(
+        ge=-1.0,
+        le=1.0
+    )
+
+    source_sha256: str = Field(
+        pattern=r"^[a-f0-9]{64}$"
+    )
+
+    trust_tier: Literal[
+        "trusted_reference"
+    ] = "trusted_reference"
+
+    access_level: Literal[
+        "standard",
+        "restricted"
+    ] = "standard"
+
+
+# -------------------------------------------------
+# AI ANALYSIS MODEL
+# -------------------------------------------------
+
+
 class AIAnalysis(BaseModel):
     executive_summary: str
     rationale: list[str]
@@ -91,6 +215,11 @@ class AIAnalysis(BaseModel):
 
     ticket_summary: str
     ticket_description: str
+
+
+# -------------------------------------------------
+# TICKET MODEL
+# -------------------------------------------------
 
 
 class TicketDraft(BaseModel):
@@ -160,6 +289,12 @@ class WorkflowResult(BaseModel):
     security: WorkflowSecurity
 
     analysis: AIAnalysis
+
+    retrieved_evidence: list[
+        RetrievedEvidence
+    ] = Field(
+        default_factory=list
+    )
 
     ticket: TicketDraft
 

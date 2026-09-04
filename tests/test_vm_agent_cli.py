@@ -251,27 +251,95 @@ def test_cli_analyzes_three_file_tenable_workflow(
 # -------------------------------------------------
 
 
-def test_security_eval_command_returns_zero_on_pass(
+def make_prompt_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return SimpleNamespace(
+        total_cases=12,
+        adversarial_cases=10,
+        benign_cases=2,
+
+        passed_cases=(
+            12
+            if passed
+            else 11
+        ),
+
+        failed_cases=(
+            0
+            if passed
+            else 1
+        ),
+
+        false_negatives=(
+            0
+            if passed
+            else 1
+        ),
+
+        false_positives=0,
+        category_mismatches=0,
+        passed=passed,
+    )
+
+
+def make_rag_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return SimpleNamespace(
+        total_cases=8,
+        malicious_cases=6,
+        benign_cases=2,
+
+        passed_cases=(
+            8
+            if passed
+            else 7
+        ),
+
+        failed_cases=(
+            0
+            if passed
+            else 1
+        ),
+
+        missed_quarantines=(
+            0
+            if passed
+            else 1
+        ),
+
+        false_quarantines=0,
+        category_mismatches=0,
+        passed=passed,
+    )
+
+
+def test_security_eval_command_returns_zero_when_all_suites_pass(
     monkeypatch,
     capsys,
 ) -> None:
 
-    result = SimpleNamespace(
-        total_cases=12,
-        adversarial_cases=10,
-        benign_cases=2,
-        passed_cases=12,
-        failed_cases=0,
-        false_negatives=0,
-        false_positives=0,
-        category_mismatches=0,
-        passed=True,
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda:
+            make_prompt_security_eval_result(
+                passed=True
+            ),
     )
 
     monkeypatch.setattr(
         vm_agent,
-        "run_security_evaluation",
-        lambda: result,
+        "run_rag_security_evaluation",
+        lambda:
+            make_rag_security_eval_result(
+                passed=True
+            ),
     )
 
     exit_code = vm_agent.main(
@@ -294,7 +362,12 @@ def test_security_eval_command_returns_zero_on_pass(
     )
 
     assert (
-        "Total Cases: 12"
+        "PROMPT-INJECTION DETECTION"
+        in output
+    )
+
+    assert (
+        "RAG QUARANTINE ENFORCEMENT"
         in output
     )
 
@@ -304,7 +377,7 @@ def test_security_eval_command_returns_zero_on_pass(
     )
 
     assert (
-        "Benign Cases: 2"
+        "Malicious Cases: 6"
         in output
     )
 
@@ -319,12 +392,27 @@ def test_security_eval_command_returns_zero_on_pass(
     )
 
     assert (
-        "Category Mismatches: 0"
+        "Missed Quarantines: 0"
         in output
     )
 
     assert (
-        "RESULT: PASS"
+        "False Quarantines: 0"
+        in output
+    )
+
+    assert (
+        "Prompt-Injection Result: PASS"
+        in output
+    )
+
+    assert (
+        "RAG Quarantine Result: PASS"
+        in output
+    )
+
+    assert (
+        "OVERALL SECURITY EVALUATION: PASS"
         in output
     )
 
@@ -335,27 +423,27 @@ def test_security_eval_command_returns_zero_on_pass(
     )
 
 
-def test_security_eval_command_returns_one_on_fail(
+def test_security_eval_command_fails_when_prompt_suite_fails(
     monkeypatch,
     capsys,
 ) -> None:
 
-    result = SimpleNamespace(
-        total_cases=12,
-        adversarial_cases=10,
-        benign_cases=2,
-        passed_cases=11,
-        failed_cases=1,
-        false_negatives=1,
-        false_positives=0,
-        category_mismatches=0,
-        passed=False,
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda:
+            make_prompt_security_eval_result(
+                passed=False
+            ),
     )
 
     monkeypatch.setattr(
         vm_agent,
-        "run_security_evaluation",
-        lambda: result,
+        "run_rag_security_evaluation",
+        lambda:
+            make_rag_security_eval_result(
+                passed=True
+            ),
     )
 
     exit_code = vm_agent.main(
@@ -373,22 +461,80 @@ def test_security_eval_command_returns_one_on_fail(
     assert exit_code == 1
 
     assert (
-        "Passed Cases: 11"
-        in output
-    )
-
-    assert (
-        "Failed Cases: 1"
-        in output
-    )
-
-    assert (
         "False Negatives: 1"
         in output
     )
 
     assert (
-        "RESULT: FAIL"
+        "Prompt-Injection Result: FAIL"
+        in output
+    )
+
+    assert (
+        "RAG Quarantine Result: PASS"
+        in output
+    )
+
+    assert (
+        "OVERALL SECURITY EVALUATION: FAIL"
+        in output
+    )
+
+
+def test_security_eval_command_fails_when_rag_suite_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda:
+            make_prompt_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_rag_security_evaluation",
+        lambda:
+            make_rag_security_eval_result(
+                passed=False
+            ),
+    )
+
+    exit_code = vm_agent.main(
+        [
+            "security-eval",
+        ]
+    )
+
+    output = (
+        capsys
+        .readouterr()
+        .out
+    )
+
+    assert exit_code == 1
+
+    assert (
+        "Missed Quarantines: 1"
+        in output
+    )
+
+    assert (
+        "Prompt-Injection Result: PASS"
+        in output
+    )
+
+    assert (
+        "RAG Quarantine Result: FAIL"
+        in output
+    )
+
+    assert (
+        "OVERALL SECURITY EVALUATION: FAIL"
         in output
     )
 
