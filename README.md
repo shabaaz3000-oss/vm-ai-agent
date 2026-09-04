@@ -2,7 +2,7 @@
 
 [![Security CI](https://github.com/shabaaz3000-oss/vm-ai-agent/actions/workflows/security-ci.yml/badge.svg)](https://github.com/shabaaz3000-oss/vm-ai-agent/actions/workflows/security-ci.yml)
 
-A security-focused AI-assisted vulnerability management workflow that combines vulnerability scanner data, enterprise asset context, deterministic risk policy, AI advisory analysis, human approval, and controlled ticket execution.
+A security-focused AI-assisted vulnerability management workflow that combines vulnerability scanner data, enterprise asset context, deterministic risk policy, secure retrieval-augmented generation (RAG), AI advisory analysis, human approval, and controlled ticket execution.
 
 The project is designed to demonstrate how an AI agent can assist a vulnerability management program **without allowing the model to become the security decision-maker**.
 
@@ -100,13 +100,13 @@ The CVE and infrastructure data used by the portfolio demo are synthetic and are
 
 ## Adversarial Security Evaluation
 
-The repository includes a credential-free adversarial evaluation command for testing the prompt-injection detection layer:
+The repository includes a credential-free adversarial evaluation command that exercises two independent AI-security control families:
 
 ```bash
 python vm_agent.py security-eval
 ```
 
-The evaluation uses the repository's synthetic adversarial corpus and requires:
+The command requires:
 
 ```text
 No Tenable API credentials
@@ -115,33 +115,11 @@ No ServiceNow credentials
 No external execution
 ```
 
-The current corpus contains malicious and benign inputs that exercise security categories including:
+### Prompt-Injection Detection
 
-- instruction override attempts
-- authority impersonation
-- human-approval bypass
-- risk manipulation
-- SLA manipulation
-- ticket-priority manipulation
-- system-prompt requests
-- normal benign vulnerability and remediation text
+The first suite evaluates malicious and benign text against the prompt-injection detector.
 
-The evaluator tracks three important failure modes:
-
-```text
-False Negative
-A malicious case was not detected.
-
-False Positive
-Benign content was incorrectly detected as malicious.
-
-Category Mismatch
-An attack was detected, but the expected security category was not identified.
-```
-
-A detection under the wrong category is therefore **not counted as a successful evaluation case**.
-
-Current credential-free evaluation result:
+Current result:
 
 ```text
 Total Cases: 12
@@ -155,18 +133,66 @@ False Negatives: 0
 False Positives: 0
 Category Mismatches: 0
 
-RESULT: PASS
+Prompt-Injection Result: PASS
 ```
 
-The evaluation command returns a non-zero process exit code when an evaluation fails, allowing the same security checks to be incorporated into automated validation and CI workflows.
+The corpus exercises categories including:
 
-The evaluation performs no workflow approval, ticket creation, or external execution.
+- instruction override attempts
+- authority impersonation
+- human-approval bypass
+- risk manipulation
+- SLA manipulation
+- ticket-priority manipulation
+- system-prompt requests
+- normal benign vulnerability and remediation text
+
+### RAG Quarantine Enforcement
+
+The second suite evaluates whether malicious retrieved evidence is quarantined before it can reach the advisory model.
+
+Current result:
+
+```text
+Total Cases: 8
+Malicious Cases: 6
+Benign Cases: 2
+
+Passed Cases: 8
+Failed Cases: 0
+
+Missed Quarantines: 0
+False Quarantines: 0
+Category Mismatches: 0
+
+RAG Quarantine Result: PASS
+```
+
+RAG evaluation cases are deliberately modeled as:
+
+```text
+trusted_reference
+standard access
+similarity = 0.99
+```
+
+so that highly relevant and otherwise authorized content still fails if it contains malicious instructions.
+
+The combined command currently reports:
+
+```text
+OVERALL SECURITY EVALUATION: PASS
+```
+
+and returns a non-zero process exit code if either security suite fails.
+
+The evaluation performs no workflow approval, ticket creation, network integration, or external execution.
 
 ---
 
 ## Security Architecture
 
-The high-level workflow is:
+The workflow separates authoritative security policy from advisory AI behavior.
 
 ```mermaid
 flowchart TD
@@ -177,30 +203,38 @@ flowchart TD
     D --> E["Recursive Prompt Injection Inspection"]
 
     E --> F["Deterministic Risk Engine"]
-
     F --> G["Authoritative Security Decision<br/>Risk Score / Rating / SLA / Priority"]
 
+    G --> Q["Constrained Retrieval Query"]
+
+    KB["Knowledge Base<br/>Standard + Restricted"] --> KI["Secure Ingestion<br/>Provenance / SHA-256 / Chunking"]
+    KI --> VX["Embeddings + Vector Index"]
+    VX --> SR["Semantic Retrieval"]
+
+    Q --> SR
+    SR --> AZ["Retrieval Authorization"]
+    AZ --> RI["Retrieved-Evidence Injection Inspection"]
+
+    RI -->|"suspicious"| X["Quarantine + Audit"]
+    RI -->|"clean"| RC["RAG Context Boundary<br/>Retrieved text is data, not authority"]
+
     G --> H["AI Advisory Analyzer<br/>Non-Authoritative"]
+    RC --> H
 
     H --> I["Proposed Remediation + Ticket Draft"]
-
     I --> R["Server-Controlled Ticket Routing"]
-
     R --> J["Human Approval Boundary"]
-
     J --> K["SHA-256 Ticket Fingerprint<br/>Approval Bound to Exact Ticket"]
-
     K --> L["Atomic Execution Claim"]
-
     L --> M["Controlled Ticket Execution"]
-
     L -. "uncertain external outcome" .-> N["NEEDS_REVIEW"]
-
     N --> O["Human Reconciliation"]
 
     subgraph Authority["Authoritative Controls"]
         F
         G
+        AZ
+        RI
         R
         J
         K
@@ -208,6 +242,7 @@ flowchart TD
     end
 
     subgraph Advisory["AI Advisory Boundary"]
+        RC
         H
         I
     end
@@ -216,6 +251,8 @@ flowchart TD
 The AI analysis is deliberately positioned **after deterministic risk calculation**.
 
 The model can explain a vulnerability and recommend remediation, but it cannot authoritatively lower the risk score, change the SLA, remove human review, choose an external assignment group, approve its own action, or create a ticket by itself.
+
+Retrieved knowledge is also treated as non-authoritative data. A source may be trusted, authorized, and highly relevant while still being quarantined if its content contains prompt-injection indicators.
 
 ---
 
@@ -331,7 +368,71 @@ A detected injection does not transfer authority to the model and cannot alter d
 
 ---
 
-### 5. Human Approval Boundary
+### 5. Secure RAG
+
+The OpenAI-backed workflow can retrieve supporting security guidance from a local trusted knowledge base.
+
+The current RAG path includes:
+
+```text
+trusted knowledge directories
+        ↓
+source provenance
+        ↓
+SHA-256 source integrity
+        ↓
+paragraph-aware chunking
+        ↓
+embeddings
+        ↓
+vector search
+        ↓
+access-level filtering
+        ↓
+retrieved-evidence prompt-injection inspection
+        ↓
+quarantine suspicious chunks
+        ↓
+explicit RAG context boundary
+        ↓
+AI advisory analysis
+```
+
+Knowledge is classified with server-controlled metadata such as:
+
+```text
+trust_tier = trusted_reference
+access_level = standard | restricted
+```
+
+A standard workflow cannot receive restricted evidence as model context.
+
+Authorization also outranks semantic relevance. In the included authorization demonstration, a restricted document with a higher similarity score is withheld from a standard caller while lower-scoring authorized evidence remains available.
+
+Retrieved text is never treated as a new instruction source merely because it came from trusted storage.
+
+If retrieved content attempts to:
+
+```text
+override instructions
+downgrade risk
+change the SLA
+bypass human approval
+change ticket priority
+request hidden prompts
+```
+
+the suspicious chunk is quarantined and excluded from the evidence sent to the model.
+
+The workflow records the quarantine event using metadata such as chunk identifiers and detection categories without placing the full malicious payload into the audit record.
+
+Source attribution exposed by the workflow represents only evidence that passed the RAG security gate and was permitted to reach the advisory model.
+
+RAG failures degrade to no retrieved evidence rather than overriding deterministic risk or stopping the authoritative workflow.
+
+---
+
+### 6. Human Approval Boundary
 
 Workflow preparation ends in:
 
@@ -349,7 +450,7 @@ The file-driven `vm_agent.py` analysis CLI does not import workflow approval or 
 
 ---
 
-### 6. Approval Is Bound to the Exact Ticket
+### 7. Approval Is Bound to the Exact Ticket
 
 Human approval is not represented as a simple reusable boolean.
 
@@ -361,7 +462,7 @@ If authoritative ticket data changes, the previous approval cannot silently auth
 
 ---
 
-### 7. Server-Side Workflow State
+### 8. Server-Side Workflow State
 
 Authoritative workflow state is maintained by the application.
 
@@ -381,7 +482,7 @@ Client attempts to supply authoritative workflow fields do not replace server-co
 
 ---
 
-### 8. Ticket Routing Is Server-Controlled
+### 9. Ticket Routing Is Server-Controlled
 
 Asset ownership can come from provider-controlled business context.
 
@@ -399,7 +500,7 @@ A future production implementation could replace this fallback with an authorita
 
 ---
 
-### 9. RBAC
+### 10. RBAC
 
 The API distinguishes security roles such as:
 
@@ -418,7 +519,7 @@ Production identity federation such as OIDC is a future enhancement.
 
 ---
 
-### 10. Atomic Execution Claim
+### 11. Atomic Execution Claim
 
 The workflow uses SQLite transaction controls to claim execution before performing an external action.
 
@@ -428,7 +529,7 @@ Execution attempts receive server-controlled state and execution metadata rather
 
 ---
 
-### 11. Uncertain Execution Is Not Blindly Retried
+### 12. Uncertain Execution Is Not Blindly Retried
 
 If execution enters an uncertain state, the workflow can move to:
 
@@ -642,7 +743,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-322 automated tests
+368 automated tests
 ```
 
 Run the complete suite with:
@@ -656,11 +757,29 @@ The test suite covers areas including:
 - Pydantic validation
 - deterministic risk calculation
 - prompt-injection detection and classification
-- adversarial security evaluation
+- provider-controlled structured-text inspection
+- secure RAG ingestion
+- source provenance and SHA-256 integrity
+- paragraph-aware knowledge chunking
+- embeddings and vector similarity
+- semantic retrieval
+- constrained retrieval-query construction
+- standard versus restricted retrieval access
+- authorization outranking semantic similarity
+- safe RAG context construction
+- retrieved-evidence prompt-injection detection
+- RAG quarantine behavior
+- RAG poisoning regression testing
+- graceful degradation when all retrieved evidence is quarantined
+- AI analyzer RAG integration
+- source attribution for safe evidence
+- adversarial prompt-injection evaluation
+- RAG quarantine evaluation
 - false-negative detection
 - false-positive detection
-- prompt-injection category integrity
-- inspection of provider-controlled structured text
+- missed-quarantine detection
+- false-quarantine detection
+- security-category integrity
 - provider normalization
 - CSV security validation
 - Tenable normalization
@@ -674,10 +793,10 @@ The test suite covers areas including:
 - uncertain-execution recovery
 - analyzer injection
 - credential-free demo behavior
-- credential-free security-evaluation behavior
+- credential-free combined security-evaluation behavior
 - prevention of AI execution authority
 
-The adversarial security evaluator specifically verifies that:
+The prompt-injection evaluator verifies that:
 
 ```text
 Malicious cases must be detected
@@ -686,7 +805,29 @@ Expected attack categories must be identified
 Wrong-category detections are evaluation failures
 False negatives are counted
 False positives are counted
-Evaluation failures return a non-zero CLI exit code
+```
+
+The RAG security evaluator verifies that:
+
+```text
+Malicious retrieved evidence must be quarantined
+Benign retrieved evidence must remain usable
+Expected attack categories must be identified
+Missed quarantines are counted
+False quarantines are counted
+Wrong-category quarantines are evaluation failures
+Highly relevant malicious evidence is still blocked
+```
+
+The workflow-level RAG regression tests also prove that poisoned evidence does not reach the analyzer and cannot change:
+
+```text
+authoritative risk score
+risk rating
+remediation SLA
+ticket priority
+human-review requirement
+workflow approval state
 ```
 
 The portfolio demo specifically includes tests proving that:
@@ -812,31 +953,41 @@ python vm_agent.py security-eval
 
 This mode also requires **no external credentials**.
 
-It loads:
+It loads two local synthetic evaluation corpora:
 
 ```text
 evals/adversarial_cases.json
+evals/rag_security_cases.json
 ```
 
-and evaluates prompt-injection detection behavior locally.
-
-The command reports:
+The command evaluates:
 
 ```text
-total cases
-adversarial cases
-benign cases
-passed cases
-failed cases
-false negatives
-false positives
-category mismatches
+PROMPT-INJECTION DETECTION
+- total cases
+- adversarial cases
+- benign cases
+- passed cases
+- failed cases
+- false negatives
+- false positives
+- category mismatches
+
+RAG QUARANTINE ENFORCEMENT
+- total cases
+- malicious cases
+- benign cases
+- passed cases
+- failed cases
+- missed quarantines
+- false quarantines
+- category mismatches
 ```
 
-A successful evaluation returns:
+The current combined result is:
 
 ```text
-RESULT: PASS
+OVERALL SECURITY EVALUATION: PASS
 ```
 
 with process exit code:
@@ -845,9 +996,9 @@ with process exit code:
 0
 ```
 
-An evaluation failure returns a non-zero exit code.
+If either suite fails, the command returns a non-zero exit code.
 
-No approval, ticket creation, network integration, or external execution occurs.
+No approval, ticket creation, network integration, model call, or external execution occurs.
 
 ---
 
@@ -922,6 +1073,9 @@ asset correlation
 enterprise context correlation
 recursive prompt-injection inspection
 deterministic risk calculation
+constrained RAG retrieval query
+retrieval authorization
+retrieved-evidence quarantine
 advisory AI analysis
 server-controlled ticket routing
 human approval boundary
@@ -1055,7 +1209,7 @@ python vm_agent.py security-eval
 A successful evaluation returns:
 
 ```text
-RESULT: PASS
+OVERALL SECURITY EVALUATION: PASS
 ```
 
 and process exit code `0`.
@@ -1083,12 +1237,19 @@ vm-ai-agent/
 |   |-- audit.py
 |   |-- auth.py
 |   |-- demo_analyzer.py
+|   |-- embeddings.py
 |   |-- execution.py
 |   |-- input_security.py
 |   |-- models.py
+|   |-- rag_context.py
+|   |-- rag_ingestion.py
+|   |-- rag_security.py
+|   |-- retrieval_query.py
+|   |-- retriever.py
 |   |-- risk_engine.py
 |   |-- security_evaluator.py
 |   |-- ticketing.py
+|   |-- vector_index.py
 |   |-- workflow.py
 |   |-- workflow_store.py
 |   |
@@ -1106,22 +1267,46 @@ vm-ai-agent/
 |       `-- tenable_sync.py
 |
 |-- data/
-|   `-- demo/
-|       |-- asset-context.csv
-|       |-- tenable-assets.csv
-|       `-- tenable-findings.csv
+|   |-- demo/
+|   |   |-- asset-context.csv
+|   |   |-- tenable-assets.csv
+|   |   `-- tenable-findings.csv
+|   |
+|   `-- knowledge/
+|       `-- trusted/
+|           |-- standard/
+|           |   `-- vulnerability_remediation.md
+|           |
+|           `-- restricted/
+|               `-- privileged_network_architecture.md
 |
 |-- evals/
-|   `-- adversarial_cases.json
+|   |-- adversarial_cases.json
+|   `-- rag_security_cases.json
 |
 |-- tests/
+|   |-- fixtures/
+|   |   `-- rag_attacks/
+|   |       `-- poisoned_remediation.md
+|   |
+|   |-- test_rag_ingestion.py
+|   |-- test_retriever.py
+|   |-- test_rag_context.py
+|   |-- test_rag_security.py
+|   |-- test_rag_quarantine.py
+|   |-- test_rag_security_evaluations.py
+|   |-- test_rag_security_evaluator.py
+|   |-- test_workflow_rag_security.py
 |   |-- test_security_evaluations.py
 |   |-- test_security_evaluator.py
-|   |-- test_workflow_security_evaluations.py
 |   `-- ...
 |
 |-- .env.example
 |-- ai_demo.py
+|-- embedding_demo.py
+|-- rag_authorization_demo.py
+|-- rag_search_demo.py
+|-- retriever_demo.py
 |-- tenable_check.py
 |-- vm_agent.py
 |-- requirements.txt
@@ -1142,8 +1327,12 @@ Current limitations include:
 - Demo API authentication uses environment-provided bearer tokens rather than enterprise OIDC.
 - The credential-free demo uses a deterministic local advisory analyzer rather than a live LLM.
 - Live Tenable API functionality requires authorized Tenable credentials.
-- Prompt-injection detection is currently pattern-based and should be one layer within a broader defense-in-depth strategy.
-- The current adversarial evaluation corpus is intentionally small and does not represent a comprehensive production AI red-team program.
+- Prompt-injection and RAG-poisoning detection are currently pattern-based and should be treated as one layer within a broader defense-in-depth strategy.
+- The current RAG implementation uses a lightweight local vector index intended for demonstration rather than a production vector database.
+- Retrieval access control currently filters evidence before model context is built, but stronger production designs should partition or authorize restricted knowledge before embedding and semantic search as well.
+- The standard/restricted knowledge classification model is server-controlled but is not yet derived from an enterprise identity, document ACL, or policy engine.
+- The RAG evaluation corpus is intentionally synthetic and small; it does not represent a comprehensive production AI red-team program.
+- The current adversarial evaluator validates known security properties but does not yet produce longitudinal scoring, trend data, or coverage metrics.
 - The current server-controlled ticket assignment uses a conservative fallback rather than production CMDB or ServiceNow routing.
 - Production secret management, distributed execution coordination, enterprise observability, and high-availability infrastructure are not yet implemented.
 
@@ -1158,12 +1347,15 @@ Potential next steps include:
 ```text
 Production ServiceNow REST integration
 OIDC / enterprise identity integration
+Identity-derived retrieval authorization
+Pre-embedding / pre-search authorization partitioning
+Production vector database integration
+Additional RAG poisoning and indirect prompt-injection cases
+Automated evaluation trend reporting
 Additional vulnerability scanner providers
 Live CISA KEV enrichment
 Live EPSS enrichment
 NVD enrichment
-Expanded adversarial evaluation corpus
-Automated evaluation trend reporting
 Trusted CMDB-backed ticket routing
 Structured security telemetry
 OpenTelemetry integration
