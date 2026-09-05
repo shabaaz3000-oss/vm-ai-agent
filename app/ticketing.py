@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from app.approval import validate_approval
+from app.approval import consume_approval
 
 from app.models import AIAnalysis
 from app.models import AssetContext
@@ -13,9 +13,19 @@ from app.models import TicketDraft
 from app.models import VulnerabilityFinding
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+)
 
-TICKET_FILE = BASE_DIR / "data" / "tickets.jsonl"
+TICKET_FILE = (
+    BASE_DIR
+    / "data"
+    / "tickets.jsonl"
+)
+
 
 # -------------------------------------------------
 # AUTHORITATIVE TICKET ROUTING
@@ -27,7 +37,14 @@ DEFAULT_ASSIGNMENT_GROUP = (
 )
 
 
-def risk_to_priority(risk_rating: str) -> str:
+# -------------------------------------------------
+# RISK TO PRIORITY
+# -------------------------------------------------
+
+
+def risk_to_priority(
+    risk_rating: str
+) -> str:
 
     mapping = {
         "CRITICAL": "P1",
@@ -36,7 +53,14 @@ def risk_to_priority(risk_rating: str) -> str:
         "LOW": "P4"
     }
 
-    return mapping[risk_rating]
+    return mapping[
+        risk_rating
+    ]
+
+
+# -------------------------------------------------
+# BUILD TICKET
+# -------------------------------------------------
 
 
 def build_ticket(
@@ -47,15 +71,19 @@ def build_ticket(
 ) -> TicketDraft:
 
     return TicketDraft(
-        short_description=analysis.ticket_summary,
+        short_description=
+            analysis.ticket_summary,
 
-        priority=risk_to_priority(
-            risk.rating
-        ),
+        priority=
+            risk_to_priority(
+                risk.rating
+            ),
 
-        asset_name=finding.asset_name,
+        asset_name=
+            finding.asset_name,
 
-        cve=finding.cve,
+        cve=
+            finding.cve,
 
         # Asset ownership is provider-controlled
         # business context and is not authoritative
@@ -63,18 +91,29 @@ def build_ticket(
         assignment_group=
             DEFAULT_ASSIGNMENT_GROUP,
 
-        risk_rating=risk.rating,
+        risk_rating=
+            risk.rating,
 
-        risk_score=risk.score,
+        risk_score=
+            risk.score,
 
-        sla_hours=risk.sla_hours,
+        sla_hours=
+            risk.sla_hours,
 
-        description=analysis.ticket_description,
+        description=
+            analysis.ticket_description,
 
-        remediation=analysis.remediation,
+        remediation=
+            analysis.remediation,
 
-        validation_steps=analysis.validation_steps
+        validation_steps=
+            analysis.validation_steps
     )
+
+
+# -------------------------------------------------
+# CREATE MOCK TICKET
+# -------------------------------------------------
 
 
 def create_mock_ticket(
@@ -85,14 +124,27 @@ def create_mock_ticket(
     # -------------------------------------------------
     # SECURITY ENFORCEMENT
     # -------------------------------------------------
+    #
+    # Approval must:
+    #
+    # - exist in the trusted server-side store
+    # - match the caller-supplied approval record
+    # - match this exact ticket
+    # - have an APPROVED decision
+    # - contain a valid approver
+    # - not have been consumed previously
+    #
+    # Successful validation consumes the approval
+    # before the external side effect occurs.
 
-    if not validate_approval(
+    if not consume_approval(
         ticket=ticket,
         approval=approval
     ):
+
         raise PermissionError(
-            "Valid approval is required "
-            "before ticket creation."
+            "Valid application-issued approval "
+            "is required before ticket creation."
         )
 
     # -------------------------------------------------
@@ -101,7 +153,8 @@ def create_mock_ticket(
 
     ticket_record = {
         "ticket_id":
-            "VM-" + uuid4().hex[:8].upper(),
+            "VM-"
+            + uuid4().hex[:8].upper(),
 
         "created_at":
             datetime.now(
@@ -109,13 +162,19 @@ def create_mock_ticket(
             ).isoformat(),
 
         "approval_id":
-            approval["approval_id"],
+            approval[
+                "approval_id"
+            ],
 
         "approved_by":
-            approval["approved_by"],
+            approval[
+                "approved_by"
+            ],
 
         "approved_at":
-            approval["approved_at"],
+            approval[
+                "approved_at"
+            ],
 
         "status":
             "OPEN",
@@ -134,7 +193,9 @@ def create_mock_ticket(
     ) as file:
 
         file.write(
-            json.dumps(ticket_record)
+            json.dumps(
+                ticket_record
+            )
             + "\n"
         )
 

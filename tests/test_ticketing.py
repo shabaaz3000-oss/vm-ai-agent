@@ -495,3 +495,69 @@ def test_create_mock_ticket_appends_records(
         first_ticket["ticket_id"]
         != second_ticket["ticket_id"]
     )
+
+# -------------------------------------------------
+# APPROVAL REPLAY PROTECTION
+# -------------------------------------------------
+
+
+def test_consumed_approval_cannot_be_reused(
+    tmp_path,
+    monkeypatch
+):
+
+    temporary_ticket_file = (
+        tmp_path
+        / "tickets.jsonl"
+    )
+
+    monkeypatch.setattr(
+        ticketing,
+        "TICKET_FILE",
+        temporary_ticket_file
+    )
+
+    ticket = make_ticket()
+
+    approval = create_approval(
+        ticket=ticket,
+        approved_by="test-analyst"
+    )
+
+    # First execution is legitimate.
+
+    first_result = (
+        ticketing.create_mock_ticket(
+            ticket=ticket,
+            approval=approval
+        )
+    )
+
+    assert (
+        first_result["ticket_id"]
+        .startswith("VM-")
+    )
+
+    # The same approval must not authorize another
+    # execution.
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        ticketing.create_mock_ticket(
+            ticket=ticket,
+            approval=approval
+        )
+
+    lines = (
+        temporary_ticket_file
+        .read_text(
+            encoding="utf-8"
+        )
+        .splitlines()
+    )
+
+    # Only the first legitimate ticket exists.
+
+    assert len(lines) == 1

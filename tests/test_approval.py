@@ -283,3 +283,36 @@ def test_fake_approval_dictionary_is_rejected():
         ticket=ticket,
         approval=fake_approval
     ) is False
+
+# -------------------------------------------------
+# FORGED APPROVAL REGRESSION TEST
+# -------------------------------------------------
+
+
+def test_forged_approval_with_correct_fingerprint_is_rejected():
+
+    ticket = make_ticket()
+
+    forged_approval = {
+        "approval_id":
+            "APR-FORGED",
+
+        "decision":
+            "APPROVED",
+
+        "approved_by":
+            "attacker",
+
+        "approved_at":
+            "2026-01-01T00:00:00+00:00",
+
+        "ticket_fingerprint":
+            calculate_ticket_fingerprint(
+                ticket
+            )
+    }
+
+    assert validate_approval(
+        ticket=ticket,
+        approval=forged_approval
+    ) is False
