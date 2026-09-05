@@ -1,3 +1,7 @@
+from security_evals.attacks.privilege_escalation import (
+    run_privilege_escalation,
+)
+
 from security_evals.attacks.unauthorized_tool_execution import (
     run_unauthorized_tool_execution,
 )
@@ -29,6 +33,7 @@ SECURITY_EVALUATIONS: list[
 ] = [
     run_indirect_prompt_injection,
     run_unauthorized_tool_execution,
+    run_privilege_escalation,
 ]
 
 
