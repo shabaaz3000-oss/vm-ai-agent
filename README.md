@@ -98,26 +98,28 @@ The CVE and infrastructure data used by the portfolio demo are synthetic and are
 
 ---
 
-## Adversarial Security Evaluation
+## AI Security Evaluation Harness
 
-The repository includes a credential-free adversarial evaluation command that exercises two independent AI-security control families:
+The project includes a credential-free adversarial security evaluation
+framework that tests security controls around the AI-assisted
+vulnerability management workflow.
+
+Run the complete framework with:
 
 ```bash
 python vm_agent.py security-eval
 ```
 
-The command requires:
+The evaluation requires no Tenable API credentials, OpenAI API
+credentials, ServiceNow credentials, approval, ticket creation, or
+external execution.
 
-```text
-No Tenable API credentials
-No OpenAI API credentials
-No ServiceNow credentials
-No external execution
-```
+The command runs three complementary security evaluation layers.
 
-### Prompt-Injection Detection
+### 1. Prompt-Injection Detection Corpus
 
-The first suite evaluates malicious and benign text against the prompt-injection detector.
+The first layer evaluates malicious and benign text against the
+deterministic prompt-injection detector.
 
 Current result:
 
@@ -136,20 +138,21 @@ Category Mismatches: 0
 Prompt-Injection Result: PASS
 ```
 
-The corpus exercises categories including:
+The corpus includes:
 
 - instruction override attempts
 - authority impersonation
-- human-approval bypass
+- human-approval bypass attempts
 - risk manipulation
 - SLA manipulation
 - ticket-priority manipulation
 - system-prompt requests
-- normal benign vulnerability and remediation text
+- benign vulnerability and remediation text
 
-### RAG Quarantine Enforcement
+### 2. RAG Quarantine Enforcement Corpus
 
-The second suite evaluates whether malicious retrieved evidence is quarantined before it can reach the advisory model.
+The second layer evaluates whether malicious retrieved evidence is
+quarantined before it can reach AI context.
 
 Current result:
 
@@ -168,25 +171,50 @@ Category Mismatches: 0
 RAG Quarantine Result: PASS
 ```
 
-RAG evaluation cases are deliberately modeled as:
+RAG attack cases include retrieved content modeled with trusted metadata
+and high semantic similarity. Trust and relevance do not make retrieved
+instructions authoritative.
+
+### 3. Standardized Attack Harness
+
+The third layer executes standardized adversarial scenarios against
+security boundaries in the application.
+
+| Attack | Security property evaluated | Result |
+| --- | --- | --- |
+| Direct Prompt Injection | Malicious user instructions are blocked before reaching the LLM | PASS |
+| Indirect Prompt Injection | Malicious provider or tool data cannot override authoritative application state | PASS |
+| Unauthorized Tool Execution | The model cannot invoke protected execution capabilities | PASS |
+| Privilege Escalation | Lower-privileged identities cannot gain approval or execution authority | PASS |
+| RAG Poisoning | Malicious retrieved content is quarantined before entering AI context | PASS |
+| Data Exfiltration | Restricted retrieved data cannot cross the standard-access boundary | PASS |
+| System Prompt Leakage | Protected-instruction canary leakage is blocked at the final-output boundary | PASS |
+
+Current standardized attack result:
 
 ```text
-trusted_reference
-standard access
-similarity = 0.99
+Passed: 7
+Failed: 0
+Total:  7
+Security Score: 100.0%
 ```
 
-so that highly relevant and otherwise authorized content still fails if it contains malicious instructions.
-
-The combined command currently reports:
+Combined result:
 
 ```text
 OVERALL SECURITY EVALUATION: PASS
 ```
 
-and returns a non-zero process exit code if either security suite fails.
+The command returns a non-zero process exit code if the prompt-injection
+corpus, RAG quarantine corpus, or any standardized attack evaluation
+fails.
 
-The evaluation performs no workflow approval, ticket creation, network integration, or external execution.
+The same public security-evaluation command is executed in GitHub
+Actions so known AI-security regressions can block a pull request.
+
+> The security score represents the percentage of defined standardized
+> attack evaluations currently passing. It does not claim that the
+> application is immune to every possible AI or agent attack.
 
 ---
 
