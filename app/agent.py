@@ -9,6 +9,7 @@ from app.audit import log_event
 
 from app.input_security import (
     aggregate_prompt_injection_matches,
+    detect_prompt_injection,
     inspect_prompt_injection_data,
 )
 
@@ -321,6 +322,37 @@ def run_agent(
 
         raise ValueError(
             "Agent request cannot be blank."
+        )
+
+    # -------------------------------------------------
+    # DIRECT PROMPT-INJECTION SECURITY GATE
+    # -------------------------------------------------
+
+    direct_injection_matches = (
+        detect_prompt_injection(
+            cleaned_request
+        )
+    )
+
+    if direct_injection_matches:
+
+        log_event(
+            "AGENT_DIRECT_PROMPT_INJECTION_BLOCKED",
+            {
+                "username":
+                    principal.username,
+
+                "role":
+                    principal.role,
+
+                "matches":
+                    direct_injection_matches,
+            },
+        )
+
+        raise PermissionError(
+            "Agent request rejected by "
+            "input security policy."
         )
 
     if openai_client is None:

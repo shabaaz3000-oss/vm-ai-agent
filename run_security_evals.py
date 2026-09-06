@@ -12,6 +12,10 @@ from security_evals.attacks.indirect_prompt_injection import (
     run_indirect_prompt_injection,
 )
 
+from security_evals.attacks.direct_prompt_injection import (
+    run_direct_prompt_injection,
+)
+
 from security_evals.models import (
     SecurityEvalResult,
 )
@@ -28,9 +32,8 @@ SecurityEvaluation = Callable[
 ]
 
 
-SECURITY_EVALUATIONS: list[
-    SecurityEvaluation
-] = [
+SECURITY_EVALUATIONS = [
+    run_direct_prompt_injection,
     run_indirect_prompt_injection,
     run_unauthorized_tool_execution,
     run_privilege_escalation,
