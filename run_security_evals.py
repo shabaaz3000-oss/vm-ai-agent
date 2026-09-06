@@ -20,6 +20,10 @@ from security_evals.attacks.rag_poisoning import (
     run_rag_poisoning,
 )
 
+from security_evals.attacks.data_exfiltration import (
+    run_data_exfiltration,
+)
+
 from security_evals.models import (
     SecurityEvalResult,
 )
@@ -42,6 +46,7 @@ SECURITY_EVALUATIONS = [
     run_unauthorized_tool_execution,
     run_privilege_escalation,
     run_rag_poisoning,
+    run_data_exfiltration,
 ]
 
 
