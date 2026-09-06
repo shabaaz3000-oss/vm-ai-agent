@@ -246,6 +246,7 @@ def test_cli_analyzes_three_file_tenable_workflow(
         in output
     )
 
+
 # -------------------------------------------------
 # SECURITY EVALUATION COMMAND
 # -------------------------------------------------
@@ -319,6 +320,53 @@ def make_rag_security_eval_result(
     )
 
 
+def make_attack_security_eval_results(
+    *,
+    passed: bool = True,
+):
+
+    attack_names = [
+        "Direct Prompt Injection",
+        "Indirect Prompt Injection",
+        "Unauthorized Tool Execution",
+        "Privilege Escalation",
+        "RAG Poisoning",
+        "Data Exfiltration",
+        "System Prompt Leakage",
+    ]
+
+    return [
+        SimpleNamespace(
+            attack_name=
+                attack_name,
+
+            category=
+                "security_eval",
+
+            severity=
+                "critical",
+
+            passed=
+                passed,
+
+            expected_behavior=(
+                "Security control blocks attack."
+            ),
+
+            observed_behavior=(
+                "Attack blocked."
+                if passed
+                else "Attack succeeded."
+            ),
+
+            evidence=[],
+        )
+
+        for attack_name
+        in attack_names
+    ]
+
+
 def test_security_eval_command_returns_zero_when_all_suites_pass(
     monkeypatch,
     capsys,
@@ -338,6 +386,15 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
         "run_rag_security_evaluation",
         lambda:
             make_rag_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluations",
+        lambda:
+            make_attack_security_eval_results(
                 passed=True
             ),
     )
@@ -368,6 +425,21 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
 
     assert (
         "RAG QUARANTINE ENFORCEMENT"
+        in output
+    )
+
+    assert (
+        "STANDARDIZED ATTACK HARNESS"
+        in output
+    )
+
+    assert (
+        "Direct Prompt Injection"
+        in output
+    )
+
+    assert (
+        "System Prompt Leakage"
         in output
     )
 
@@ -412,6 +484,21 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
     )
 
     assert (
+        "Passed: 7"
+        in output
+    )
+
+    assert (
+        "Failed: 0"
+        in output
+    )
+
+    assert (
+        "Security Score: 100.0%"
+        in output
+    )
+
+    assert (
         "OVERALL SECURITY EVALUATION: PASS"
         in output
     )
@@ -442,6 +529,15 @@ def test_security_eval_command_fails_when_prompt_suite_fails(
         "run_rag_security_evaluation",
         lambda:
             make_rag_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluations",
+        lambda:
+            make_attack_security_eval_results(
                 passed=True
             ),
     )
@@ -504,6 +600,15 @@ def test_security_eval_command_fails_when_rag_suite_fails(
             ),
     )
 
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluations",
+        lambda:
+            make_attack_security_eval_results(
+                passed=True
+            ),
+    )
+
     exit_code = vm_agent.main(
         [
             "security-eval",
@@ -537,6 +642,83 @@ def test_security_eval_command_fails_when_rag_suite_fails(
         "OVERALL SECURITY EVALUATION: FAIL"
         in output
     )
+
+
+def test_security_eval_command_fails_when_attack_harness_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda:
+            make_prompt_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_rag_security_evaluation",
+        lambda:
+            make_rag_security_eval_result(
+                passed=True
+            ),
+    )
+
+    attack_results = (
+        make_attack_security_eval_results(
+            passed=True
+        )
+    )
+
+    attack_results[
+        -1
+    ].passed = False
+
+    attack_results[
+        -1
+    ].observed_behavior = (
+        "Protected system prompt was exposed."
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluations",
+        lambda:
+            attack_results,
+    )
+
+    exit_code = vm_agent.main(
+        [
+            "security-eval",
+        ]
+    )
+
+    output = (
+        capsys
+        .readouterr()
+        .out
+    )
+
+    assert exit_code == 1
+
+    assert (
+        "System Prompt Leakage"
+        in output
+    )
+
+    assert (
+        "FAIL"
+        in output
+    )
+
+    assert (
+        "OVERALL SECURITY EVALUATION: FAIL"
+        in output
+    )
+
 
 # -------------------------------------------------
 # PROMPT INJECTION WARNING

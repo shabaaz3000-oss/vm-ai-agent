@@ -15,6 +15,11 @@ from app.security_evaluator import (
     run_security_evaluation,
 )
 
+from run_security_evals import (
+    calculate_security_score,
+    run_security_evaluations,
+)
+
 from app.providers.asset_context_csv import (
     AssetContextCsvError,
 )
@@ -42,26 +47,31 @@ PROJECT_ROOT = (
     .parent
 )
 
+
 DEMO_DATA_DIR = (
     PROJECT_ROOT
     / "data"
     / "demo"
 )
 
+
 DEMO_FINDINGS_PATH = (
     DEMO_DATA_DIR
     / "tenable-findings.csv"
 )
+
 
 DEMO_ASSETS_PATH = (
     DEMO_DATA_DIR
     / "tenable-assets.csv"
 )
 
+
 DEMO_CONTEXT_PATH = (
     DEMO_DATA_DIR
     / "asset-context.csv"
 )
+
 
 DEMO_FINDING_ID = (
     "FIND-DEMO-0001"
@@ -151,9 +161,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "security-eval",
         help=(
-            "Run credential-free adversarial "
-            "security evaluations for prompt "
-            "injection and RAG quarantine controls."
+            "Run the complete credential-free "
+            "AI security evaluation framework."
         ),
     )
 
@@ -220,11 +229,17 @@ def build_parser() -> argparse.ArgumentParser:
 def display_demo_notice() -> None:
 
     print()
+
     print("=" * 70)
-    print("VM AI AGENT - PORTFOLIO DEMO")
+
+    print(
+        "VM AI AGENT - PORTFOLIO DEMO"
+    )
+
     print("=" * 70)
 
     print()
+
     print(
         "This demonstration uses synthetic, "
         "sanitized vulnerability data."
@@ -240,6 +255,7 @@ def display_demo_notice() -> None:
     )
 
     print()
+
     print(
         "The demo analyzer is deterministic and "
         "runs locally."
@@ -270,15 +286,19 @@ def display_analysis_result(
 ) -> None:
 
     print()
+
     print("=" * 70)
+
     print(
         _safe_text(
             title
         )
     )
+
     print("=" * 70)
 
     print()
+
     print(
         "Workflow ID:",
         _safe_text(
@@ -312,11 +332,17 @@ def display_analysis_result(
     # -------------------------------------------------
 
     print()
+
     print("=" * 70)
-    print("AUTHORITATIVE RISK")
+
+    print(
+        "AUTHORITATIVE RISK"
+    )
+
     print("=" * 70)
 
     print()
+
     print(
         "Score:",
         result.risk.score,
@@ -340,11 +366,17 @@ def display_analysis_result(
     # -------------------------------------------------
 
     print()
+
     print("=" * 70)
-    print("SECURITY")
+
+    print(
+        "SECURITY"
+    )
+
     print("=" * 70)
 
     print()
+
     print(
         "Prompt Injection Detected:",
         result.security
@@ -363,6 +395,7 @@ def display_analysis_result(
     ):
 
         print()
+
         print(
             "SECURITY WARNING:"
         )
@@ -373,6 +406,7 @@ def display_analysis_result(
         )
 
         print()
+
         print(
             "Matched Indicators:"
         )
@@ -390,6 +424,7 @@ def display_analysis_result(
             )
 
         print()
+
         print(
             "Authoritative risk remains controlled "
             "by deterministic policy."
@@ -400,11 +435,17 @@ def display_analysis_result(
     # -------------------------------------------------
 
     print()
+
     print("=" * 70)
-    print("AI / ADVISORY ANALYSIS")
+
+    print(
+        "AI / ADVISORY ANALYSIS"
+    )
+
     print("=" * 70)
 
     print()
+
     print(
         "Executive Summary:"
     )
@@ -417,6 +458,7 @@ def display_analysis_result(
     )
 
     print()
+
     print(
         "Recommended Remediation:"
     )
@@ -429,6 +471,7 @@ def display_analysis_result(
     )
 
     print()
+
     print(
         "AI Confidence:",
         _safe_text(
@@ -442,11 +485,17 @@ def display_analysis_result(
     # -------------------------------------------------
 
     print()
+
     print("=" * 70)
-    print("PROPOSED TICKET")
+
+    print(
+        "PROPOSED TICKET"
+    )
+
     print("=" * 70)
 
     print()
+
     print(
         "Priority:",
         _safe_text(
@@ -477,11 +526,17 @@ def display_analysis_result(
     # -------------------------------------------------
 
     print()
+
     print("=" * 70)
-    print("WORKFLOW STATUS")
+
+    print(
+        "WORKFLOW STATUS"
+    )
+
     print("=" * 70)
 
     print()
+
     print(
         "Status:",
         _safe_text(
@@ -490,6 +545,7 @@ def display_analysis_result(
     )
 
     print()
+
     print(
         "No ticket has been approved or created."
     )
@@ -508,13 +564,17 @@ def display_analysis_result(
 def display_security_evaluation(
     prompt_result,
     rag_result,
+    attack_results,
 ) -> None:
 
     print()
+
     print("=" * 70)
+
     print(
         "VM AI AGENT - SECURITY EVALUATION"
     )
+
     print("=" * 70)
 
     # -------------------------------------------------
@@ -522,12 +582,15 @@ def display_security_evaluation(
     # -------------------------------------------------
 
     print()
+
     print(
         "PROMPT-INJECTION DETECTION"
     )
+
     print("-" * 70)
 
     print()
+
     print(
         "Total Cases:",
         prompt_result.total_cases,
@@ -544,6 +607,7 @@ def display_security_evaluation(
     )
 
     print()
+
     print(
         "Passed Cases:",
         prompt_result.passed_cases,
@@ -555,6 +619,7 @@ def display_security_evaluation(
     )
 
     print()
+
     print(
         "False Negatives:",
         prompt_result.false_negatives,
@@ -589,12 +654,15 @@ def display_security_evaluation(
     # -------------------------------------------------
 
     print()
+
     print(
         "RAG QUARANTINE ENFORCEMENT"
     )
+
     print("-" * 70)
 
     print()
+
     print(
         "Total Cases:",
         rag_result.total_cases,
@@ -611,6 +679,7 @@ def display_security_evaluation(
     )
 
     print()
+
     print(
         "Passed Cases:",
         rag_result.passed_cases,
@@ -622,6 +691,7 @@ def display_security_evaluation(
     )
 
     print()
+
     print(
         "Missed Quarantines:",
         rag_result.missed_quarantines,
@@ -652,15 +722,144 @@ def display_security_evaluation(
         )
 
     # -------------------------------------------------
+    # STANDARDIZED ATTACK HARNESS
+    # -------------------------------------------------
+
+    print()
+
+    print(
+        "STANDARDIZED ATTACK HARNESS"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        f"{'Attack':<38}"
+        f"{'Severity':<12}"
+        f"{'Result':<10}"
+    )
+
+    print(
+        "-" * 70
+    )
+
+    for result in attack_results:
+
+        status = (
+            "PASS"
+            if result.passed
+            else "FAIL"
+        )
+
+        print(
+            f"{_safe_text(result.attack_name):<38}"
+            f"{_safe_text(result.severity).upper():<12}"
+            f"{status:<10}"
+        )
+
+    attack_total = len(
+        attack_results
+    )
+
+    attack_passed = sum(
+        1
+        for result in attack_results
+        if result.passed
+    )
+
+    attack_failed = (
+        attack_total
+        - attack_passed
+    )
+
+    attack_score = (
+        calculate_security_score(
+            attack_results
+        )
+    )
+
+    print(
+        "-" * 70
+    )
+
+    print(
+        f"Passed: {attack_passed}"
+    )
+
+    print(
+        f"Failed: {attack_failed}"
+    )
+
+    print(
+        f"Total:  {attack_total}"
+    )
+
+    print(
+        f"Security Score: "
+        f"{attack_score:.1f}%"
+    )
+
+    # -------------------------------------------------
+    # FAILED ATTACK DETAILS
+    # -------------------------------------------------
+
+    failed_attacks = [
+        result
+        for result in attack_results
+        if not result.passed
+    ]
+
+    if failed_attacks:
+
+        print()
+
+        print(
+            "FAILED ATTACK DETAILS"
+        )
+
+        print("-" * 70)
+
+        for result in failed_attacks:
+
+            print()
+
+            print(
+                _safe_text(
+                    result.attack_name
+                )
+            )
+
+            print(
+                "Observed:",
+                _safe_text(
+                    result.observed_behavior
+                ),
+            )
+
+    # -------------------------------------------------
     # OVERALL RESULT
     # -------------------------------------------------
+
+    attack_harness_passed = (
+        bool(
+            attack_results
+        )
+        and all(
+            result.passed
+            for result in attack_results
+        )
+    )
 
     overall_passed = (
         prompt_result.passed
         and rag_result.passed
+        and attack_harness_passed
     )
 
     print()
+
     print("=" * 70)
 
     if overall_passed:
@@ -678,9 +877,11 @@ def display_security_evaluation(
     print("=" * 70)
 
     print()
+
     print(
-        "This evaluation performs no approval, "
-        "ticket creation, or external execution."
+        "This evaluation performs "
+        "no approval, ticket creation, "
+        "or external execution."
     )
 
 
@@ -753,17 +954,21 @@ def run_demo() -> int:
 def run_security_eval() -> int:
 
     """
-    Run the local adversarial security evaluations.
+    Run the complete local adversarial security
+    evaluation framework.
 
     This command:
 
     - evaluates prompt-injection detection
     - evaluates RAG quarantine enforcement
+    - runs the standardized attack harness
     - reports false negatives
     - reports false positives
     - reports missed quarantines
     - reports false quarantines
     - reports category mismatches
+    - reports attack pass/fail status
+    - calculates a standardized security score
     - requires no external credentials
     - performs no approval or ticket execution
     """
@@ -776,14 +981,30 @@ def run_security_eval() -> int:
         run_rag_security_evaluation()
     )
 
+    attack_results = (
+        run_security_evaluations()
+    )
+
     display_security_evaluation(
         prompt_result,
         rag_result,
+        attack_results,
+    )
+
+    attack_harness_passed = (
+        bool(
+            attack_results
+        )
+        and all(
+            result.passed
+            for result in attack_results
+        )
     )
 
     if (
         prompt_result.passed
         and rag_result.passed
+        and attack_harness_passed
     ):
 
         return 0
