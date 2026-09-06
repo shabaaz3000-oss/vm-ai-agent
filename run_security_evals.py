@@ -16,6 +16,10 @@ from security_evals.attacks.direct_prompt_injection import (
     run_direct_prompt_injection,
 )
 
+from security_evals.attacks.rag_poisoning import (
+    run_rag_poisoning,
+)
+
 from security_evals.models import (
     SecurityEvalResult,
 )
@@ -37,6 +41,7 @@ SECURITY_EVALUATIONS = [
     run_indirect_prompt_injection,
     run_unauthorized_tool_execution,
     run_privilege_escalation,
+    run_rag_poisoning,
 ]
 
 
