@@ -418,6 +418,141 @@ def test_agent_blocks_direct_prompt_injection_before_model_call(
 
 
 # -------------------------------------------------
+# SYSTEM PROMPT CANARY LEAKAGE IS BLOCKED
+# -------------------------------------------------
+
+
+def test_agent_blocks_system_prompt_canary_leakage(
+    monkeypatch,
+):
+
+    canary = (
+        agent.SYSTEM_PROMPT_CANARY
+    )
+
+    client = FakeClient(
+        [
+            function_response(
+                "get_finding",
+                "call-1",
+            ),
+
+            function_response(
+                "get_asset_details",
+                "call-2",
+            ),
+
+            function_response(
+                "get_threat_intel",
+                "call-3",
+            ),
+
+            final_response(
+                (
+                    "Assessment complete. "
+                    f"Internal token: {canary}"
+                )
+            ),
+        ]
+    )
+
+    finding = {
+        "finding": "test"
+    }
+
+    asset = {
+        "asset": "test"
+    }
+
+    threat = {
+        "threat": "test"
+    }
+
+    risk = FakeRisk(
+        rating="CRITICAL",
+        score=100,
+        sla_hours=24,
+    )
+
+    def fake_dispatch(
+        tool_name,
+        context,
+    ):
+
+        mapping = {
+            "get_finding":
+                finding,
+
+            "get_asset_details":
+                asset,
+
+            "get_threat_intel":
+                threat,
+        }
+
+        return mapping[
+            tool_name
+        ]
+
+    monkeypatch.setattr(
+        agent,
+        "dispatch_llm_tool",
+        fake_dispatch,
+    )
+
+    monkeypatch.setattr(
+        agent,
+        "validate_provider_relationships",
+        lambda **kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        agent,
+        "calculate_risk",
+        lambda **kwargs: risk,
+    )
+
+    monkeypatch.setattr(
+        agent,
+        "_inspect_tool_result",
+        lambda **kwargs: [],
+    )
+
+    monkeypatch.setattr(
+        agent,
+        "log_event",
+        lambda *args, **kwargs: None,
+    )
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        agent.run_agent(
+            principal=
+                make_principal(),
+
+            user_request=(
+                "Investigate the current "
+                "vulnerability."
+            ),
+
+            openai_client=
+                client,
+
+            model=
+                "test-model",
+        )
+
+    assert (
+        len(
+            client.responses.calls
+        )
+        == 4
+    )
+
+
+# -------------------------------------------------
 # MODEL CANNOT CALL TOOL NOT EXPOSED THIS TURN
 # -------------------------------------------------
 

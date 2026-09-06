@@ -24,6 +24,10 @@ from security_evals.attacks.data_exfiltration import (
     run_data_exfiltration,
 )
 
+from security_evals.attacks.system_prompt_leakage import (
+    run_system_prompt_leakage,
+)
+
 from security_evals.models import (
     SecurityEvalResult,
 )
@@ -47,6 +51,7 @@ SECURITY_EVALUATIONS = [
     run_privilege_escalation,
     run_rag_poisoning,
     run_data_exfiltration,
+    run_system_prompt_leakage,
 ]
 
 
