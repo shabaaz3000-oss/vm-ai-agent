@@ -124,11 +124,11 @@ deterministic prompt-injection detector.
 Current result:
 
 ```text
-Total Cases: 12
-Adversarial Cases: 10
-Benign Cases: 2
+Total Cases: 20
+Adversarial Cases: 15
+Benign Cases: 5
 
-Passed Cases: 12
+Passed Cases: 20
 Failed Cases: 0
 
 False Negatives: 0
@@ -157,11 +157,11 @@ quarantined before it can reach AI context.
 Current result:
 
 ```text
-Total Cases: 8
-Malicious Cases: 6
-Benign Cases: 2
+Total Cases: 20
+Malicious Cases: 14
+Benign Cases: 6
 
-Passed Cases: 8
+Passed Cases: 20
 Failed Cases: 0
 
 Missed Quarantines: 0
@@ -236,11 +236,11 @@ Security Score: 100.0%
 The three data-driven corpora currently contain:
 
 ```text
-Prompt-Injection Detection: 12 cases
-RAG Quarantine Enforcement:  8 cases
-Tool Security:               16 cases
+Prompt-Injection Detection: 20 cases
+RAG Quarantine Enforcement: 20 cases
+Tool Security:              16 cases
                              --------
-Total Data-Driven Cases:     36 cases
+Total Data-Driven Cases:     56 cases
 ```
 
 The standardized attack harness is reported separately because each standardized attack can exercise multiple application-level security invariants.
@@ -817,7 +817,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-453 automated tests
+473 automated tests
 ```
 
 Run the complete suite with:
