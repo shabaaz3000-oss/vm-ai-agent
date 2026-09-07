@@ -114,7 +114,7 @@ The evaluation requires no Tenable API credentials, OpenAI API
 credentials, ServiceNow credentials, approval, ticket creation, or
 external execution.
 
-The command runs three complementary security evaluation layers.
+The command runs four complementary security evaluation layers.
 
 ### 1. Prompt-Injection Detection Corpus
 
@@ -175,7 +175,41 @@ RAG attack cases include retrieved content modeled with trusted metadata
 and high semantic similarity. Trust and relevance do not make retrieved
 instructions authoritative.
 
-### 3. Standardized Attack Harness
+### 3. Tool Security Corpus
+
+The third layer evaluates whether LLM-visible tool dispatch remains constrained to registered read-only capabilities.
+
+Current result:
+
+```text
+Total Cases: 16
+Allowed Cases: 8
+Blocked Cases: 8
+
+Passed Cases: 16
+Failed Cases: 0
+
+Unexpected Allows: 0
+Unexpected Blocks: 0
+Error Mismatches: 0
+
+Tool Security Result: PASS
+```
+
+The corpus verifies both security and expected functionality.
+
+Allowed cases confirm that registered read-only tools remain usable by authorized application roles.
+
+Blocked cases verify that:
+
+- privileged ticket execution is unavailable to the LLM
+- approval authority does not make execution tools LLM-visible
+- invented or unregistered tools are rejected
+- shell and command-execution tool names are rejected
+- unrestricted knowledge-search variants are rejected
+- altered privileged tool names do not bypass the allowlist
+
+### 4. Standardized Attack Harness
 
 The third layer executes standardized adversarial scenarios against
 security boundaries in the application.
@@ -199,6 +233,18 @@ Total:  7
 Security Score: 100.0%
 ```
 
+The three data-driven corpora currently contain:
+
+```text
+Prompt-Injection Detection: 12 cases
+RAG Quarantine Enforcement:  8 cases
+Tool Security:               16 cases
+                             --------
+Total Data-Driven Cases:     36 cases
+```
+
+The standardized attack harness is reported separately because each standardized attack can exercise multiple application-level security invariants.
+
 Combined result:
 
 ```text
@@ -206,8 +252,8 @@ OVERALL SECURITY EVALUATION: PASS
 ```
 
 The command returns a non-zero process exit code if the prompt-injection
-corpus, RAG quarantine corpus, or any standardized attack evaluation
-fails.
+corpus, RAG quarantine corpus, tool-security corpus, or any standardized
+attack evaluation fails.
 
 The same public security-evaluation command is executed in GitHub
 Actions so known AI-security regressions can block a pull request.
@@ -771,7 +817,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-435 automated tests
+453 automated tests
 ```
 
 Run the complete suite with:
@@ -808,6 +854,11 @@ The test suite covers areas including:
 - missed-quarantine detection
 - false-quarantine detection
 - security-category integrity
+- LLM tool allowlisting
+- read-only tool-dispatch enforcement
+- privileged tool blocking
+- unknown-tool rejection
+- tool-security false-allow and false-block detection
 - provider normalization
 - CSV security validation
 - Tenable normalization
@@ -982,11 +1033,12 @@ python vm_agent.py security-eval
 
 This mode also requires **no external credentials**.
 
-It loads two local synthetic evaluation corpora:
+It loads three local synthetic evaluation corpora:
 
 ```text
 evals/adversarial_cases.json
 evals/rag_security_cases.json
+evals/tool_security_cases.json
 ```
 
 The command evaluates:
@@ -1011,6 +1063,16 @@ RAG QUARANTINE ENFORCEMENT
 - missed quarantines
 - false quarantines
 - category mismatches
+
+TOOL SECURITY
+- total cases
+- allowed cases
+- blocked cases
+- passed cases
+- failed cases
+- unexpected allows
+- unexpected blocks
+- error mismatches
 ```
 
 The current combined result is:
@@ -1278,6 +1340,7 @@ vm-ai-agent/
 |   |-- risk_engine.py
 |   |-- security_evaluator.py
 |   |-- ticketing.py
+|   |-- tool_security_evaluator.py
 |   |-- vector_index.py
 |   |-- workflow.py
 |   |-- workflow_store.py
@@ -1315,7 +1378,8 @@ vm-ai-agent/
 |
 |-- evals/
 |   |-- adversarial_cases.json
-|   `-- rag_security_cases.json
+|   |-- rag_security_cases.json
+|   `-- tool_security_cases.json
 |
 |-- tests/
 |   |-- fixtures/
@@ -1332,6 +1396,7 @@ vm-ai-agent/
 |   |-- test_workflow_rag_security.py
 |   |-- test_security_evaluations.py
 |   |-- test_security_evaluator.py
+|   |-- test_tool_security_evaluations.py
 |   `-- ...
 |
 |-- .env.example

@@ -15,6 +15,10 @@ from app.security_evaluator import (
     run_security_evaluation,
 )
 
+from app.tool_security_evaluator import (
+    run_tool_security_evaluation,
+)
+
 from run_security_evals import (
     calculate_security_score,
     run_security_evaluations,
@@ -564,6 +568,7 @@ def display_analysis_result(
 def display_security_evaluation(
     prompt_result,
     rag_result,
+    tool_result,
     attack_results,
 ) -> None:
 
@@ -722,6 +727,78 @@ def display_security_evaluation(
         )
 
     # -------------------------------------------------
+    # TOOL SECURITY
+    # -------------------------------------------------
+
+    print()
+
+    print(
+        "TOOL SECURITY"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        "Total Cases:",
+        tool_result.total_cases,
+    )
+
+    print(
+        "Allowed Cases:",
+        tool_result.allowed_cases,
+    )
+
+    print(
+        "Blocked Cases:",
+        tool_result.blocked_cases,
+    )
+
+    print()
+
+    print(
+        "Passed Cases:",
+        tool_result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        tool_result.failed_cases,
+    )
+
+    print()
+
+    print(
+        "Unexpected Allows:",
+        tool_result.unexpected_allows,
+    )
+
+    print(
+        "Unexpected Blocks:",
+        tool_result.unexpected_blocks,
+    )
+
+    print(
+        "Error Mismatches:",
+        tool_result.error_mismatches,
+    )
+
+    print()
+
+    if tool_result.passed:
+
+        print(
+            "Tool Security Result: PASS"
+        )
+
+    else:
+
+        print(
+            "Tool Security Result: FAIL"
+        )
+
+    # -------------------------------------------------
     # STANDARDIZED ATTACK HARNESS
     # -------------------------------------------------
 
@@ -855,6 +932,7 @@ def display_security_evaluation(
     overall_passed = (
         prompt_result.passed
         and rag_result.passed
+        and tool_result.passed
         and attack_harness_passed
     )
 
@@ -961,6 +1039,7 @@ def run_security_eval() -> int:
 
     - evaluates prompt-injection detection
     - evaluates RAG quarantine enforcement
+    - evaluates LLM tool authorization and dispatch
     - runs the standardized attack harness
     - reports false negatives
     - reports false positives
@@ -981,6 +1060,10 @@ def run_security_eval() -> int:
         run_rag_security_evaluation()
     )
 
+    tool_result = (
+        run_tool_security_evaluation()
+    )
+
     attack_results = (
         run_security_evaluations()
     )
@@ -988,6 +1071,7 @@ def run_security_eval() -> int:
     display_security_evaluation(
         prompt_result,
         rag_result,
+        tool_result,
         attack_results,
     )
 
@@ -1004,6 +1088,7 @@ def run_security_eval() -> int:
     if (
         prompt_result.passed
         and rag_result.passed
+        and tool_result.passed
         and attack_harness_passed
     ):
 

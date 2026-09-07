@@ -320,6 +320,40 @@ def make_rag_security_eval_result(
     )
 
 
+def make_tool_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return SimpleNamespace(
+        total_cases=16,
+        allowed_cases=8,
+        blocked_cases=8,
+
+        passed_cases=(
+            16
+            if passed
+            else 15
+        ),
+
+        failed_cases=(
+            0
+            if passed
+            else 1
+        ),
+
+        unexpected_allows=(
+            0
+            if passed
+            else 1
+        ),
+
+        unexpected_blocks=0,
+        error_mismatches=0,
+        passed=passed,
+    )
+
+
 def make_attack_security_eval_results(
     *,
     passed: bool = True,
@@ -392,6 +426,15 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
 
     monkeypatch.setattr(
         vm_agent,
+        "run_tool_security_evaluation",
+        lambda:
+            make_tool_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
         "run_security_evaluations",
         lambda:
             make_attack_security_eval_results(
@@ -425,6 +468,11 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
 
     assert (
         "RAG QUARANTINE ENFORCEMENT"
+        in output
+    )
+
+    assert (
+        "TOOL SECURITY"
         in output
     )
 
@@ -474,12 +522,42 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
     )
 
     assert (
+        "Allowed Cases: 8"
+        in output
+    )
+
+    assert (
+        "Blocked Cases: 8"
+        in output
+    )
+
+    assert (
+        "Unexpected Allows: 0"
+        in output
+    )
+
+    assert (
+        "Unexpected Blocks: 0"
+        in output
+    )
+
+    assert (
+        "Error Mismatches: 0"
+        in output
+    )
+
+    assert (
         "Prompt-Injection Result: PASS"
         in output
     )
 
     assert (
         "RAG Quarantine Result: PASS"
+        in output
+    )
+
+    assert (
+        "Tool Security Result: PASS"
         in output
     )
 
@@ -535,6 +613,15 @@ def test_security_eval_command_fails_when_prompt_suite_fails(
 
     monkeypatch.setattr(
         vm_agent,
+        "run_tool_security_evaluation",
+        lambda:
+            make_tool_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
         "run_security_evaluations",
         lambda:
             make_attack_security_eval_results(
@@ -572,6 +659,11 @@ def test_security_eval_command_fails_when_prompt_suite_fails(
     )
 
     assert (
+        "Tool Security Result: PASS"
+        in output
+    )
+
+    assert (
         "OVERALL SECURITY EVALUATION: FAIL"
         in output
     )
@@ -597,6 +689,15 @@ def test_security_eval_command_fails_when_rag_suite_fails(
         lambda:
             make_rag_security_eval_result(
                 passed=False
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_tool_security_evaluation",
+        lambda:
+            make_tool_security_eval_result(
+                passed=True
             ),
     )
 
@@ -639,6 +740,92 @@ def test_security_eval_command_fails_when_rag_suite_fails(
     )
 
     assert (
+        "Tool Security Result: PASS"
+        in output
+    )
+
+    assert (
+        "OVERALL SECURITY EVALUATION: FAIL"
+        in output
+    )
+
+
+def test_security_eval_command_fails_when_tool_suite_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda:
+            make_prompt_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_rag_security_evaluation",
+        lambda:
+            make_rag_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_tool_security_evaluation",
+        lambda:
+            make_tool_security_eval_result(
+                passed=False
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluations",
+        lambda:
+            make_attack_security_eval_results(
+                passed=True
+            ),
+    )
+
+    exit_code = vm_agent.main(
+        [
+            "security-eval",
+        ]
+    )
+
+    output = (
+        capsys
+        .readouterr()
+        .out
+    )
+
+    assert exit_code == 1
+
+    assert (
+        "Unexpected Allows: 1"
+        in output
+    )
+
+    assert (
+        "Prompt-Injection Result: PASS"
+        in output
+    )
+
+    assert (
+        "RAG Quarantine Result: PASS"
+        in output
+    )
+
+    assert (
+        "Tool Security Result: FAIL"
+        in output
+    )
+
+    assert (
         "OVERALL SECURITY EVALUATION: FAIL"
         in output
     )
@@ -663,6 +850,15 @@ def test_security_eval_command_fails_when_attack_harness_fails(
         "run_rag_security_evaluation",
         lambda:
             make_rag_security_eval_result(
+                passed=True
+            ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_tool_security_evaluation",
+        lambda:
+            make_tool_security_eval_result(
                 passed=True
             ),
     )
@@ -711,6 +907,11 @@ def test_security_eval_command_fails_when_attack_harness_fails(
 
     assert (
         "FAIL"
+        in output
+    )
+
+    assert (
+        "Tool Security Result: PASS"
         in output
     )
 
