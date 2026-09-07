@@ -172,7 +172,7 @@ Prompt-injection detection is therefore only one layer of defense.
 
 ### Attack
 
-Malicious instructions are embedded in data retrieved from an upstream system, scanner record, document, API response, or future RAG source.
+Malicious instructions are embedded in data retrieved from an upstream system, scanner record, document, API response, or RAG source.
 
 The user may never directly see the malicious instruction.
 
@@ -180,24 +180,37 @@ The user may never directly see the malicious instruction.
 
 The model could interpret attacker-controlled data as trusted instructions.
 
-### Mitigations
+### Current Mitigations
 
 - external content remains data rather than policy
 - authoritative risk decisions remain deterministic
 - model actions are constrained to advisory output
 - privileged actions require separate human authorization
 - external execution is performed by controlled application code
+- RAG ingestion records source provenance and SHA-256 integrity metadata
+- knowledge sources use server-controlled trust and access classifications
+- retrieved evidence is inspected for prompt-injection indicators before reaching the advisory analyzer
+- suspicious retrieved evidence can be quarantined from model context
+- RAG activity is represented in audit and trace evidence
+- adversarial RAG security evaluations exercise poisoned-content behavior
+
+### Residual Risk
+
+Indirect prompt injection cannot be assumed to be completely preventable.
+
+A malicious or compromised source may still influence AI-generated analysis even when downstream authorization and execution controls limit the impact.
 
 ### Future Enhancements
 
 Potential future defenses include:
 
-- structured instruction/data separation
-- provenance tagging
-- content trust classification
+- stronger structured instruction/data separation
 - model-input isolation
-- retrieval allowlists
-- output policy validation
+- identity-derived document authorization
+- authorization before embedding and semantic search
+- richer content trust scoring
+- output semantic and policy validation
+- broader indirect-prompt-injection evaluation coverage
 
 ---
 
@@ -630,13 +643,14 @@ Possible:
 - minimal GitHub Actions permissions
 - `contents: read`
 - automated tests
-- Gitleaks scanning
+- Gitleaks secret scanning
+- automated Python dependency vulnerability scanning
+- Security CI enforcement on repository changes
 - limited CI responsibilities
 
 ### Future Enhancements
 
 - pin GitHub Actions to immutable commit SHAs
-- dependency scanning
 - Dependabot
 - SBOM generation
 - package hash verification
@@ -691,7 +705,7 @@ Local JSONL logging does not provide tamper-resistant enterprise audit storage.
 | AI data leakage | Analyzer separation, controlled invocation |
 | Terminal injection | Safe output rendering |
 | File-based DoS | CSV resource limits |
-| Supply-chain compromise | Minimal CI permissions, future SHA pinning |
+| Supply-chain compromise | Minimal CI permissions, dependency scanning, secret scanning, future SHA pinning |
 | Audit manipulation | Structured audit logging |
 
 ---
@@ -725,7 +739,7 @@ Known limitations include:
 - no OIDC identity provider
 - no distributed transaction coordination
 - no production DLP policy
-- no formal AI evaluation harness yet
+- the current AI security evaluation corpus is intentionally limited in breadth and does not yet meet the planned 80+ adversarial-case target
 
 These limitations are intentionally documented rather than hidden.
 
@@ -740,10 +754,17 @@ Planned or potential improvements include:
 - immutable GitHub Action pinning
 - Dependabot
 - SBOM generation
-- AI red-team test harness
-- adversarial prompt corpus
-- model-output security evaluation
+- expansion of the adversarial security corpus toward 80+ purpose-built cases
+- dedicated excessive-agency evaluations
+- dedicated sensitive-data-leakage evaluations
+- dedicated cross-user authorization evaluations
+- broader indirect prompt-injection and RAG-poisoning coverage
+- integration with an external AI red-team framework such as PyRIT or garak
+- stronger model-output semantic and security validation
 - sensitive-data classification
+- identity-aware RAG authorization
+- authorization before embedding and semantic search
+- explicit least-privilege credentials for external tool integrations
 - egress controls
 - centralized security telemetry
 - SIEM integration
