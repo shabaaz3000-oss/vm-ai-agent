@@ -771,7 +771,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-368 automated tests
+435 automated tests
 ```
 
 Run the complete suite with:
@@ -883,6 +883,7 @@ Security CI runs on the repository's main development workflow and validates:
 ```text
 Python automated test suite
 Gitleaks secret scanning
+Python dependency vulnerability scanning
 ```
 
 The workflow uses read-only repository permissions where possible.
@@ -1308,6 +1309,10 @@ vm-ai-agent/
 |           `-- restricted/
 |               `-- privileged_network_architecture.md
 |
+|-- docs/
+|   |-- ai-risk-register.md
+|   `-- nist-ai-rmf-assessment.md
+|
 |-- evals/
 |   |-- adversarial_cases.json
 |   `-- rag_security_cases.json
@@ -1342,6 +1347,48 @@ vm-ai-agent/
 |-- THREAT_MODEL.md
 `-- README.md
 ```
+
+---
+
+## AI Risk and Governance Documentation
+
+The repository includes dedicated AI risk-management artifacts that apply the NIST AI Risk Management Framework and NIST AI 600-1 Generative AI Profile to the VM AI Agent.
+
+### NIST AI RMF Assessment
+
+[`docs/nist-ai-rmf-assessment.md`](docs/nist-ai-rmf-assessment.md)
+
+The assessment applies:
+
+- GOVERN
+- MAP
+- MEASURE
+- MANAGE
+
+It also evaluates priority Generative AI Profile risks including:
+
+- confabulation
+- information security
+- human-AI configuration
+- information integrity
+- value chain and component integration
+- data privacy
+
+### AI Risk Register
+
+[`docs/ai-risk-register.md`](docs/ai-risk-register.md)
+
+The risk register tracks:
+
+- risk scenarios
+- qualitative likelihood
+- impact
+- existing controls
+- residual risk
+- treatment decisions
+- recommended next actions
+
+These artifacts connect the application's technical security controls to a formal AI risk-management process.
 
 ---
 
