@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document describes the primary security threats, trust boundaries, abuse cases, and mitigations for the VM AI Agent.
+This document describes the primary security threats, trust boundaries, abuse cases, mitigations, assumptions, and residual risks for the VM AI Agent.
 
-The system assists vulnerability-management teams by combining scanner data, enterprise asset context, deterministic risk policy, AI-generated advisory analysis, human approval, and controlled ticket execution.
+The system assists vulnerability-management teams by combining scanner data, enterprise asset context, deterministic risk policy, retrieval-augmented generation (RAG), AI-generated advisory analysis, human approval, and controlled ticket execution.
 
 The central security principle is:
 
@@ -19,15 +19,19 @@ The AI model is deliberately treated as a non-authoritative component.
 The system is designed to preserve the following properties:
 
 1. Untrusted vulnerability data cannot override authoritative system instructions.
-2. AI output cannot modify deterministic risk decisions.
-3. AI output cannot directly approve or execute external actions.
-4. Human approval must apply to the exact ticket content reviewed.
-5. Unauthorized users cannot perform privileged approval operations.
-6. Concurrent execution cannot silently create duplicate tickets.
-7. Uncertain external execution is not blindly retried.
-8. Secrets must not be exposed through source code, logs, errors, or public repository content.
-9. Scanner and enterprise context records must be correctly correlated before risk decisions are made.
-10. External-data failures must fail safely rather than silently weakening security controls.
+2. Retrieved knowledge cannot become authoritative merely because it is trusted, relevant, or stored in the knowledge base.
+3. AI output cannot modify deterministic risk decisions.
+4. AI output cannot directly approve or execute external actions.
+5. Human approval must apply to the exact ticket content reviewed.
+6. Unauthorized users cannot perform privileged approval operations.
+7. Workflow role and knowledge-access privilege remain independently enforced.
+8. Standard identities cannot receive restricted RAG evidence.
+9. The LLM cannot select or promote its own retrieval-access level.
+10. Concurrent execution cannot silently create duplicate tickets.
+11. Uncertain external execution is not blindly retried.
+12. Secrets must not be exposed through source code, logs, errors, or public repository content.
+13. Scanner and enterprise-context records must be correctly correlated before risk decisions are made.
+14. External-data failures must fail safely rather than silently weakening security controls.
 
 ---
 
@@ -37,21 +41,27 @@ The system is designed to preserve the following properties:
 flowchart LR
     A["External / Untrusted Sources<br/>Scanner Data / CSV / API"] --> B["Input Validation Boundary"]
 
-    B --> C["Normalized Security Models"]
-
-    C --> D["Deterministic Policy Boundary"]
-
-    D --> E["AI Advisory Boundary"]
-
-    E --> F["Human Approval Boundary"]
-
-    F --> G["Execution Boundary"]
-
-    G --> H["External Ticketing System"]
-
     I["Enterprise Asset Context"] --> B
 
-    J["Authenticated API User"] --> F
+    B --> C["Normalized Security Models"]
+    C --> D["Deterministic Policy Boundary"]
+
+    K["Trusted Knowledge Base<br/>Standard + Restricted"] --> R["Semantic Retrieval"]
+    D --> R
+
+    U["Authenticated Principal<br/>Role + Retrieval Access"] --> Z["Principal-Derived Retrieval Authorization"]
+    R --> Z
+
+    Z --> P["Retrieved-Evidence Security Inspection"]
+    P --> E["AI Advisory Boundary"]
+
+    D --> E
+
+    E --> F["Human Approval Boundary"]
+    U --> F
+
+    F --> G["Execution Boundary"]
+    G --> H["External Ticketing System"]
 ```
 
 ### Boundary 1: External Data
@@ -60,17 +70,33 @@ Inputs such as vulnerability descriptions, scanner fields, asset names, threat i
 
 ### Boundary 2: Deterministic Security Policy
 
-Risk score, risk rating, SLA, and ticket priority are calculated outside the language model.
+Risk score, risk rating, SLA, ticket priority, and human-review requirements are calculated outside the language model.
 
-### Boundary 3: AI Advisory Layer
+### Boundary 3: Retrieval Authorization
+
+Knowledge sources are classified with server-controlled trust and access metadata.
+
+Retrieval access is derived from authenticated `Principal` state rather than model-supplied tool arguments.
+
+Semantic relevance does not grant authorization.
+
+### Boundary 4: Retrieved-Evidence Security Inspection
+
+Authorized evidence is still treated as untrusted content.
+
+Retrieved evidence is inspected for prompt-injection indicators before it can reach the model.
+
+### Boundary 5: AI Advisory Layer
 
 The model may explain and recommend, but it is not trusted to make authoritative security decisions.
 
-### Boundary 4: Human Approval
+### Boundary 6: Human Approval
 
-A privileged human must authorize execution.
+A privileged human must authorize consequential workflow execution.
 
-### Boundary 5: External Execution
+Approval authority is distinct from restricted RAG access.
+
+### Boundary 7: External Execution
 
 Ticket creation is an external side effect and requires controlled execution semantics.
 
@@ -84,11 +110,15 @@ Important assets include:
 - enterprise asset context
 - threat-intelligence data
 - deterministic risk results
+- standard knowledge-base content
+- restricted knowledge-base content
+- retrieval-access claims
 - proposed ticket content
 - workflow state
 - approval decisions
 - approval fingerprints
 - analyst and approver credentials
+- restricted-analyst credentials
 - Tenable API credentials
 - OpenAI API credentials
 - audit records
@@ -111,7 +141,7 @@ A scanner export, CSV file, integration, API response, or upstream system contai
 
 ### Unauthorized Internal User
 
-A user who can access some portion of the application but should not have approval or execution authority.
+A user who can access some portion of the application but should not have approval, restricted-data, or execution authority.
 
 ### Compromised Analyst Account
 
@@ -120,6 +150,10 @@ An analyst credential that is stolen or misused.
 ### Compromised Approver Account
 
 A privileged approval credential that is stolen or misused.
+
+### Compromised Restricted-Access Account
+
+A credential with explicit access to restricted knowledge that is stolen or misused.
 
 ### Accidental Operator Error
 
@@ -157,8 +191,10 @@ If vulnerability data were treated as instructions, an AI model could be manipul
 - system instructions prohibit following instructions embedded in supplied data
 - deterministic risk calculation occurs outside the model
 - AI has no approval authority
+- LLM-visible tools are constrained to registered read-only capabilities
 - analysis CLI has no direct execution authority
 - human review remains required
+- adversarial prompt-injection evaluations test malicious and benign cases
 
 ### Residual Risk
 
@@ -168,7 +204,7 @@ Prompt-injection detection is therefore only one layer of defense.
 
 ---
 
-## T2 — Indirect Prompt Injection
+## T2 — Indirect Prompt Injection and RAG Poisoning
 
 ### Attack
 
@@ -176,29 +212,48 @@ Malicious instructions are embedded in data retrieved from an upstream system, s
 
 The user may never directly see the malicious instruction.
 
+A malicious chunk may also be highly semantically relevant or originate from a source with trusted provenance metadata.
+
 ### Security Impact
 
-The model could interpret attacker-controlled data as trusted instructions.
+The model could interpret attacker-controlled retrieved data as trusted instructions.
 
-### Current Mitigations
+Potential effects include:
 
-- external content remains data rather than policy
+- manipulated advisory analysis
+- attempted risk downgrades
+- attempted SLA changes
+- attempted approval bypass
+- attempted ticket-priority changes
+- attempts to reveal protected instructions
+- attempts to cause unauthorized tool use
+
+### Mitigations
+
+- external and retrieved content remains data rather than policy
 - authoritative risk decisions remain deterministic
 - model actions are constrained to advisory output
 - privileged actions require separate human authorization
 - external execution is performed by controlled application code
 - RAG ingestion records source provenance and SHA-256 integrity metadata
 - knowledge sources use server-controlled trust and access classifications
+- retrieval access is derived from authenticated `Principal` state
+- workflow role and knowledge-access privilege are independently enforced
+- standard ANALYST and APPROVER identities cannot retrieve restricted evidence
+- an explicitly restricted identity can retrieve restricted evidence without gaining approval authority
+- the LLM-visible knowledge tool does not accept `caller_access` or `retrieval_access` override arguments
+- semantic relevance does not override retrieval authorization
 - retrieved evidence is inspected for prompt-injection indicators before reaching the advisory analyzer
 - suspicious retrieved evidence can be quarantined from model context
 - RAG activity is represented in audit and trace evidence
 - adversarial RAG security evaluations exercise poisoned-content behavior
+- data-leakage evaluations exercise standard and restricted retrieval boundaries
 
 ### Residual Risk
 
 Indirect prompt injection cannot be assumed to be completely preventable.
 
-A malicious or compromised source may still influence AI-generated analysis even when downstream authorization and execution controls limit the impact.
+A malicious or compromised source may still influence AI-generated analysis even when downstream authorization, deterministic policy, and execution controls limit the impact.
 
 ### Future Enhancements
 
@@ -206,11 +261,12 @@ Potential future defenses include:
 
 - stronger structured instruction/data separation
 - model-input isolation
-- identity-derived document authorization
+- enterprise identity and document-ACL-derived authorization
 - authorization before embedding and semantic search
 - richer content trust scoring
 - output semantic and policy validation
 - broader indirect-prompt-injection evaluation coverage
+- production vector-database authorization controls
 
 ---
 
@@ -244,6 +300,7 @@ The model does not own:
 - risk rating
 - SLA
 - ticket priority
+- human-review requirement
 
 These values originate from the deterministic Python risk engine.
 
@@ -275,6 +332,7 @@ Operators could make remediation decisions based on fabricated information.
 - human review requirement
 - deterministic risk calculation based on supplied validated data
 - known facts separated from advisory recommendations
+- RAG evidence is separately attributed and security-filtered
 
 ### Residual Risk
 
@@ -381,27 +439,47 @@ Examples include:
 
 ### Attack
 
-An analyst attempts to invoke an approver-only endpoint.
+An analyst attempts to invoke an approver-only endpoint, or a caller attempts to obtain restricted RAG evidence without the required retrieval-access claim.
+
+A model may also attempt to provide a fabricated access level through tool arguments.
 
 ### Security Impact
 
-A user without approval authority could execute remediation workflow actions.
+A user without the necessary authority could:
+
+- approve or execute remediation workflow actions
+- gain access to restricted knowledge
+- collapse separate workflow and data-access privileges into one privilege set
 
 ### Mitigations
 
 - authenticated bearer tokens
-- separate ANALYST and APPROVER roles
+- separate ANALYST and APPROVER workflow roles
 - role validation at privileged API endpoints
 - comparison using `secrets.compare_digest`
 - authoritative identity passed into approval operations
+- retrieval access is carried in authenticated `Principal` state
+- workflow role and retrieval access are separate authorization dimensions
+- APPROVER authority does not imply restricted knowledge access
+- restricted knowledge access does not imply APPROVER authority
+- invalid retrieval-access values are rejected
+- the LLM-visible knowledge tool does not accept retrieval-access override arguments
+- retrieval access is resolved by trusted application code before calling the retriever
+- restricted evidence is excluded from standard-access results
+- authorization supersedes semantic rank before final authorized `top_k` selection
+- security evaluations include standard, approver, restricted, and invalid-access cases
 
 ### Current Limitation
 
-Static environment-provided bearer tokens are suitable for demonstration but are not intended as enterprise identity infrastructure.
+Static environment-provided bearer tokens and retrieval-access claims are suitable for demonstration but are not intended as enterprise identity or document-authorization infrastructure.
+
+The current implementation does not provide cross-user resource ownership or tenant isolation.
 
 ### Future Enhancement
 
-OIDC or enterprise identity-provider integration.
+OIDC or enterprise identity-provider integration with claims or policy mapping for workflow roles and document-level retrieval authorization.
+
+Additional future work includes resource ownership and tenant-aware authorization where applicable.
 
 ---
 
@@ -453,6 +531,8 @@ Approval is associated with:
 - ticket fingerprint
 - approval metadata
 - authoritative workflow state
+
+Approval consumption is controlled server-side.
 
 Execution validates approval before performing the external action.
 
@@ -538,6 +618,7 @@ TENABLE_ACCESS_KEY
 TENABLE_SECRET_KEY
 VM_AI_ANALYST_TOKEN
 VM_AI_APPROVER_TOKEN
+VM_AI_RESTRICTED_ANALYST_TOKEN
 ```
 
 ### Mitigations
@@ -548,6 +629,7 @@ VM_AI_APPROVER_TOKEN
 - API/configuration errors are sanitized
 - Gitleaks scans repository history
 - GitHub Actions runs Gitleaks on pushes and pull requests
+- security CI includes automated Python dependency vulnerability scanning
 - local pre-publication history scan performed before initial publication
 
 ---
@@ -556,26 +638,44 @@ VM_AI_APPROVER_TOKEN
 
 ### Attack
 
-Sensitive vulnerability, asset, or enterprise information is sent to an external AI provider when it should not be.
+Sensitive vulnerability, asset, enterprise, or restricted RAG information is sent to an AI model or caller when it should not be.
 
 ### Security Impact
 
-Potential confidentiality or compliance exposure.
+Potential confidentiality, privacy, regulatory, or compliance exposure.
 
 ### Current Mitigations
 
 - credential-free demo uses no external model
 - AI invocation is explicit and separate from deterministic policy
 - application architecture allows analyzer substitution
-- enterprise deployments can control which analyzer implementation is used
+- knowledge sources carry standard or restricted access metadata
+- retrieval access is derived from authenticated `Principal` state
+- standard ANALYST and APPROVER identities remain standard-access
+- restricted knowledge access requires an explicit restricted-access identity
+- restricted access does not grant APPROVER workflow authority
+- restricted high-ranking results cannot crowd authorized lower-ranking results out of the final `top_k`
+- synthetic canary evaluations test for restricted-data exposure
+- retrieved content is security-inspected before reaching model context
+- the LLM cannot provide its own retrieval-access argument
+
+### Current Limitations
+
+- access is not yet derived from enterprise OIDC claims, document ACLs, tenant ownership, or an external policy engine
+- cross-user and multi-tenant resource isolation are not implemented
+- the current local vector search evaluates candidates before authorization filtering
+- there is no production outbound DLP policy
 
 ### Future Enhancements
 
-- data classification enforcement
+- enterprise identity and document-ACL-derived retrieval authorization
+- pre-embedding or pre-search authorization partitioning
+- data-classification enforcement
 - AI-provider routing policies
 - sensitive-field redaction
 - private-model support
 - outbound DLP controls
+- tenant- and resource-owner-aware authorization
 
 ---
 
@@ -631,7 +731,7 @@ A compromised dependency or GitHub Action introduces malicious behavior.
 
 ### Security Impact
 
-Possible:
+Possible outcomes include:
 
 - code execution
 - credential theft
@@ -641,20 +741,27 @@ Possible:
 ### Current Mitigations
 
 - minimal GitHub Actions permissions
-- `contents: read`
-- automated tests
+- `contents: read` where possible
+- automated Python tests
 - Gitleaks secret scanning
-- automated Python dependency vulnerability scanning
-- Security CI enforcement on repository changes
-- limited CI responsibilities
+- Python dependency vulnerability scanning in Security CI
+- Dependabot configuration for Python and GitHub Actions dependency updates
+- CI responsibilities are intentionally limited
+
+### Residual Risk
+
+Passing automated dependency and secret scans does not guarantee that all software-supply-chain compromise is prevented.
+
+Third-party GitHub Actions and transitive dependencies remain trust dependencies.
 
 ### Future Enhancements
 
 - pin GitHub Actions to immutable commit SHAs
-- Dependabot
 - SBOM generation
 - package hash verification
 - artifact signing
+- stronger dependency provenance controls
+- additional software-composition analysis
 
 ---
 
@@ -671,6 +778,17 @@ Incident investigation and accountability may be weakened.
 ### Current Mitigations
 
 Security-relevant workflow events are written to structured audit logs.
+
+RAG security activity can include:
+
+- tool request and execution events
+- access resolution
+- tool authorization-denial events
+- quarantined chunk identifiers
+- detection categories
+- result counts
+
+Sensitive malicious payloads do not need to be copied into audit events merely to record that a security decision occurred.
 
 ### Current Limitation
 
@@ -690,22 +808,23 @@ Local JSONL logging does not provide tamper-resistant enterprise audit storage.
 
 | Threat | Primary Controls |
 |---|---|
-| Prompt injection | Input detection, instruction/data separation, deterministic policy |
-| AI risk override | Python-owned risk engine |
-| Hallucinated facts | Structured inputs, human review |
-| Malicious CSV | Structural limits, strict parsing, Pydantic |
+| Direct prompt injection | Input detection, instruction/data separation, deterministic policy |
+| Indirect prompt injection / RAG poisoning | Provenance, Principal-derived retrieval authorization, evidence inspection, quarantine |
+| AI risk override | Python-owned deterministic risk engine |
+| Hallucinated facts | Structured inputs, evidence attribution, human review |
+| Malicious CSV | Structural limits, strict parsing, Pydantic validation |
 | Asset mismatch | UUID correlation and relationship validation |
 | Missing context | Fail-closed validation |
-| Authorization bypass | Authentication + RBAC |
+| Authorization bypass | Authentication, RBAC, separate retrieval-access claims, server-side policy |
 | Approval tampering | SHA-256 ticket fingerprint |
-| Approval replay | Workflow-bound approval state |
+| Approval replay | Workflow-bound approval state and controlled consumption |
 | Duplicate execution | Atomic execution claim |
 | Uncertain execution | `NEEDS_REVIEW` reconciliation |
 | Secret exposure | `.gitignore`, `SecretStr`, Gitleaks |
-| AI data leakage | Analyzer separation, controlled invocation |
+| AI data leakage | Principal-derived retrieval authorization, canary tests, controlled invocation |
 | Terminal injection | Safe output rendering |
 | File-based DoS | CSV resource limits |
-| Supply-chain compromise | Minimal CI permissions, dependency scanning, secret scanning, future SHA pinning |
+| Supply-chain compromise | Minimal CI permissions, dependency scanning, Dependabot |
 | Audit manipulation | Structured audit logging |
 
 ---
@@ -718,9 +837,13 @@ The current design assumes:
 2. Python runtime and operating-system security boundaries remain trustworthy.
 3. SQLite filesystem permissions are appropriately controlled.
 4. External APIs are accessed over authenticated HTTPS connections.
-5. Approvers protect their credentials.
-6. The external ticketing system enforces its own authorization model.
-7. Human approval represents an intentional security decision.
+5. Users protect their bearer tokens and other credentials.
+6. Authenticated `Principal` state is created only by trusted application authentication logic.
+7. Restricted knowledge is correctly classified as restricted during trusted ingestion.
+8. Approvers protect their credentials.
+9. The external ticketing system enforces its own authorization model.
+10. Human approval represents an intentional security decision.
+11. Dependencies and CI services may fail or be compromised and therefore require defense in depth.
 
 ---
 
@@ -730,18 +853,63 @@ This project is an engineering and portfolio demonstration rather than a product
 
 Known limitations include:
 
-- pattern-based prompt-injection detection
+- pattern-based prompt-injection and RAG-poisoning detection
 - static development bearer tokens
+- no enterprise OIDC identity provider
+- no enterprise document ACL or external authorization policy engine
+- no cross-user resource ownership or tenant isolation
+- retrieval authorization occurs after semantic candidate search rather than before embedding or search
+- lightweight local vector index rather than a production vector database
 - mock ticketing rather than production ServiceNow
 - local SQLite workflow state
 - local JSONL audit records
 - no enterprise secrets manager
-- no OIDC identity provider
 - no distributed transaction coordination
-- no production DLP policy
-- the current AI security evaluation corpus is intentionally limited in breadth and does not yet meet the planned 80+ adversarial-case target
+- no production outbound DLP policy
+- the current 84-case data-driven evaluation corpus is synthetic and does not represent a comprehensive production AI red-team program
+- the seven standardized attack evaluations cover defined application properties rather than every possible AI or agent attack
+- no external AI red-team framework such as PyRIT or garak is integrated
+- no longitudinal evaluation trend reporting
+- no production-grade centralized security telemetry
 
 These limitations are intentionally documented rather than hidden.
+
+---
+
+# Current Security Evaluation Coverage
+
+The credential-free public security evaluation currently includes six data-driven corpora:
+
+```text
+Prompt-Injection Detection: 20 cases
+RAG Quarantine Enforcement: 20 cases
+Tool Security:              16 cases
+Authorization Security:      8 cases
+Data Leakage Security:       8 cases
+Excessive Agency:           12 cases
+                             --------
+Total Data-Driven Cases:     84 cases
+```
+
+It also includes seven separately reported standardized attacks:
+
+```text
+Direct Prompt Injection
+Indirect Prompt Injection
+Unauthorized Tool Execution
+Privilege Escalation
+RAG Poisoning
+Data Exfiltration
+System Prompt Leakage
+```
+
+The current verified automated test baseline is:
+
+```text
+526 tests
+```
+
+These evaluations are regression controls for defined security properties. They are not a claim that the application is immune to all AI-security attacks.
 
 ---
 
@@ -749,28 +917,29 @@ These limitations are intentionally documented rather than hidden.
 
 Planned or potential improvements include:
 
-- OIDC authentication
-- ServiceNow REST integration
-- immutable GitHub Action pinning
-- Dependabot
-- SBOM generation
-- expansion of the adversarial security corpus toward 80+ purpose-built cases
-- dedicated excessive-agency evaluations
-- dedicated sensitive-data-leakage evaluations
-- dedicated cross-user authorization evaluations
+- OIDC / enterprise identity integration
+- enterprise identity and document-ACL-derived RAG authorization
+- authorization before embedding and semantic search
+- dedicated cross-user authorization evaluations after user/resource ownership exists
+- production ServiceNow REST integration
+- external AI red-team framework integration such as PyRIT or garak
 - broader indirect prompt-injection and RAG-poisoning coverage
-- integration with an external AI red-team framework such as PyRIT or garak
 - stronger model-output semantic and security validation
 - sensitive-data classification
-- identity-aware RAG authorization
-- authorization before embedding and semantic search
 - explicit least-privilege credentials for external tool integrations
 - egress controls
 - centralized security telemetry
 - SIEM integration
 - OpenTelemetry
 - policy-as-code
+- immutable GitHub Action pinning
+- SBOM generation
+- package hash verification
+- artifact signing
+- production vector database authorization controls
 - cloud deployment hardening
+- production secret management
+- distributed execution coordination
 
 ---
 
@@ -780,8 +949,12 @@ The VM AI Agent is designed around separation of authority.
 
 ```text
 External data is untrusted.
+Retrieved data is non-authoritative.
 AI output is advisory.
 Risk policy is deterministic.
+Workflow role and knowledge access are separate.
+Retrieval authority comes from authenticated application state.
+The model cannot promote its own retrieval access.
 Approval is human.
 Approval is content-bound.
 Execution is controlled.

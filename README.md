@@ -267,11 +267,11 @@ Data Leakage Security Result: PASS
 The corpus exercises:
 
 - restricted evidence isolation
-- authorization before semantic ranking and top-k selection
-- server-controlled standard retrieval access
+- authorization filtering after candidate semantic ranking and before final top-k selection
+- authenticated Principal-derived standard and restricted retrieval access
 - synthetic sensitive-data canary detection
 - restricted-only result handling
-- legitimate restricted-access positive controls
+- explicit restricted-access identity positive controls
 - invalid retrieval-access rejection
 
 ### 6. Excessive Agency Corpus
@@ -390,7 +390,7 @@ flowchart TD
     VX --> SR["Semantic Retrieval"]
 
     Q --> SR
-    SR --> AZ["Retrieval Authorization"]
+    SR --> AZ["Principal-Derived Retrieval Authorization"]
     AZ --> RI["Retrieved-Evidence Injection Inspection"]
 
     RI -->|"suspicious"| X["Quarantine + Audit"]
@@ -585,6 +585,26 @@ access_level = standard | restricted
 
 A standard workflow cannot receive restricted evidence as model context.
 
+Retrieval access is derived from the authenticated Principal rather than
+from model-supplied tool arguments.
+
+The current demo separates workflow authority from information-access
+authority:
+
+```text
+APPROVER role
+    does not imply
+restricted RAG access
+```
+
+An explicitly authorized restricted-access identity can retrieve
+restricted evidence, while standard ANALYST and APPROVER identities
+remain limited to standard evidence.
+
+The language model cannot promote its own retrieval access because the
+LLM-visible knowledge tool does not accept a `caller_access` or
+`retrieval_access` argument.
+
 Authorization also outranks semantic relevance. In the included authorization demonstration, a restricted document with a higher similarity score is withheld from a standard caller while lower-scoring authorized evidence remains available.
 
 Retrieved text is never treated as a new instruction source merely because it came from trusted storage.
@@ -678,20 +698,53 @@ A future production implementation could replace this fallback with an authorita
 
 ---
 
-### 10. RBAC
+### 10. RBAC and Identity-Aware Retrieval Authorization
 
-The API distinguishes security roles such as:
+The API distinguishes workflow roles such as:
 
 ```text
 ANALYST
 APPROVER
 ```
 
-Authenticated identity flows into approval operations.
+Authenticated identity flows into both workflow authorization and
+knowledge-retrieval authorization.
 
-An analyst identity does not automatically receive approval authority.
+Workflow role and knowledge-access privilege are deliberately separate.
 
-The current project authentication mechanism uses environment-provided bearer tokens for demonstration and development purposes.
+The current development/demo identities behave as follows:
+
+```text
+api-analyst
+role = ANALYST
+retrieval_access = standard
+
+api-approver
+role = APPROVER
+retrieval_access = standard
+
+api-restricted-analyst
+role = ANALYST
+retrieval_access = restricted
+```
+
+An APPROVER does not automatically receive restricted knowledge access.
+
+Likewise, an identity with restricted knowledge access does not
+automatically receive workflow approval authority.
+
+The retrieval-access value is derived from the authenticated Principal
+and is passed to the retriever by trusted application code.
+
+The LLM does not supply or override:
+
+```text
+retrieval_access
+caller_access
+```
+
+The current project authentication mechanism uses environment-provided
+bearer tokens for demonstration and development purposes.
 
 Production identity federation such as OIDC is a future enhancement.
 
@@ -921,7 +974,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-510 automated tests
+526 automated tests
 ```
 
 Run the complete suite with:
@@ -943,6 +996,13 @@ The test suite covers areas including:
 - semantic retrieval
 - constrained retrieval-query construction
 - standard versus restricted retrieval access
+- authenticated Principal-derived retrieval authorization
+- separation of workflow role and knowledge-access privilege
+- standard ANALYST restricted-evidence isolation
+- APPROVER restricted-evidence isolation
+- explicit restricted-access positive control
+- rejection of invalid retrieval-access claims
+- proof that the LLM-visible knowledge tool cannot accept an access override
 - authorization outranking semantic similarity
 - safe RAG context construction
 - retrieved-evidence prompt-injection detection
@@ -967,7 +1027,7 @@ The test suite covers areas including:
 - ANALYST versus APPROVER role enforcement
 - authorization status, role, and exception integrity
 - restricted-evidence leakage prevention
-- authorization-before-ranking and authorization-before-top-k behavior
+- authorization superseding semantic rank before final top-k selection
 - synthetic sensitive-data canary exposure detection
 - state-dependent agent tool exposure
 - model-supplied tool-argument rejection
@@ -1118,6 +1178,7 @@ TENABLE_ACCESS_KEY
 TENABLE_SECRET_KEY
 VM_AI_ANALYST_TOKEN
 VM_AI_APPROVER_TOKEN
+VM_AI_RESTRICTED_ANALYST_TOKEN
 ```
 
 The demo uses:
@@ -1368,23 +1429,36 @@ Only use Tenable credentials from an account and environment you are authorized 
 
 The FastAPI workflow interface currently uses development/demo bearer tokens.
 
-Configure two separate values:
+Configure separate development/demo identity tokens:
 
 ```dotenv
 VM_AI_ANALYST_TOKEN=replace-with-a-high-entropy-analyst-token
 VM_AI_APPROVER_TOKEN=replace-with-a-different-high-entropy-approver-token
+VM_AI_RESTRICTED_ANALYST_TOKEN=replace-with-a-different-high-entropy-restricted-analyst-token
 ```
 
-The roles are intentionally separated:
+The identities are intentionally separated across two independent
+authorization dimensions:
 
 ```text
-ANALYST
-APPROVER
+Workflow Role
+ANALYST | APPROVER
+
+Knowledge Access
+standard | restricted
 ```
 
-An analyst token does not grant approval authority.
+The restricted analyst identity demonstrates restricted RAG access
+without granting APPROVER workflow authority.
 
-The current bearer-token implementation is intended for development and portfolio demonstration.
+The APPROVER identity demonstrates approval authority without granting
+restricted RAG access.
+
+The retrieval-access value is derived from authenticated Principal
+context rather than from model-supplied tool arguments.
+
+The current bearer-token implementation is intended for development and
+portfolio demonstration.
 
 Enterprise identity federation such as OIDC is a future enhancement.
 
@@ -1496,6 +1570,7 @@ vm-ai-agent/
 |   |-- rag_context.py
 |   |-- rag_ingestion.py
 |   |-- rag_security.py
+|   |-- retrieval_authorization.py
 |   |-- retrieval_query.py
 |   |-- retriever.py
 |   |-- risk_engine.py
@@ -1563,6 +1638,8 @@ vm-ai-agent/
 |   |-- test_authorization_security_evaluations.py
 |   |-- test_data_leakage_security_evaluations.py
 |   |-- test_excessive_agency_security_evaluations.py
+|   |-- test_identity_aware_rag_authorization.py
+|   |-- test_retrieval_authorization.py
 |   |-- test_tool_security_evaluations.py
 |   `-- ...
 |
@@ -1637,7 +1714,7 @@ Current limitations include:
 - Prompt-injection and RAG-poisoning detection are currently pattern-based and should be treated as one layer within a broader defense-in-depth strategy.
 - The current RAG implementation uses a lightweight local vector index intended for demonstration rather than a production vector database.
 - Retrieval access control currently filters evidence before model context is built, but stronger production designs should partition or authorize restricted knowledge before embedding and semantic search as well.
-- The standard/restricted knowledge classification model is server-controlled but is not yet derived from an enterprise identity, document ACL, or policy engine.
+- The standard/restricted retrieval-access decision is now derived from the authenticated development/demo Principal, but it is not yet derived from enterprise OIDC claims, document ACLs, tenant ownership, or an external policy engine.
 - The RAG evaluation corpus is intentionally synthetic and small; it does not represent a comprehensive production AI red-team program.
 - The current adversarial evaluator validates known security properties but does not yet produce longitudinal scoring, trend data, or coverage metrics.
 - The current server-controlled ticket assignment uses a conservative fallback rather than production CMDB or ServiceNow routing.
@@ -1654,7 +1731,7 @@ Potential next steps include:
 ```text
 Production ServiceNow REST integration
 OIDC / enterprise identity integration
-Identity-derived retrieval authorization
+Enterprise identity, document-ACL, and policy-engine-derived retrieval authorization
 Pre-embedding / pre-search authorization partitioning
 Production vector database integration
 Additional RAG poisoning and indirect prompt-injection cases

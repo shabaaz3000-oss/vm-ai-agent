@@ -396,6 +396,13 @@ def evaluate_data_leakage_case(
             # -------------------------------------------------
             # LLM-VISIBLE KNOWLEDGE TOOL
             # -------------------------------------------------
+            #
+            # Tool-search cases derive knowledge access from
+            # the authenticated Principal.
+            #
+            # caller_access remains absent from the tool
+            # interface and cannot be supplied by the model.
+            # -------------------------------------------------
 
             if operation == "tool_search":
 
@@ -403,8 +410,16 @@ def evaluate_data_leakage_case(
                     username=(
                         "data-leakage-eval-user"
                     ),
+
                     role=
-                        case["principal_role"],
+                        case[
+                            "principal_role"
+                        ],
+
+                    retrieval_access=
+                        case[
+                            "principal_retrieval_access"
+                        ],
                 )
 
                 with patch(
@@ -454,6 +469,12 @@ def evaluate_data_leakage_case(
 
             # -------------------------------------------------
             # DIRECT RETRIEVER SECURITY BOUNDARY
+            # -------------------------------------------------
+            #
+            # Direct-retrieval cases continue to validate
+            # the lower-level retriever authorization
+            # boundary independently from authenticated
+            # tool behavior.
             # -------------------------------------------------
 
             else:
