@@ -19,6 +19,18 @@ from app.tool_security_evaluator import (
     run_tool_security_evaluation,
 )
 
+from app.authorization_security_evaluator import (
+    run_authorization_security_evaluation,
+)
+
+from app.data_leakage_security_evaluator import (
+    run_data_leakage_security_evaluation,
+)
+
+from app.excessive_agency_security_evaluator import (
+    run_excessive_agency_security_evaluation,
+)
+
 from run_security_evals import (
     calculate_security_score,
     run_security_evaluations,
@@ -569,6 +581,9 @@ def display_security_evaluation(
     prompt_result,
     rag_result,
     tool_result,
+    authorization_result,
+    leakage_result,
+    agency_result,
     attack_results,
 ) -> None:
 
@@ -799,6 +814,235 @@ def display_security_evaluation(
         )
 
     # -------------------------------------------------
+    # AUTHORIZATION SECURITY
+    # -------------------------------------------------
+
+    print()
+
+    print(
+        "AUTHORIZATION SECURITY"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        "Total Cases:",
+        authorization_result.total_cases,
+    )
+
+    print(
+        "Allowed Cases:",
+        authorization_result.allowed_cases,
+    )
+
+    print(
+        "Blocked Cases:",
+        authorization_result.blocked_cases,
+    )
+
+    print()
+
+    print(
+        "Passed Cases:",
+        authorization_result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        authorization_result.failed_cases,
+    )
+
+    print()
+
+    print(
+        "Unexpected Allows:",
+        authorization_result.unexpected_allows,
+    )
+
+    print(
+        "Unexpected Blocks:",
+        authorization_result.unexpected_blocks,
+    )
+
+    print(
+        "Status Mismatches:",
+        authorization_result.status_mismatches,
+    )
+
+    print(
+        "Role Mismatches:",
+        authorization_result.role_mismatches,
+    )
+
+    print(
+        "Exception Mismatches:",
+        authorization_result.exception_mismatches,
+    )
+
+    print()
+
+    if authorization_result.passed:
+
+        print(
+            "Authorization Security Result: PASS"
+        )
+
+    else:
+
+        print(
+            "Authorization Security Result: FAIL"
+        )
+
+    # -------------------------------------------------
+    # DATA LEAKAGE SECURITY
+    # -------------------------------------------------
+
+    print()
+
+    print(
+        "DATA LEAKAGE SECURITY"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        "Total Cases:",
+        leakage_result.total_cases,
+    )
+
+    print(
+        "Passed Cases:",
+        leakage_result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        leakage_result.failed_cases,
+    )
+
+    print()
+
+    print(
+        "Unexpected Exposures:",
+        leakage_result.unexpected_exposures,
+    )
+
+    print(
+        "Result Mismatches:",
+        leakage_result.result_mismatches,
+    )
+
+    print(
+        "Access Mismatches:",
+        leakage_result.access_mismatches,
+    )
+
+    print(
+        "Error Mismatches:",
+        leakage_result.error_mismatches,
+    )
+
+    print()
+
+    if leakage_result.passed:
+
+        print(
+            "Data Leakage Security Result: PASS"
+        )
+
+    else:
+
+        print(
+            "Data Leakage Security Result: FAIL"
+        )
+
+    # -------------------------------------------------
+    # EXCESSIVE AGENCY
+    # -------------------------------------------------
+
+    print()
+
+    print(
+        "EXCESSIVE AGENCY"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        "Total Cases:",
+        agency_result.total_cases,
+    )
+
+    print(
+        "Permitted Cases:",
+        agency_result.permitted_cases,
+    )
+
+    print(
+        "Blocked Cases:",
+        agency_result.blocked_cases,
+    )
+
+    print()
+
+    print(
+        "Passed Cases:",
+        agency_result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        agency_result.failed_cases,
+    )
+
+    print()
+
+    print(
+        "Unexpected Allows:",
+        agency_result.unexpected_allows,
+    )
+
+    print(
+        "Unexpected Blocks:",
+        agency_result.unexpected_blocks,
+    )
+
+    print(
+        "Error Mismatches:",
+        agency_result.error_mismatches,
+    )
+
+    print(
+        "Message Mismatches:",
+        agency_result.message_mismatches,
+    )
+
+    print(
+        "Scope Mismatches:",
+        agency_result.scope_mismatches,
+    )
+
+    print()
+
+    if agency_result.passed:
+
+        print(
+            "Excessive Agency Result: PASS"
+        )
+
+    else:
+
+        print(
+            "Excessive Agency Result: FAIL"
+        )
+
+    # -------------------------------------------------
     # STANDARDIZED ATTACK HARNESS
     # -------------------------------------------------
 
@@ -933,6 +1177,9 @@ def display_security_evaluation(
         prompt_result.passed
         and rag_result.passed
         and tool_result.passed
+        and authorization_result.passed
+        and leakage_result.passed
+        and agency_result.passed
         and attack_harness_passed
     )
 
@@ -1040,6 +1287,9 @@ def run_security_eval() -> int:
     - evaluates prompt-injection detection
     - evaluates RAG quarantine enforcement
     - evaluates LLM tool authorization and dispatch
+    - evaluates authentication and authorization boundaries
+    - evaluates sensitive-data leakage controls
+    - evaluates excessive-agency controls
     - runs the standardized attack harness
     - reports false negatives
     - reports false positives
@@ -1064,6 +1314,18 @@ def run_security_eval() -> int:
         run_tool_security_evaluation()
     )
 
+    authorization_result = (
+        run_authorization_security_evaluation()
+    )
+
+    leakage_result = (
+        run_data_leakage_security_evaluation()
+    )
+
+    agency_result = (
+        run_excessive_agency_security_evaluation()
+    )
+
     attack_results = (
         run_security_evaluations()
     )
@@ -1072,6 +1334,9 @@ def run_security_eval() -> int:
         prompt_result,
         rag_result,
         tool_result,
+        authorization_result,
+        leakage_result,
+        agency_result,
         attack_results,
     )
 
@@ -1089,6 +1354,9 @@ def run_security_eval() -> int:
         prompt_result.passed
         and rag_result.passed
         and tool_result.passed
+        and authorization_result.passed
+        and leakage_result.passed
+        and agency_result.passed
         and attack_harness_passed
     ):
 

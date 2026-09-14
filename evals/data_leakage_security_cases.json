@@ -1,0 +1,231 @@
+[
+  {
+    "id": "LEAK-001",
+    "name": "Analyst tool excludes higher-ranked restricted evidence",
+    "category": "restricted_data_exposure",
+    "operation": "tool_search",
+    "principal_role": "ANALYST",
+    "caller_access": null,
+    "top_k": 1,
+    "candidates": [
+      {
+        "id": "restricted-high",
+        "access_level": "restricted",
+        "similarity": 0.99,
+        "sensitive": true
+      },
+      {
+        "id": "standard-lower",
+        "access_level": "standard",
+        "similarity": 0.80,
+        "sensitive": false
+      }
+    ],
+    "expected_returned_ids": [
+      "standard-lower"
+    ],
+    "expected_tool_access": "standard",
+    "expected_canary_exposed": false,
+    "expected_error": null,
+    "severity": "critical"
+  },
+  {
+    "id": "LEAK-002",
+    "name": "Approver tool does not automatically gain restricted RAG access",
+    "category": "privilege_boundary",
+    "operation": "tool_search",
+    "principal_role": "APPROVER",
+    "caller_access": null,
+    "top_k": 1,
+    "candidates": [
+      {
+        "id": "restricted-approver",
+        "access_level": "restricted",
+        "similarity": 0.99,
+        "sensitive": true
+      },
+      {
+        "id": "standard-approver",
+        "access_level": "standard",
+        "similarity": 0.75,
+        "sensitive": false
+      }
+    ],
+    "expected_returned_ids": [
+      "standard-approver"
+    ],
+    "expected_tool_access": "standard",
+    "expected_canary_exposed": false,
+    "expected_error": null,
+    "severity": "critical"
+  },
+  {
+    "id": "LEAK-003",
+    "name": "Restricted-only result set returns no evidence to standard tool",
+    "category": "restricted_data_exposure",
+    "operation": "tool_search",
+    "principal_role": "ANALYST",
+    "caller_access": null,
+    "top_k": 3,
+    "candidates": [
+      {
+        "id": "restricted-only-1",
+        "access_level": "restricted",
+        "similarity": 0.98,
+        "sensitive": true
+      },
+      {
+        "id": "restricted-only-2",
+        "access_level": "restricted",
+        "similarity": 0.92,
+        "sensitive": true
+      }
+    ],
+    "expected_returned_ids": [],
+    "expected_tool_access": "standard",
+    "expected_canary_exposed": false,
+    "expected_error": null,
+    "severity": "critical"
+  },
+  {
+    "id": "LEAK-004",
+    "name": "Multiple restricted results do not crowd authorized evidence",
+    "category": "authorization_before_ranking",
+    "operation": "tool_search",
+    "principal_role": "ANALYST",
+    "caller_access": null,
+    "top_k": 2,
+    "candidates": [
+      {
+        "id": "restricted-rank-1",
+        "access_level": "restricted",
+        "similarity": 0.99,
+        "sensitive": true
+      },
+      {
+        "id": "restricted-rank-2",
+        "access_level": "restricted",
+        "similarity": 0.97,
+        "sensitive": true
+      },
+      {
+        "id": "standard-rank-3",
+        "access_level": "standard",
+        "similarity": 0.82,
+        "sensitive": false
+      },
+      {
+        "id": "standard-rank-4",
+        "access_level": "standard",
+        "similarity": 0.78,
+        "sensitive": false
+      }
+    ],
+    "expected_returned_ids": [
+      "standard-rank-3",
+      "standard-rank-4"
+    ],
+    "expected_tool_access": "standard",
+    "expected_canary_exposed": false,
+    "expected_error": null,
+    "severity": "critical"
+  },
+  {
+    "id": "LEAK-005",
+    "name": "Top one authorized result survives stronger restricted match",
+    "category": "authorization_before_top_k",
+    "operation": "direct_retrieval",
+    "principal_role": null,
+    "caller_access": "standard",
+    "top_k": 1,
+    "candidates": [
+      {
+        "id": "restricted-best",
+        "access_level": "restricted",
+        "similarity": 1.0,
+        "sensitive": true
+      },
+      {
+        "id": "standard-second",
+        "access_level": "standard",
+        "similarity": 0.70,
+        "sensitive": false
+      }
+    ],
+    "expected_returned_ids": [
+      "standard-second"
+    ],
+    "expected_tool_access": null,
+    "expected_canary_exposed": false,
+    "expected_error": null,
+    "severity": "critical"
+  },
+  {
+    "id": "LEAK-006",
+    "name": "Standard direct retrieval excludes restricted canary",
+    "category": "retrieval_authorization",
+    "operation": "direct_retrieval",
+    "principal_role": null,
+    "caller_access": "standard",
+    "top_k": 3,
+    "candidates": [
+      {
+        "id": "restricted-secret",
+        "access_level": "restricted",
+        "similarity": 0.95,
+        "sensitive": true
+      }
+    ],
+    "expected_returned_ids": [],
+    "expected_tool_access": null,
+    "expected_canary_exposed": false,
+    "expected_error": null,
+    "severity": "critical"
+  },
+  {
+    "id": "LEAK-007",
+    "name": "Restricted retrieval positive control returns restricted evidence",
+    "category": "authorized_restricted_access",
+    "operation": "direct_retrieval",
+    "principal_role": null,
+    "caller_access": "restricted",
+    "top_k": 1,
+    "candidates": [
+      {
+        "id": "restricted-authorized",
+        "access_level": "restricted",
+        "similarity": 0.96,
+        "sensitive": true
+      }
+    ],
+    "expected_returned_ids": [
+      "restricted-authorized"
+    ],
+    "expected_tool_access": null,
+    "expected_canary_exposed": true,
+    "expected_error": null,
+    "severity": "low"
+  },
+  {
+    "id": "LEAK-008",
+    "name": "Invented retrieval access level is rejected",
+    "category": "access_level_validation",
+    "operation": "direct_retrieval",
+    "principal_role": null,
+    "caller_access": "admin",
+    "top_k": 1,
+    "candidates": [
+      {
+        "id": "restricted-invalid-access",
+        "access_level": "restricted",
+        "similarity": 0.99,
+        "sensitive": true
+      }
+    ],
+    "expected_returned_ids": [],
+    "expected_tool_access": null,
+    "expected_canary_exposed": false,
+    "expected_error": "ValueError",
+    "severity": "critical"
+  }
+]

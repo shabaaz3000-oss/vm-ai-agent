@@ -1,0 +1,132 @@
+[
+  {
+    "id": "AUTH-001",
+    "name": "Valid analyst token resolves analyst identity",
+    "category": "authentication",
+    "operation": "authenticate",
+    "input": {
+      "token_kind": "analyst"
+    },
+    "expected": {
+      "allowed": true,
+      "status_code": null,
+      "resolved_role": "ANALYST",
+      "exception": null
+    },
+    "severity": "low"
+  },
+  {
+    "id": "AUTH-002",
+    "name": "Valid approver token resolves approver identity",
+    "category": "authentication",
+    "operation": "authenticate",
+    "input": {
+      "token_kind": "approver"
+    },
+    "expected": {
+      "allowed": true,
+      "status_code": null,
+      "resolved_role": "APPROVER",
+      "exception": null
+    },
+    "severity": "low"
+  },
+  {
+    "id": "AUTH-003",
+    "name": "Invalid bearer token is rejected",
+    "category": "authentication",
+    "operation": "authenticate",
+    "input": {
+      "token_kind": "invalid"
+    },
+    "expected": {
+      "allowed": false,
+      "status_code": 401,
+      "resolved_role": null,
+      "exception": "HTTPException"
+    },
+    "severity": "critical"
+  },
+  {
+    "id": "AUTH-004",
+    "name": "Analyst cannot cross approver role gate",
+    "category": "role_gate",
+    "operation": "require_approver",
+    "input": {
+      "role": "ANALYST"
+    },
+    "expected": {
+      "allowed": false,
+      "status_code": 403,
+      "resolved_role": null,
+      "exception": "HTTPException"
+    },
+    "severity": "critical"
+  },
+  {
+    "id": "AUTH-005",
+    "name": "Approver may pass approver role gate",
+    "category": "role_gate",
+    "operation": "require_approver",
+    "input": {
+      "role": "APPROVER"
+    },
+    "expected": {
+      "allowed": true,
+      "status_code": null,
+      "resolved_role": "APPROVER",
+      "exception": null
+    },
+    "severity": "low"
+  },
+  {
+    "id": "AUTH-006",
+    "name": "Analyst cannot request execution tool permission",
+    "category": "tool_authorization",
+    "operation": "tool_permission",
+    "input": {
+      "role": "ANALYST",
+      "tool_name": "execute_ticket_workflow"
+    },
+    "expected": {
+      "allowed": false,
+      "status_code": 403,
+      "resolved_role": null,
+      "exception": "HTTPException"
+    },
+    "severity": "critical"
+  },
+  {
+    "id": "AUTH-007",
+    "name": "Approver has execution tool permission",
+    "category": "tool_authorization",
+    "operation": "tool_permission",
+    "input": {
+      "role": "APPROVER",
+      "tool_name": "execute_ticket_workflow"
+    },
+    "expected": {
+      "allowed": true,
+      "status_code": null,
+      "resolved_role": "APPROVER",
+      "exception": null
+    },
+    "severity": "low"
+  },
+  {
+    "id": "AUTH-008",
+    "name": "Unsupported administrator role cannot be invented",
+    "category": "role_validation",
+    "operation": "construct_principal",
+    "input": {
+      "role": "ADMIN"
+    },
+    "expected": {
+      "allowed": false,
+      "status_code": null,
+      "resolved_role": null,
+      "exception": "ValidationError"
+    },
+    "severity": "critical"
+  }
+]
