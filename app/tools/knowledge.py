@@ -14,6 +14,10 @@ from app.rag_security import (
     secure_retrieved_evidence,
 )
 
+from app.retrieval_authorization import (
+    get_retrieval_access,
+)
+
 from app.retrieval_query import (
     build_retrieval_query,
 )
@@ -72,6 +76,43 @@ def search_knowledge(
         raise
 
     # -------------------------------------------------
+    # RESOLVE SERVER-SIDE RETRIEVAL AUTHORIZATION
+    # -------------------------------------------------
+    #
+    # Knowledge access is derived from the authenticated
+    # Principal.
+    #
+    # The language model does not provide or override
+    # the retrieval-access level.
+    #
+    # Workflow role and knowledge-access privilege are
+    # deliberately independent.
+    # -------------------------------------------------
+
+    retrieval_access = (
+        get_retrieval_access(
+            principal
+        )
+    )
+
+    log_event(
+        "RAG_ACCESS_RESOLVED",
+        {
+            "tool":
+                "search_knowledge",
+
+            "username":
+                principal.username,
+
+            "role":
+                principal.role,
+
+            "retrieval_access":
+                retrieval_access,
+        },
+    )
+
+    # -------------------------------------------------
     # BUILD CONSTRAINED RETRIEVAL QUERY
     # -------------------------------------------------
     #
@@ -89,12 +130,17 @@ def search_knowledge(
     # -------------------------------------------------
     # RETRIEVE AUTHORIZED KNOWLEDGE
     # -------------------------------------------------
+    #
+    # The retriever receives authorization state derived
+    # from trusted authenticated application context,
+    # never from model-supplied tool arguments.
+    # -------------------------------------------------
 
     retrieved_evidence = retriever.retrieve(
         query=query,
         top_k=top_k,
         min_similarity=min_similarity,
-        caller_access="standard",
+        caller_access=retrieval_access,
     )
 
     # -------------------------------------------------
@@ -140,6 +186,9 @@ def search_knowledge(
                 "role":
                     principal.role,
 
+                "retrieval_access":
+                    retrieval_access,
+
                 "quarantined_chunk_ids":
                     security_result
                     .quarantined_chunk_ids,
@@ -175,6 +224,9 @@ def search_knowledge(
 
             "role":
                 principal.role,
+
+            "retrieval_access":
+                retrieval_access,
 
             "retrieved_count":
                 len(

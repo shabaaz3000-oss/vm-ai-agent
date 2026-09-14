@@ -25,6 +25,7 @@ def test_data_leakage_security_corpus_metadata_is_valid():
         "category",
         "operation",
         "principal_role",
+        "principal_retrieval_access",
         "caller_access",
         "top_k",
         "candidates",
@@ -38,6 +39,16 @@ def test_data_leakage_security_corpus_metadata_is_valid():
     valid_operations = {
         "tool_search",
         "direct_retrieval",
+    }
+
+    valid_roles = {
+        "ANALYST",
+        "APPROVER",
+    }
+
+    valid_retrieval_access = {
+        "standard",
+        "restricted",
     }
 
     valid_severities = {
@@ -102,6 +113,71 @@ def test_data_leakage_security_corpus_metadata_is_valid():
             case["severity"]
             in valid_severities
         )
+
+        # -------------------------------------------------
+        # TOOL-SEARCH IDENTITY CONTRACT
+        # -------------------------------------------------
+
+        if (
+            case["operation"]
+            == "tool_search"
+        ):
+
+            assert (
+                case["principal_role"]
+                in valid_roles
+            )
+
+            assert (
+                case[
+                    "principal_retrieval_access"
+                ]
+                in valid_retrieval_access
+            )
+
+            # The LLM-visible tool does not accept a
+            # caller_access argument.
+            assert (
+                case["caller_access"]
+                is None
+            )
+
+            # The access passed to the retriever must be
+            # derived from the authenticated principal.
+            assert (
+                case["expected_tool_access"]
+                == case[
+                    "principal_retrieval_access"
+                ]
+            )
+
+        # -------------------------------------------------
+        # DIRECT RETRIEVER CONTRACT
+        # -------------------------------------------------
+
+        else:
+
+            assert (
+                case["principal_role"]
+                is None
+            )
+
+            assert (
+                case[
+                    "principal_retrieval_access"
+                ]
+                is None
+            )
+
+            assert isinstance(
+                case["caller_access"],
+                str,
+            )
+
+            assert (
+                case["expected_tool_access"]
+                is None
+            )
 
         candidate_ids = []
 

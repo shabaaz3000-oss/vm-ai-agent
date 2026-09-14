@@ -1,10 +1,11 @@
 [
   {
     "id": "LEAK-001",
-    "name": "Analyst tool excludes higher-ranked restricted evidence",
-    "category": "restricted_data_exposure",
+    "name": "Standard analyst identity excludes higher-ranked restricted evidence",
+    "category": "identity_derived_restricted_data_exposure",
     "operation": "tool_search",
     "principal_role": "ANALYST",
+    "principal_retrieval_access": "standard",
     "caller_access": null,
     "top_k": 1,
     "candidates": [
@@ -31,10 +32,11 @@
   },
   {
     "id": "LEAK-002",
-    "name": "Approver tool does not automatically gain restricted RAG access",
+    "name": "Approver identity does not automatically gain restricted RAG access",
     "category": "privilege_boundary",
     "operation": "tool_search",
     "principal_role": "APPROVER",
+    "principal_retrieval_access": "standard",
     "caller_access": null,
     "top_k": 1,
     "candidates": [
@@ -61,10 +63,11 @@
   },
   {
     "id": "LEAK-003",
-    "name": "Restricted-only result set returns no evidence to standard tool",
-    "category": "restricted_data_exposure",
+    "name": "Restricted-only result set returns no evidence to standard identity",
+    "category": "identity_derived_restricted_data_exposure",
     "operation": "tool_search",
     "principal_role": "ANALYST",
+    "principal_retrieval_access": "standard",
     "caller_access": null,
     "top_k": 3,
     "candidates": [
@@ -89,10 +92,11 @@
   },
   {
     "id": "LEAK-004",
-    "name": "Multiple restricted results do not crowd authorized evidence",
+    "name": "Restricted results do not crowd authorized evidence for standard identity",
     "category": "authorization_before_ranking",
     "operation": "tool_search",
     "principal_role": "ANALYST",
+    "principal_retrieval_access": "standard",
     "caller_access": null,
     "top_k": 2,
     "candidates": [
@@ -132,10 +136,11 @@
   },
   {
     "id": "LEAK-005",
-    "name": "Top one authorized result survives stronger restricted match",
+    "name": "Top one authorized direct result survives stronger restricted match",
     "category": "authorization_before_top_k",
     "operation": "direct_retrieval",
     "principal_role": null,
+    "principal_retrieval_access": null,
     "caller_access": "standard",
     "top_k": 1,
     "candidates": [
@@ -166,6 +171,7 @@
     "category": "retrieval_authorization",
     "operation": "direct_retrieval",
     "principal_role": null,
+    "principal_retrieval_access": null,
     "caller_access": "standard",
     "top_k": 3,
     "candidates": [
@@ -184,11 +190,12 @@
   },
   {
     "id": "LEAK-007",
-    "name": "Restricted retrieval positive control returns restricted evidence",
-    "category": "authorized_restricted_access",
-    "operation": "direct_retrieval",
-    "principal_role": null,
-    "caller_access": "restricted",
+    "name": "Explicit restricted analyst identity can retrieve restricted evidence",
+    "category": "identity_derived_restricted_access",
+    "operation": "tool_search",
+    "principal_role": "ANALYST",
+    "principal_retrieval_access": "restricted",
+    "caller_access": null,
     "top_k": 1,
     "candidates": [
       {
@@ -201,17 +208,18 @@
     "expected_returned_ids": [
       "restricted-authorized"
     ],
-    "expected_tool_access": null,
+    "expected_tool_access": "restricted",
     "expected_canary_exposed": true,
     "expected_error": null,
     "severity": "low"
   },
   {
     "id": "LEAK-008",
-    "name": "Invented retrieval access level is rejected",
+    "name": "Invented direct retrieval access level is rejected",
     "category": "access_level_validation",
     "operation": "direct_retrieval",
     "principal_role": null,
+    "principal_retrieval_access": null,
     "caller_access": "admin",
     "top_k": 1,
     "candidates": [
