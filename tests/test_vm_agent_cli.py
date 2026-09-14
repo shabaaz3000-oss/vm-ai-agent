@@ -258,28 +258,12 @@ def make_prompt_security_eval_result(
 ):
 
     return SimpleNamespace(
-        total_cases=12,
-        adversarial_cases=10,
-        benign_cases=2,
-
-        passed_cases=(
-            12
-            if passed
-            else 11
-        ),
-
-        failed_cases=(
-            0
-            if passed
-            else 1
-        ),
-
-        false_negatives=(
-            0
-            if passed
-            else 1
-        ),
-
+        total_cases=20,
+        adversarial_cases=15,
+        benign_cases=5,
+        passed_cases=(20 if passed else 19),
+        failed_cases=(0 if passed else 1),
+        false_negatives=(0 if passed else 1),
         false_positives=0,
         category_mismatches=0,
         passed=passed,
@@ -292,28 +276,12 @@ def make_rag_security_eval_result(
 ):
 
     return SimpleNamespace(
-        total_cases=8,
-        malicious_cases=6,
-        benign_cases=2,
-
-        passed_cases=(
-            8
-            if passed
-            else 7
-        ),
-
-        failed_cases=(
-            0
-            if passed
-            else 1
-        ),
-
-        missed_quarantines=(
-            0
-            if passed
-            else 1
-        ),
-
+        total_cases=20,
+        malicious_cases=14,
+        benign_cases=6,
+        passed_cases=(20 if passed else 19),
+        failed_cases=(0 if passed else 1),
+        missed_quarantines=(0 if passed else 1),
         false_quarantines=0,
         category_mismatches=0,
         passed=passed,
@@ -329,27 +297,68 @@ def make_tool_security_eval_result(
         total_cases=16,
         allowed_cases=8,
         blocked_cases=8,
-
-        passed_cases=(
-            16
-            if passed
-            else 15
-        ),
-
-        failed_cases=(
-            0
-            if passed
-            else 1
-        ),
-
-        unexpected_allows=(
-            0
-            if passed
-            else 1
-        ),
-
+        passed_cases=(16 if passed else 15),
+        failed_cases=(0 if passed else 1),
+        unexpected_allows=(0 if passed else 1),
         unexpected_blocks=0,
         error_mismatches=0,
+        passed=passed,
+    )
+
+
+def make_authorization_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return SimpleNamespace(
+        total_cases=8,
+        allowed_cases=4,
+        blocked_cases=4,
+        passed_cases=(8 if passed else 7),
+        failed_cases=(0 if passed else 1),
+        unexpected_allows=(0 if passed else 1),
+        unexpected_blocks=0,
+        status_mismatches=0,
+        role_mismatches=0,
+        exception_mismatches=0,
+        passed=passed,
+    )
+
+
+def make_data_leakage_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return SimpleNamespace(
+        total_cases=8,
+        passed_cases=(8 if passed else 7),
+        failed_cases=(0 if passed else 1),
+        unexpected_exposures=(0 if passed else 1),
+        result_mismatches=0,
+        access_mismatches=0,
+        error_mismatches=0,
+        passed=passed,
+    )
+
+
+def make_excessive_agency_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return SimpleNamespace(
+        total_cases=12,
+        permitted_cases=3,
+        blocked_cases=9,
+        passed_cases=(12 if passed else 11),
+        failed_cases=(0 if passed else 1),
+        unexpected_allows=(0 if passed else 1),
+        unexpected_blocks=0,
+        error_mismatches=0,
+        message_mismatches=0,
+        scope_mismatches=0,
         passed=passed,
     )
 
@@ -371,34 +380,96 @@ def make_attack_security_eval_results(
 
     return [
         SimpleNamespace(
-            attack_name=
-                attack_name,
-
-            category=
-                "security_eval",
-
-            severity=
-                "critical",
-
-            passed=
-                passed,
-
+            attack_name=attack_name,
+            category="security_eval",
+            severity="critical",
+            passed=passed,
             expected_behavior=(
                 "Security control blocks attack."
             ),
-
             observed_behavior=(
                 "Attack blocked."
                 if passed
                 else "Attack succeeded."
             ),
-
             evidence=[],
         )
-
-        for attack_name
-        in attack_names
+        for attack_name in attack_names
     ]
+
+
+def patch_security_eval_suites(
+    monkeypatch,
+    *,
+    prompt_passed: bool = True,
+    rag_passed: bool = True,
+    tool_passed: bool = True,
+    authorization_passed: bool = True,
+    leakage_passed: bool = True,
+    agency_passed: bool = True,
+    attack_results=None,
+) -> None:
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluation",
+        lambda: make_prompt_security_eval_result(
+            passed=prompt_passed
+        ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_rag_security_evaluation",
+        lambda: make_rag_security_eval_result(
+            passed=rag_passed
+        ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_tool_security_evaluation",
+        lambda: make_tool_security_eval_result(
+            passed=tool_passed
+        ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_authorization_security_evaluation",
+        lambda: make_authorization_security_eval_result(
+            passed=authorization_passed
+        ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_data_leakage_security_evaluation",
+        lambda: make_data_leakage_security_eval_result(
+            passed=leakage_passed
+        ),
+    )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_excessive_agency_security_evaluation",
+        lambda: make_excessive_agency_security_eval_result(
+            passed=agency_passed
+        ),
+    )
+
+    if attack_results is None:
+        attack_results = (
+            make_attack_security_eval_results(
+                passed=True
+            )
+        )
+
+    monkeypatch.setattr(
+        vm_agent,
+        "run_security_evaluations",
+        lambda: attack_results,
+    )
 
 
 def test_security_eval_command_returns_zero_when_all_suites_pass(
@@ -406,53 +477,15 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
     capsys,
 ) -> None:
 
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluation",
-        lambda:
-            make_prompt_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_rag_security_evaluation",
-        lambda:
-            make_rag_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_tool_security_evaluation",
-        lambda:
-            make_tool_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluations",
-        lambda:
-            make_attack_security_eval_results(
-                passed=True
-            ),
+    patch_security_eval_suites(
+        monkeypatch
     )
 
     exit_code = vm_agent.main(
-        [
-            "security-eval",
-        ]
+        ["security-eval"]
     )
 
-    output = (
-        capsys
-        .readouterr()
-        .out
-    )
+    output = capsys.readouterr().out
 
     assert exit_code == 0
 
@@ -461,120 +494,59 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
         in output
     )
 
-    assert (
-        "PROMPT-INJECTION DETECTION"
-        in output
-    )
+    for heading in [
+        "PROMPT-INJECTION DETECTION",
+        "RAG QUARANTINE ENFORCEMENT",
+        "TOOL SECURITY",
+        "AUTHORIZATION SECURITY",
+        "DATA LEAKAGE SECURITY",
+        "EXCESSIVE AGENCY",
+        "STANDARDIZED ATTACK HARNESS",
+    ]:
+        assert heading in output
 
-    assert (
-        "RAG QUARANTINE ENFORCEMENT"
-        in output
-    )
-
-    assert (
-        "TOOL SECURITY"
-        in output
-    )
-
-    assert (
-        "STANDARDIZED ATTACK HARNESS"
-        in output
-    )
-
-    assert (
-        "Direct Prompt Injection"
-        in output
-    )
-
-    assert (
-        "System Prompt Leakage"
-        in output
-    )
-
-    assert (
-        "Adversarial Cases: 10"
-        in output
-    )
-
-    assert (
-        "Malicious Cases: 6"
-        in output
-    )
-
-    assert (
-        "False Negatives: 0"
-        in output
-    )
-
-    assert (
-        "False Positives: 0"
-        in output
-    )
-
-    assert (
-        "Missed Quarantines: 0"
-        in output
-    )
-
-    assert (
-        "False Quarantines: 0"
-        in output
-    )
-
-    assert (
-        "Allowed Cases: 8"
-        in output
-    )
-
-    assert (
-        "Blocked Cases: 8"
-        in output
-    )
-
-    assert (
-        "Unexpected Allows: 0"
-        in output
-    )
-
-    assert (
-        "Unexpected Blocks: 0"
-        in output
-    )
-
-    assert (
-        "Error Mismatches: 0"
-        in output
-    )
+    assert "Adversarial Cases: 15" in output
+    assert "Malicious Cases: 14" in output
+    assert "Allowed Cases: 8" in output
+    assert "Allowed Cases: 4" in output
+    assert "Permitted Cases: 3" in output
+    assert "Unexpected Exposures: 0" in output
+    assert "Status Mismatches: 0" in output
+    assert "Role Mismatches: 0" in output
+    assert "Exception Mismatches: 0" in output
+    assert "Message Mismatches: 0" in output
+    assert "Scope Mismatches: 0" in output
 
     assert (
         "Prompt-Injection Result: PASS"
         in output
     )
-
     assert (
         "RAG Quarantine Result: PASS"
         in output
     )
-
     assert (
         "Tool Security Result: PASS"
         in output
     )
-
     assert (
-        "Passed: 7"
+        "Authorization Security Result: PASS"
+        in output
+    )
+    assert (
+        "Data Leakage Security Result: PASS"
+        in output
+    )
+    assert (
+        "Excessive Agency Result: PASS"
         in output
     )
 
-    assert (
-        "Failed: 0"
-        in output
-    )
-
-    assert (
-        "Security Score: 100.0%"
-        in output
-    )
+    assert "Direct Prompt Injection" in output
+    assert "System Prompt Leakage" in output
+    assert "Passed: 7" in output
+    assert "Failed: 0" in output
+    assert "Security Score: 100.0%" in output
 
     assert (
         "OVERALL SECURITY EVALUATION: PASS"
@@ -593,80 +565,26 @@ def test_security_eval_command_fails_when_prompt_suite_fails(
     capsys,
 ) -> None:
 
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluation",
-        lambda:
-            make_prompt_security_eval_result(
-                passed=False
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_rag_security_evaluation",
-        lambda:
-            make_rag_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_tool_security_evaluation",
-        lambda:
-            make_tool_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluations",
-        lambda:
-            make_attack_security_eval_results(
-                passed=True
-            ),
+    patch_security_eval_suites(
+        monkeypatch,
+        prompt_passed=False,
     )
 
     exit_code = vm_agent.main(
-        [
-            "security-eval",
-        ]
+        ["security-eval"]
     )
 
-    output = (
-        capsys
-        .readouterr()
-        .out
-    )
+    output = capsys.readouterr().out
 
     assert exit_code == 1
-
-    assert (
-        "False Negatives: 1"
-        in output
-    )
-
-    assert (
-        "Prompt-Injection Result: FAIL"
-        in output
-    )
-
-    assert (
-        "RAG Quarantine Result: PASS"
-        in output
-    )
-
-    assert (
-        "Tool Security Result: PASS"
-        in output
-    )
-
-    assert (
-        "OVERALL SECURITY EVALUATION: FAIL"
-        in output
-    )
+    assert "False Negatives: 1" in output
+    assert "Prompt-Injection Result: FAIL" in output
+    assert "RAG Quarantine Result: PASS" in output
+    assert "Tool Security Result: PASS" in output
+    assert "Authorization Security Result: PASS" in output
+    assert "Data Leakage Security Result: PASS" in output
+    assert "Excessive Agency Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
 
 
 def test_security_eval_command_fails_when_rag_suite_fails(
@@ -674,80 +592,26 @@ def test_security_eval_command_fails_when_rag_suite_fails(
     capsys,
 ) -> None:
 
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluation",
-        lambda:
-            make_prompt_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_rag_security_evaluation",
-        lambda:
-            make_rag_security_eval_result(
-                passed=False
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_tool_security_evaluation",
-        lambda:
-            make_tool_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluations",
-        lambda:
-            make_attack_security_eval_results(
-                passed=True
-            ),
+    patch_security_eval_suites(
+        monkeypatch,
+        rag_passed=False,
     )
 
     exit_code = vm_agent.main(
-        [
-            "security-eval",
-        ]
+        ["security-eval"]
     )
 
-    output = (
-        capsys
-        .readouterr()
-        .out
-    )
+    output = capsys.readouterr().out
 
     assert exit_code == 1
-
-    assert (
-        "Missed Quarantines: 1"
-        in output
-    )
-
-    assert (
-        "Prompt-Injection Result: PASS"
-        in output
-    )
-
-    assert (
-        "RAG Quarantine Result: FAIL"
-        in output
-    )
-
-    assert (
-        "Tool Security Result: PASS"
-        in output
-    )
-
-    assert (
-        "OVERALL SECURITY EVALUATION: FAIL"
-        in output
-    )
+    assert "Missed Quarantines: 1" in output
+    assert "Prompt-Injection Result: PASS" in output
+    assert "RAG Quarantine Result: FAIL" in output
+    assert "Tool Security Result: PASS" in output
+    assert "Authorization Security Result: PASS" in output
+    assert "Data Leakage Security Result: PASS" in output
+    assert "Excessive Agency Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
 
 
 def test_security_eval_command_fails_when_tool_suite_fails(
@@ -755,80 +619,96 @@ def test_security_eval_command_fails_when_tool_suite_fails(
     capsys,
 ) -> None:
 
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluation",
-        lambda:
-            make_prompt_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_rag_security_evaluation",
-        lambda:
-            make_rag_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_tool_security_evaluation",
-        lambda:
-            make_tool_security_eval_result(
-                passed=False
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluations",
-        lambda:
-            make_attack_security_eval_results(
-                passed=True
-            ),
+    patch_security_eval_suites(
+        monkeypatch,
+        tool_passed=False,
     )
 
     exit_code = vm_agent.main(
-        [
-            "security-eval",
-        ]
+        ["security-eval"]
     )
 
-    output = (
-        capsys
-        .readouterr()
-        .out
-    )
+    output = capsys.readouterr().out
 
     assert exit_code == 1
+    assert "Unexpected Allows: 1" in output
+    assert "Tool Security Result: FAIL" in output
+    assert "Authorization Security Result: PASS" in output
+    assert "Data Leakage Security Result: PASS" in output
+    assert "Excessive Agency Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
 
-    assert (
-        "Unexpected Allows: 1"
-        in output
+
+def test_security_eval_command_fails_when_authorization_suite_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    patch_security_eval_suites(
+        monkeypatch,
+        authorization_passed=False,
     )
 
-    assert (
-        "Prompt-Injection Result: PASS"
-        in output
+    exit_code = vm_agent.main(
+        ["security-eval"]
     )
 
-    assert (
-        "RAG Quarantine Result: PASS"
-        in output
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Authorization Security Result: FAIL" in output
+    assert "Unexpected Allows: 1" in output
+    assert "Data Leakage Security Result: PASS" in output
+    assert "Excessive Agency Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
+
+
+def test_security_eval_command_fails_when_data_leakage_suite_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    patch_security_eval_suites(
+        monkeypatch,
+        leakage_passed=False,
     )
 
-    assert (
-        "Tool Security Result: FAIL"
-        in output
+    exit_code = vm_agent.main(
+        ["security-eval"]
     )
 
-    assert (
-        "OVERALL SECURITY EVALUATION: FAIL"
-        in output
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Unexpected Exposures: 1" in output
+    assert "Data Leakage Security Result: FAIL" in output
+    assert "Authorization Security Result: PASS" in output
+    assert "Excessive Agency Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
+
+
+def test_security_eval_command_fails_when_excessive_agency_suite_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    patch_security_eval_suites(
+        monkeypatch,
+        agency_passed=False,
     )
+
+    exit_code = vm_agent.main(
+        ["security-eval"]
+    )
+
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Unexpected Allows: 1" in output
+    assert "Excessive Agency Result: FAIL" in output
+    assert "Authorization Security Result: PASS" in output
+    assert "Data Leakage Security Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
 
 
 def test_security_eval_command_fails_when_attack_harness_fails(
@@ -836,89 +716,36 @@ def test_security_eval_command_fails_when_attack_harness_fails(
     capsys,
 ) -> None:
 
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluation",
-        lambda:
-            make_prompt_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_rag_security_evaluation",
-        lambda:
-            make_rag_security_eval_result(
-                passed=True
-            ),
-    )
-
-    monkeypatch.setattr(
-        vm_agent,
-        "run_tool_security_evaluation",
-        lambda:
-            make_tool_security_eval_result(
-                passed=True
-            ),
-    )
-
     attack_results = (
         make_attack_security_eval_results(
             passed=True
         )
     )
 
-    attack_results[
-        -1
-    ].passed = False
-
-    attack_results[
-        -1
-    ].observed_behavior = (
+    attack_results[-1].passed = False
+    attack_results[-1].observed_behavior = (
         "Protected system prompt was exposed."
     )
 
-    monkeypatch.setattr(
-        vm_agent,
-        "run_security_evaluations",
-        lambda:
-            attack_results,
+    patch_security_eval_suites(
+        monkeypatch,
+        attack_results=attack_results,
     )
 
     exit_code = vm_agent.main(
-        [
-            "security-eval",
-        ]
+        ["security-eval"]
     )
 
-    output = (
-        capsys
-        .readouterr()
-        .out
-    )
+    output = capsys.readouterr().out
 
     assert exit_code == 1
-
-    assert (
-        "System Prompt Leakage"
-        in output
-    )
-
-    assert (
-        "FAIL"
-        in output
-    )
-
-    assert (
-        "Tool Security Result: PASS"
-        in output
-    )
-
-    assert (
-        "OVERALL SECURITY EVALUATION: FAIL"
-        in output
-    )
+    assert "System Prompt Leakage" in output
+    assert "FAIL" in output
+    assert "Tool Security Result: PASS" in output
+    assert "Authorization Security Result: PASS" in output
+    assert "Data Leakage Security Result: PASS" in output
+    assert "Excessive Agency Result: PASS" in output
+    assert "OVERALL SECURITY EVALUATION: FAIL" in output
 
 
 # -------------------------------------------------

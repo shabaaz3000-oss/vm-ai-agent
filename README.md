@@ -114,7 +114,7 @@ The evaluation requires no Tenable API credentials, OpenAI API
 credentials, ServiceNow credentials, approval, ticket creation, or
 external execution.
 
-The command runs four complementary security evaluation layers.
+The command runs seven complementary security evaluation layers.
 
 ### 1. Prompt-Injection Detection Corpus
 
@@ -209,9 +209,110 @@ Blocked cases verify that:
 - unrestricted knowledge-search variants are rejected
 - altered privileged tool names do not bypass the allowlist
 
-### 4. Standardized Attack Harness
+### 4. Authorization Security Corpus
 
-The third layer executes standardized adversarial scenarios against
+The fourth layer evaluates authentication, role enforcement, and
+tool-level authorization boundaries using data-driven behavioral cases.
+
+Current result:
+
+```text
+Total Cases: 8
+Allowed Cases: 4
+Blocked Cases: 4
+
+Passed Cases: 8
+Failed Cases: 0
+
+Unexpected Allows: 0
+Unexpected Blocks: 0
+Status Mismatches: 0
+Role Mismatches: 0
+Exception Mismatches: 0
+
+Authorization Security Result: PASS
+```
+
+The corpus exercises:
+
+- valid ANALYST and APPROVER authentication
+- invalid bearer-token rejection
+- ANALYST versus APPROVER role enforcement
+- privileged tool authorization
+- rejection of unsupported or invented roles
+
+This evaluation tests role-based authorization boundaries. It does not
+claim cross-user or tenant-level resource isolation.
+
+### 5. Data Leakage Security Corpus
+
+The fifth layer evaluates whether sensitive or restricted retrieved data
+can cross an unauthorized AI-visible boundary.
+
+Current result:
+
+```text
+Total Cases: 8
+Passed Cases: 8
+Failed Cases: 0
+
+Unexpected Exposures: 0
+Result Mismatches: 0
+Access Mismatches: 0
+Error Mismatches: 0
+
+Data Leakage Security Result: PASS
+```
+
+The corpus exercises:
+
+- restricted evidence isolation
+- authorization before semantic ranking and top-k selection
+- server-controlled standard retrieval access
+- synthetic sensitive-data canary detection
+- restricted-only result handling
+- legitimate restricted-access positive controls
+- invalid retrieval-access rejection
+
+### 6. Excessive Agency Corpus
+
+The sixth layer evaluates whether the AI agent can exceed the authority
+or execution scope granted by the application.
+
+Current result:
+
+```text
+Total Cases: 12
+Permitted Cases: 3
+Blocked Cases: 9
+
+Passed Cases: 12
+Failed Cases: 0
+
+Unexpected Allows: 0
+Unexpected Blocks: 0
+Error Mismatches: 0
+Message Mismatches: 0
+Scope Mismatches: 0
+
+Excessive Agency Result: PASS
+```
+
+The corpus exercises:
+
+- state-dependent tool exposure
+- rejection of model-supplied tool arguments
+- premature completion blocking
+- multiple tool-call blocking
+- hidden consequential-action blocking
+- unknown tool blocking
+- premature knowledge-retrieval blocking
+- repeated tool-use blocking
+- maximum tool-step enforcement
+
+### 7. Standardized Attack Harness
+
+The seventh layer executes standardized adversarial scenarios against
 security boundaries in the application.
 
 | Attack | Security property evaluated | Result |
@@ -233,14 +334,17 @@ Total:  7
 Security Score: 100.0%
 ```
 
-The three data-driven corpora currently contain:
+The six data-driven corpora currently contain:
 
 ```text
 Prompt-Injection Detection: 20 cases
 RAG Quarantine Enforcement: 20 cases
 Tool Security:              16 cases
+Authorization Security:      8 cases
+Data Leakage Security:       8 cases
+Excessive Agency:           12 cases
                              --------
-Total Data-Driven Cases:     56 cases
+Total Data-Driven Cases:     84 cases
 ```
 
 The standardized attack harness is reported separately because each standardized attack can exercise multiple application-level security invariants.
@@ -251,9 +355,9 @@ Combined result:
 OVERALL SECURITY EVALUATION: PASS
 ```
 
-The command returns a non-zero process exit code if the prompt-injection
-corpus, RAG quarantine corpus, tool-security corpus, or any standardized
-attack evaluation fails.
+The command returns a non-zero process exit code if any prompt-injection,
+RAG quarantine, tool-security, authorization-security, data-leakage,
+excessive-agency, or standardized attack evaluation fails.
 
 The same public security-evaluation command is executed in GitHub
 Actions so known AI-security regressions can block a pull request.
@@ -817,7 +921,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-473 automated tests
+510 automated tests
 ```
 
 Run the complete suite with:
@@ -859,6 +963,19 @@ The test suite covers areas including:
 - privileged tool blocking
 - unknown-tool rejection
 - tool-security false-allow and false-block detection
+- authentication success and failure behavior
+- ANALYST versus APPROVER role enforcement
+- authorization status, role, and exception integrity
+- restricted-evidence leakage prevention
+- authorization-before-ranking and authorization-before-top-k behavior
+- synthetic sensitive-data canary exposure detection
+- state-dependent agent tool exposure
+- model-supplied tool-argument rejection
+- premature agent-completion blocking
+- multiple tool-call blocking
+- hidden and unknown tool blocking
+- repeated and premature tool-use blocking
+- maximum agent tool-step enforcement
 - provider normalization
 - CSV security validation
 - Tenable normalization
@@ -1033,12 +1150,15 @@ python vm_agent.py security-eval
 
 This mode also requires **no external credentials**.
 
-It loads three local synthetic evaluation corpora:
+It loads six local synthetic evaluation corpora:
 
 ```text
 evals/adversarial_cases.json
 evals/rag_security_cases.json
 evals/tool_security_cases.json
+evals/authorization_security_cases.json
+evals/data_leakage_security_cases.json
+evals/excessive_agency_security_cases.json
 ```
 
 The command evaluates:
@@ -1073,6 +1193,44 @@ TOOL SECURITY
 - unexpected allows
 - unexpected blocks
 - error mismatches
+
+AUTHORIZATION SECURITY
+- total cases
+- allowed cases
+- blocked cases
+- passed cases
+- failed cases
+- unexpected allows
+- unexpected blocks
+- status mismatches
+- role mismatches
+- exception mismatches
+
+DATA LEAKAGE SECURITY
+- total cases
+- passed cases
+- failed cases
+- unexpected exposures
+- result mismatches
+- access mismatches
+- error mismatches
+
+EXCESSIVE AGENCY
+- total cases
+- permitted cases
+- blocked cases
+- passed cases
+- failed cases
+- unexpected allows
+- unexpected blocks
+- error mismatches
+- message mismatches
+- scope mismatches
+
+STANDARDIZED ATTACK HARNESS
+- seven high-level adversarial scenarios
+- pass/fail status per attack
+- standardized security score
 ```
 
 The current combined result is:
@@ -1087,7 +1245,7 @@ with process exit code:
 0
 ```
 
-If either suite fails, the command returns a non-zero exit code.
+If any evaluation suite fails, the command returns a non-zero exit code.
 
 No approval, ticket creation, network integration, model call, or external execution occurs.
 
@@ -1327,7 +1485,10 @@ vm-ai-agent/
 |   |-- approval.py
 |   |-- audit.py
 |   |-- auth.py
+|   |-- authorization_security_evaluator.py
+|   |-- data_leakage_security_evaluator.py
 |   |-- demo_analyzer.py
+|   |-- excessive_agency_security_evaluator.py
 |   |-- embeddings.py
 |   |-- execution.py
 |   |-- input_security.py
@@ -1378,6 +1539,9 @@ vm-ai-agent/
 |
 |-- evals/
 |   |-- adversarial_cases.json
+|   |-- authorization_security_cases.json
+|   |-- data_leakage_security_cases.json
+|   |-- excessive_agency_security_cases.json
 |   |-- rag_security_cases.json
 |   `-- tool_security_cases.json
 |
@@ -1396,6 +1560,9 @@ vm-ai-agent/
 |   |-- test_workflow_rag_security.py
 |   |-- test_security_evaluations.py
 |   |-- test_security_evaluator.py
+|   |-- test_authorization_security_evaluations.py
+|   |-- test_data_leakage_security_evaluations.py
+|   |-- test_excessive_agency_security_evaluations.py
 |   |-- test_tool_security_evaluations.py
 |   `-- ...
 |
