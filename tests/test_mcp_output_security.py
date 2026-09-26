@@ -392,6 +392,7 @@ async def test_mcp_tool_output_remains_data(
         "get_finding",
         "get_asset_details",
         "get_threat_intel",
+        "search_knowledge",
     ]
 
     assert (

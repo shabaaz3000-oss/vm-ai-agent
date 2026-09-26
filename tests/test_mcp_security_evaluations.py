@@ -255,8 +255,8 @@ async def test_mcp_security_evaluator_passes():
         == len(CASES)
     )
 
-    assert result.allowed_cases == 3
-    assert result.blocked_cases == 6
+    assert result.allowed_cases == 4
+    assert result.blocked_cases == 5
 
     assert (
         result.authority_protection_cases

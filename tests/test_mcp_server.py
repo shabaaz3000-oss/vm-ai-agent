@@ -42,6 +42,7 @@ async def test_mcp_exposes_only_expected_read_tools():
             "get_finding",
             "get_asset_details",
             "get_threat_intel",
+            "search_knowledge",
         ]
 
 # -------------------------------------------------
@@ -185,7 +186,7 @@ async def test_mcp_get_asset_details_executes_successfully():
 
 
 @pytest.mark.anyio
-async def test_mcp_does_not_expose_sensitive_tools():
+async def test_mcp_exposes_knowledge_but_not_action_tools():
 
     async with Client(
         mcp,
@@ -201,7 +202,7 @@ async def test_mcp_does_not_expose_sensitive_tools():
 
         assert (
             "search_knowledge"
-            not in tool_names
+            in tool_names
         )
 
         assert (
