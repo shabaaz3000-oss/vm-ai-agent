@@ -41,8 +41,38 @@ async def test_mcp_exposes_only_expected_read_tools():
         assert tool_names == [
             "get_finding",
             "get_asset_details",
+            "get_threat_intel",
         ]
 
+# -------------------------------------------------
+# GET THREAT INTEL
+# -------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_mcp_get_threat_intel_executes_successfully():
+
+    async with Client(
+        mcp,
+        raise_exceptions=True,
+    ) as client:
+
+        result = await client.call_tool(
+            "get_threat_intel",
+            {},
+        )
+
+        assert result.is_error is False
+
+        assert (
+            result.structured_content
+            is not None
+        )
+
+        assert (
+            "cve"
+            in result.structured_content
+        )
 
 # -------------------------------------------------
 # MCP IDENTITY IS SERVER CONTROLLED

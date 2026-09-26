@@ -18,6 +18,11 @@ from app.tools.registry import (
     get_tool_spec,
 )
 
+from app.models import (
+    AssetContext,
+    ThreatIntel,
+    VulnerabilityFinding,
+)
 
 # -------------------------------------------------
 # MCP SERVER
@@ -57,6 +62,7 @@ LOCAL_MCP_PRINCIPAL = Principal(
 MCP_READ_TOOL_NAMES = (
     "get_finding",
     "get_asset_details",
+    "get_threat_intel",
 )
 
 
@@ -106,6 +112,11 @@ GET_ASSET_DETAILS_SPEC = (
     )
 )
 
+GET_THREAT_INTEL_SPEC = (
+    require_mcp_read_spec(
+        "get_threat_intel"
+    )
+)
 
 # -------------------------------------------------
 # MCP EXECUTION CONTEXT
@@ -196,6 +207,43 @@ def mcp_get_asset_details() -> AssetContext:
 
     return result
 
+
+# -------------------------------------------------
+# GET THREAT INTEL MCP TOOL
+# -------------------------------------------------
+
+
+@mcp.tool(
+    name=GET_THREAT_INTEL_SPEC.name,
+
+    description=
+        GET_THREAT_INTEL_SPEC.description,
+
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def mcp_get_threat_intel() -> ThreatIntel:
+
+    result = dispatch_llm_tool(
+        tool_name="get_threat_intel",
+        context=
+            build_mcp_execution_context(),
+    )
+
+    if not isinstance(
+        result,
+        ThreatIntel,
+    ):
+
+        raise TypeError(
+            "get_threat_intel returned an "
+            "unexpected result type."
+        )
+
+    return result
 
 # -------------------------------------------------
 # ENTRY POINT
