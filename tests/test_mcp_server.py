@@ -2,7 +2,14 @@ import pytest
 
 from mcp import Client
 
-from app.mcp_server import mcp
+import app.mcp_server as mcp_server_module
+
+from app.mcp_server import (
+    mcp,
+    require_mcp_read_spec,
+)
+
+from app.tools.registry import ToolSpec
 
 
 @pytest.fixture
@@ -196,4 +203,77 @@ async def test_mcp_unknown_tool_fails_closed():
         assert (
             result.structured_content
             is None
+        )
+
+
+# -------------------------------------------------
+# MCP EXPOSURE POLICY
+# -------------------------------------------------
+
+
+def test_mcp_policy_rejects_non_llm_visible_tool():
+
+    with pytest.raises(
+        RuntimeError,
+        match="not LLM-visible",
+    ):
+
+        require_mcp_read_spec(
+            "execute_ticket_workflow"
+        )
+
+
+def test_mcp_policy_rejects_action_tool(
+    monkeypatch,
+):
+
+    action_spec = ToolSpec(
+        name="synthetic_action",
+        description="Synthetic action tool.",
+        kind="action",
+        llm_visible=True,
+        requires_human_approval=False,
+    )
+
+    monkeypatch.setattr(
+        mcp_server_module,
+        "get_tool_spec",
+        lambda tool_name: action_spec,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="not a read-only tool",
+    ):
+
+        require_mcp_read_spec(
+            "synthetic_action"
+        )
+
+
+def test_mcp_policy_rejects_human_approval_tool(
+    monkeypatch,
+):
+
+    approval_spec = ToolSpec(
+        name="synthetic_approval_tool",
+        description="Synthetic approval tool.",
+        kind="read",
+        llm_visible=True,
+        requires_human_approval=True,
+    )
+
+    monkeypatch.setattr(
+        mcp_server_module,
+        "get_tool_spec",
+        lambda tool_name: approval_spec,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires human approval",
+    ):
+
+        require_mcp_read_spec(
+            "synthetic_approval_tool"
         )
