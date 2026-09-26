@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.auth import Principal
+from app.security_context import SecurityContext
 from app.audit import log_event
 
 from app.models import (
@@ -44,6 +45,8 @@ class ToolExecutionContext:
 
     principal: Principal
 
+    security_context: SecurityContext | None = None
+
     finding: VulnerabilityFinding | None = None
 
     asset: AssetContext | None = None
@@ -51,6 +54,64 @@ class ToolExecutionContext:
     risk: RiskResult | None = None
 
     retriever: KnowledgeRetriever | None = None
+
+
+    def __post_init__(
+        self,
+    ) -> None:
+
+        self.validate_security_binding()
+
+
+    def validate_security_binding(
+        self,
+    ) -> None:
+        """
+        Fail closed if authenticated Principal claims
+        diverge from the trusted immutable security
+        context.
+
+        Validation occurs both at context creation and
+        again immediately before dispatch because the
+        Principal object itself is mutable.
+        """
+
+        security_context = (
+            self.security_context
+        )
+
+        # Legacy/non-MCP contexts remain supported while
+        # MCP session isolation is introduced
+        # incrementally.
+        if security_context is None:
+            return
+
+        if (
+            security_context.principal_id
+            != self.principal.username
+        ):
+            raise ValueError(
+                "Tool execution security context "
+                "principal mismatch."
+            )
+
+        if (
+            security_context.role
+            != self.principal.role
+        ):
+            raise ValueError(
+                "Tool execution security context "
+                "role mismatch."
+            )
+
+        if (
+            security_context.retrieval_access
+            != self.principal.retrieval_access
+        ):
+            raise ValueError(
+                "Tool execution security context "
+                "retrieval access mismatch."
+            )
 
 
 # -------------------------------------------------
@@ -62,6 +123,11 @@ def dispatch_llm_tool(
     tool_name: str,
     context: ToolExecutionContext,
 ):
+
+    # Security-significant identity claims are checked
+    # again at execution time so mutable Principal state
+    # cannot drift from the trusted session context.
+    context.validate_security_binding()
 
     log_event(
         "LLM_TOOL_DISPATCH_REQUESTED",

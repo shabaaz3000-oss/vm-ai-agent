@@ -3,6 +3,7 @@ import inspect
 import pytest
 
 from app.auth import Principal
+from app.security_context import SecurityContext
 
 from app.tools import dispatcher
 
@@ -291,3 +292,172 @@ def test_dispatcher_accepts_only_name_and_context():
         "tool_name",
         "context",
     ]
+
+
+# -------------------------------------------------
+# TRUSTED SECURITY CONTEXT BINDING
+# -------------------------------------------------
+
+
+def test_tool_execution_context_accepts_matching_security_context():
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role=principal.role,
+        retrieval_access=(
+            principal.retrieval_access
+        ),
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    context = ToolExecutionContext(
+        principal=principal,
+        security_context=security_context,
+    )
+
+    assert (
+        context.security_context
+        is security_context
+    )
+
+    assert (
+        context.security_context.tenant_id
+        == "tenant-a"
+    )
+
+    assert (
+        context.security_context.session_id
+        == "session-123"
+    )
+
+
+def test_tool_execution_context_rejects_principal_id_mismatch():
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id="different-user",
+        role=principal.role,
+        retrieval_access=(
+            principal.retrieval_access
+        ),
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="principal mismatch",
+    ):
+
+        ToolExecutionContext(
+            principal=principal,
+            security_context=security_context,
+        )
+
+
+def test_tool_execution_context_rejects_role_mismatch():
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role="APPROVER",
+        retrieval_access=(
+            principal.retrieval_access
+        ),
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="role mismatch",
+    ):
+
+        ToolExecutionContext(
+            principal=principal,
+            security_context=security_context,
+        )
+
+
+def test_tool_execution_context_rejects_retrieval_access_mismatch():
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role=principal.role,
+        retrieval_access="restricted",
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="retrieval access mismatch",
+    ):
+
+        ToolExecutionContext(
+            principal=principal,
+            security_context=security_context,
+        )
+
+
+def test_dispatcher_revalidates_security_binding_before_execution(
+    monkeypatch,
+):
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role=principal.role,
+        retrieval_access=(
+            principal.retrieval_access
+        ),
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    context = ToolExecutionContext(
+        principal=principal,
+        security_context=security_context,
+    )
+
+    tool_called = False
+
+    def fake_get_finding(
+        principal,
+    ):
+
+        nonlocal tool_called
+
+        tool_called = True
+
+        return object()
+
+    monkeypatch.setattr(
+        dispatcher,
+        "get_finding",
+        fake_get_finding,
+    )
+
+    # Simulate mutable identity drift after the trusted
+    # session context has already been established.
+    principal.role = "APPROVER"
+
+    with pytest.raises(
+        ValueError,
+        match="role mismatch",
+    ):
+
+        dispatcher.dispatch_llm_tool(
+            tool_name="get_finding",
+            context=context,
+        )
+
+    assert tool_called is False
