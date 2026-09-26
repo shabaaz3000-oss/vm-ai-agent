@@ -63,6 +63,53 @@ class ToolExecutionContext:
         self.validate_security_binding()
 
 
+
+
+    def audit_identity_fields(
+        self,
+    ) -> dict[str, str]:
+        """
+        Return trusted identity metadata for security
+        audit events.
+
+        Raw MCP session identifiers are deliberately
+        excluded.
+        """
+
+        fields = {
+            "username":
+                self.principal.username,
+
+            "role":
+                self.principal.role,
+        }
+
+        security_context = (
+            self.security_context
+        )
+
+        if security_context is None:
+            return fields
+
+        fields.update(
+            {
+                "principal_id":
+                    security_context.principal_id,
+
+                "tenant_id":
+                    security_context.tenant_id,
+
+                "retrieval_access":
+                    security_context.retrieval_access,
+
+                "session_correlation_id":
+                    security_context
+                    .session_correlation_id,
+            }
+        )
+
+        return fields
+
     def validate_security_binding(
         self,
     ) -> None:
@@ -133,10 +180,7 @@ def dispatch_llm_tool(
         "LLM_TOOL_DISPATCH_REQUESTED",
         {
             "tool": tool_name,
-            "username":
-                context.principal.username,
-            "role":
-                context.principal.role,
+            **context.audit_identity_fields(),
         },
     )
 
@@ -156,8 +200,7 @@ def dispatch_llm_tool(
             "LLM_TOOL_DISPATCH_BLOCKED",
             {
                 "tool": tool_name,
-                "username":
-                    context.principal.username,
+                **context.audit_identity_fields(),
                 "reason":
                     "unknown_tool",
             },
@@ -175,8 +218,7 @@ def dispatch_llm_tool(
             "LLM_TOOL_DISPATCH_BLOCKED",
             {
                 "tool": tool_name,
-                "username":
-                    context.principal.username,
+                **context.audit_identity_fields(),
                 "reason":
                     "tool_not_llm_visible",
             },
@@ -197,8 +239,7 @@ def dispatch_llm_tool(
             "LLM_TOOL_DISPATCH_BLOCKED",
             {
                 "tool": tool_name,
-                "username":
-                    context.principal.username,
+                **context.audit_identity_fields(),
                 "reason":
                     "non_read_tool",
             },
@@ -287,10 +328,7 @@ def dispatch_llm_tool(
         "LLM_TOOL_DISPATCHED",
         {
             "tool": tool_name,
-            "username":
-                context.principal.username,
-            "role":
-                context.principal.role,
+            **context.audit_identity_fields(),
         },
     )
 

@@ -299,3 +299,141 @@ def test_security_context_cannot_cross_tenant_boundary():
             tenant_id="tenant-b",
             now=fixed_time(),
         )
+
+
+
+# -------------------------------------------------
+# SESSION VALIDATION AUDIT
+# -------------------------------------------------
+
+
+def test_successful_session_validation_is_audited(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    manager.validate_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    validated = [
+        details
+        for event_type, details
+        in events
+        if event_type
+        == "MCP_SESSION_VALIDATED"
+    ]
+
+    assert len(validated) == 1
+
+    assert (
+        validated[0]["principal_id"]
+        == "alice"
+    )
+
+    assert (
+        validated[0]["tenant_id"]
+        == "tenant-a"
+    )
+
+    assert (
+        session.session_id
+        not in str(validated[0])
+    )
+
+
+def test_cross_user_session_attempt_is_audited(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    bob = make_principal(
+        "bob"
+    )
+
+    session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.validate_session(
+            bob,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=fixed_time(),
+        )
+
+    blocked = [
+        details
+        for event_type, details
+        in events
+        if event_type
+        == "MCP_SESSION_VALIDATION_BLOCKED"
+    ]
+
+    assert len(blocked) == 1
+
+    assert (
+        blocked[0]["reason"]
+        == "principal_mismatch"
+    )
+
+    assert (
+        blocked[0]["principal_id"]
+        == "bob"
+    )
+
+    assert (
+        session.session_id
+        not in str(blocked[0])
+    )

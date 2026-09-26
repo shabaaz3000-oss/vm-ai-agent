@@ -98,3 +98,54 @@ def test_security_context_contains_only_execution_claims():
         "tenant_id",
         "session_id",
     }
+
+
+# -------------------------------------------------
+# SAFE SESSION AUDIT CORRELATION
+# -------------------------------------------------
+
+
+def test_session_correlation_id_is_stable():
+
+    principal = make_principal()
+
+    first = SecurityContext.from_principal(
+        principal,
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    second = SecurityContext.from_principal(
+        principal,
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    assert (
+        first.session_correlation_id
+        == second.session_correlation_id
+    )
+
+
+def test_session_correlation_does_not_expose_raw_session_id():
+
+    principal = make_principal()
+
+    context = SecurityContext.from_principal(
+        principal,
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    correlation = (
+        context.session_correlation_id
+    )
+
+    assert correlation != "session-123"
+
+    assert (
+        "session-123"
+        not in correlation
+    )
+
+    assert len(correlation) == 16

@@ -1,3 +1,4 @@
+from hashlib import sha256
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -9,7 +10,22 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from app.auth import Principal
+from app.audit import log_event
 from app.security_context import SecurityContext
+
+
+
+
+
+def _session_correlation_id(
+    session_id: str,
+) -> str:
+
+    return sha256(
+        session_id.encode(
+            "utf-8"
+        )
+    ).hexdigest()[:16]
 
 
 # -------------------------------------------------
@@ -179,6 +195,26 @@ class MCPSessionManager:
         )
 
         if session is None:
+
+            log_event(
+                "MCP_SESSION_VALIDATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "session_not_found",
+                },
+            )
+
             raise MCPSessionNotFound(
                 "MCP session was not found."
             )
@@ -187,6 +223,26 @@ class MCPSessionManager:
             session.principal_id
             != principal.username
         ):
+
+            log_event(
+                "MCP_SESSION_VALIDATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "principal_mismatch",
+                },
+            )
+
             raise MCPSessionAccessDenied(
                 "MCP session principal mismatch."
             )
@@ -195,6 +251,26 @@ class MCPSessionManager:
             session.tenant_id
             != tenant_id
         ):
+
+            log_event(
+                "MCP_SESSION_VALIDATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "tenant_mismatch",
+                },
+            )
+
             raise MCPSessionAccessDenied(
                 "MCP session tenant mismatch."
             )
@@ -208,9 +284,45 @@ class MCPSessionManager:
         )
 
         if current_time >= session.expires_at:
+
+            log_event(
+                "MCP_SESSION_VALIDATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "session_expired",
+                },
+            )
+
             raise MCPSessionExpired(
                 "MCP session has expired."
             )
+
+        log_event(
+            "MCP_SESSION_VALIDATED",
+            {
+                "principal_id":
+                    principal.username,
+
+                "tenant_id":
+                    tenant_id,
+
+                "session_correlation_id":
+                    _session_correlation_id(
+                        session_id
+                    ),
+            },
+        )
 
         return session
 

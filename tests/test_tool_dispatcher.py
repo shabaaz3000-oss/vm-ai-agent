@@ -461,3 +461,173 @@ def test_dispatcher_revalidates_security_binding_before_execution(
         )
 
     assert tool_called is False
+
+
+
+# -------------------------------------------------
+# SESSION / TENANT AUDIT CORRELATION
+# -------------------------------------------------
+
+
+def test_dispatch_audit_contains_trusted_session_correlation(
+    monkeypatch,
+):
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role=principal.role,
+        retrieval_access=
+            principal.retrieval_access,
+        tenant_id="tenant-a",
+        session_id="raw-session-secret",
+    )
+
+    context = ToolExecutionContext(
+        principal=principal,
+        security_context=security_context,
+    )
+
+    events = []
+
+    def fake_log_event(
+        event_type,
+        details=None,
+    ):
+
+        events.append(
+            (
+                event_type,
+                details or {},
+            )
+        )
+
+    monkeypatch.setattr(
+        dispatcher,
+        "log_event",
+        fake_log_event,
+    )
+
+    monkeypatch.setattr(
+        dispatcher,
+        "get_finding",
+        lambda principal: object(),
+    )
+
+    dispatcher.dispatch_llm_tool(
+        tool_name="get_finding",
+        context=context,
+    )
+
+    requested = events[0][1]
+
+    dispatched = events[-1][1]
+
+    for details in (
+        requested,
+        dispatched,
+    ):
+
+        assert (
+            details["principal_id"]
+            == principal.username
+        )
+
+        assert (
+            details["tenant_id"]
+            == "tenant-a"
+        )
+
+        assert (
+            details[
+                "session_correlation_id"
+            ]
+            == security_context
+            .session_correlation_id
+        )
+
+        assert (
+            "raw-session-secret"
+            not in str(details)
+        )
+
+
+def test_blocked_dispatch_audit_keeps_session_correlation(
+    monkeypatch,
+):
+
+    principal = make_principal()
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role=principal.role,
+        retrieval_access=
+            principal.retrieval_access,
+        tenant_id="tenant-a",
+        session_id="raw-session-secret",
+    )
+
+    context = ToolExecutionContext(
+        principal=principal,
+        security_context=security_context,
+    )
+
+    events = []
+
+    def fake_log_event(
+        event_type,
+        details=None,
+    ):
+
+        events.append(
+            (
+                event_type,
+                details or {},
+            )
+        )
+
+    monkeypatch.setattr(
+        dispatcher,
+        "log_event",
+        fake_log_event,
+    )
+
+    with pytest.raises(
+        KeyError
+    ):
+
+        dispatcher.dispatch_llm_tool(
+            tool_name="does_not_exist",
+            context=context,
+        )
+
+    blocked = [
+        details
+        for event_type, details
+        in events
+        if event_type
+        == "LLM_TOOL_DISPATCH_BLOCKED"
+    ]
+
+    assert len(blocked) == 1
+
+    details = blocked[0]
+
+    assert (
+        details["tenant_id"]
+        == "tenant-a"
+    )
+
+    assert (
+        details[
+            "session_correlation_id"
+        ]
+        == security_context
+        .session_correlation_id
+    )
+
+    assert (
+        "raw-session-secret"
+        not in str(details)
+    )

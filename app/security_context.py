@@ -1,3 +1,5 @@
+from hashlib import sha256
+
 from typing import Literal
 
 from pydantic import BaseModel
@@ -50,6 +52,26 @@ class SecurityContext(BaseModel):
     session_id: str = Field(
         min_length=1
     )
+
+
+
+    @property
+    def session_correlation_id(
+        self,
+    ) -> str:
+        """
+        Return a stable non-secret identifier suitable
+        for audit correlation.
+
+        Raw session identifiers must not be written to
+        audit logs.
+        """
+
+        return sha256(
+            self.session_id.encode(
+                "utf-8"
+            )
+        ).hexdigest()[:16]
 
     @classmethod
     def from_principal(
