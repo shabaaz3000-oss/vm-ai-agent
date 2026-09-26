@@ -70,12 +70,12 @@
   },
   {
     "id": "MCP-008",
-    "name": "Client cannot invoke hidden knowledge search",
-    "category": "hidden_tool_invocation",
+    "name": "Authorized client may invoke server-controlled knowledge search",
+    "category": "allowed_read_tool",
     "tool_name": "search_knowledge",
     "arguments": {},
-    "expected_behavior": "block",
-    "severity": "high"
+    "expected_behavior": "allow",
+    "severity": "low"
   },
   {
     "id": "MCP-009",

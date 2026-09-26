@@ -3,8 +3,14 @@ from mcp.types import ToolAnnotations
 
 from app.auth import Principal
 
+from app.mcp_rag_context import (
+    build_mcp_rag_execution_context,
+)
+
 from app.models import (
     AssetContext,
+    RetrievedEvidence,
+    ThreatIntel,
     VulnerabilityFinding,
 )
 
@@ -18,11 +24,6 @@ from app.tools.registry import (
     get_tool_spec,
 )
 
-from app.models import (
-    AssetContext,
-    ThreatIntel,
-    VulnerabilityFinding,
-)
 
 # -------------------------------------------------
 # MCP SERVER
@@ -63,6 +64,7 @@ MCP_READ_TOOL_NAMES = (
     "get_finding",
     "get_asset_details",
     "get_threat_intel",
+    "search_knowledge",
 )
 
 
@@ -112,11 +114,20 @@ GET_ASSET_DETAILS_SPEC = (
     )
 )
 
+
 GET_THREAT_INTEL_SPEC = (
     require_mcp_read_spec(
         "get_threat_intel"
     )
 )
+
+
+SEARCH_KNOWLEDGE_SPEC = (
+    require_mcp_read_spec(
+        "search_knowledge"
+    )
+)
+
 
 # -------------------------------------------------
 # MCP EXECUTION CONTEXT
@@ -244,6 +255,76 @@ def mcp_get_threat_intel() -> ThreatIntel:
         )
 
     return result
+
+
+# -------------------------------------------------
+# SEARCH KNOWLEDGE MCP TOOL
+# -------------------------------------------------
+
+
+@mcp.tool(
+    name=SEARCH_KNOWLEDGE_SPEC.name,
+
+    description=
+        SEARCH_KNOWLEDGE_SPEC.description,
+
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+)
+def mcp_search_knowledge(
+) -> list[RetrievedEvidence]:
+
+    # -------------------------------------------------
+    # BUILD SECURITY-SIGNIFICANT CONTEXT SERVER-SIDE
+    # -------------------------------------------------
+
+    context = (
+        build_mcp_rag_execution_context(
+            LOCAL_MCP_PRINCIPAL
+        )
+    )
+
+    # -------------------------------------------------
+    # EXECUTE THROUGH EXISTING SECURE DISPATCHER
+    # -------------------------------------------------
+
+    result = dispatch_llm_tool(
+        tool_name="search_knowledge",
+        context=context,
+    )
+
+    # -------------------------------------------------
+    # ENFORCE EXPECTED RESPONSE CONTRACT
+    # -------------------------------------------------
+
+    if not isinstance(
+        result,
+        list,
+    ):
+
+        raise TypeError(
+            "search_knowledge returned an "
+            "unexpected result type."
+        )
+
+    if not all(
+        isinstance(
+            item,
+            RetrievedEvidence,
+        )
+        for item in result
+    ):
+
+        raise TypeError(
+            "search_knowledge returned an "
+            "unexpected evidence item type."
+        )
+
+    return result
+
 
 # -------------------------------------------------
 # ENTRY POINT
