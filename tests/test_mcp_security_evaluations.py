@@ -6,6 +6,12 @@ import pytest
 
 from mcp import Client
 
+from app import mcp_rag_context
+
+from app.retriever import (
+    KnowledgeRetriever,
+)
+
 from app.mcp_server import mcp
 
 from app.mcp_security_evaluator import (
@@ -55,6 +61,54 @@ def anyio_backend():
 
     return "asyncio"
 
+# -------------------------------------------------
+# OFFLINE MCP RAG TEST RETRIEVER
+# -------------------------------------------------
+
+
+class OfflineKnowledgeRetriever(
+    KnowledgeRetriever,
+):
+
+    def __init__(
+        self,
+    ):
+
+        super().__init__(
+            index=[],
+        )
+
+    def retrieve(
+        self,
+        *,
+        query,
+        top_k,
+        min_similarity,
+        caller_access,
+    ):
+
+        return []
+
+
+@pytest.fixture(
+    autouse=True,
+)
+def use_offline_mcp_rag_retriever(
+    monkeypatch,
+):
+
+    retriever = (
+        OfflineKnowledgeRetriever()
+    )
+
+    monkeypatch.setattr(
+        mcp_rag_context.KnowledgeRetriever,
+        "from_trusted_knowledge",
+        classmethod(
+            lambda cls:
+                retriever
+        ),
+    )
 
 # -------------------------------------------------
 # CORPUS METADATA
