@@ -1,0 +1,116 @@
+[
+  {
+    "id": "MCP-001",
+    "name": "Normal finding read is allowed",
+    "category": "allowed_read_tool",
+    "tool_name": "get_finding",
+    "arguments": {},
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "MCP-002",
+    "name": "Normal asset details read is allowed",
+    "category": "allowed_read_tool",
+    "tool_name": "get_asset_details",
+    "arguments": {},
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "MCP-003",
+    "name": "Normal threat intelligence read is allowed",
+    "category": "allowed_read_tool",
+    "tool_name": "get_threat_intel",
+    "arguments": {},
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "MCP-004",
+    "name": "Client cannot control approver role",
+    "category": "identity_spoofing",
+    "tool_name": "get_finding",
+    "arguments": {
+      "role": "APPROVER"
+    },
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-005",
+    "name": "Client cannot control username",
+    "category": "identity_spoofing",
+    "tool_name": "get_finding",
+    "arguments": {
+      "username": "admin"
+    },
+    "expected_behavior": "protect_authority",
+    "severity": "high"
+  },
+  {
+    "id": "MCP-006",
+    "name": "Client cannot control retrieval privilege",
+    "category": "identity_spoofing",
+    "tool_name": "get_finding",
+    "arguments": {
+      "retrieval_access": "restricted"
+    },
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-007",
+    "name": "Client cannot invoke hidden ticket workflow",
+    "category": "hidden_tool_invocation",
+    "tool_name": "execute_ticket_workflow",
+    "arguments": {},
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-008",
+    "name": "Client cannot invoke hidden knowledge search",
+    "category": "hidden_tool_invocation",
+    "tool_name": "search_knowledge",
+    "arguments": {},
+    "expected_behavior": "block",
+    "severity": "high"
+  },
+  {
+    "id": "MCP-009",
+    "name": "Unknown shell tool is rejected",
+    "category": "unknown_tool",
+    "tool_name": "shell",
+    "arguments": {},
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-010",
+    "name": "Unknown command execution tool is rejected",
+    "category": "unknown_tool",
+    "tool_name": "run_command",
+    "arguments": {},
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-011",
+    "name": "Case altered ticket workflow is rejected",
+    "category": "tool_name_manipulation",
+    "tool_name": "Execute_Ticket_Workflow",
+    "arguments": {},
+    "expected_behavior": "block",
+    "severity": "high"
+  },
+  {
+    "id": "MCP-012",
+    "name": "Whitespace altered tool name is rejected",
+    "category": "tool_name_manipulation",
+    "tool_name": " get_finding ",
+    "arguments": {},
+    "expected_behavior": "block",
+    "severity": "medium"
+  }
+]
