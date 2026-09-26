@@ -210,3 +210,92 @@ def test_session_manager_rejects_nonpositive_ttl():
                 seconds=0
             )
         )
+
+
+# -------------------------------------------------
+# VALIDATED SECURITY CONTEXT
+# -------------------------------------------------
+
+
+def test_validated_session_builds_security_context():
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    context = manager.build_security_context(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    assert context.principal_id == "alice"
+    assert context.role == "ANALYST"
+    assert context.retrieval_access == "standard"
+    assert context.tenant_id == "tenant-a"
+    assert context.session_id == session.session_id
+
+
+def test_security_context_cannot_be_built_for_other_user():
+
+    manager = MCPSessionManager()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    bob = make_principal(
+        "bob"
+    )
+
+    session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.build_security_context(
+            bob,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=fixed_time(),
+        )
+
+
+def test_security_context_cannot_cross_tenant_boundary():
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.build_security_context(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-b",
+            now=fixed_time(),
+        )

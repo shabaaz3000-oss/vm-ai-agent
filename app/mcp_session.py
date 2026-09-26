@@ -9,6 +9,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from app.auth import Principal
+from app.security_context import SecurityContext
 
 
 # -------------------------------------------------
@@ -212,3 +213,36 @@ class MCPSessionManager:
             )
 
         return session
+
+    # -------------------------------------------------
+    # BUILD TRUSTED SECURITY CONTEXT
+    # -------------------------------------------------
+
+    def build_security_context(
+        self,
+        principal: Principal,
+        *,
+        session_id: str,
+        tenant_id: str,
+        now: datetime | None = None,
+    ) -> SecurityContext:
+        """
+        Validate session ownership before creating the
+        immutable execution security context.
+
+        The caller-supplied session identifier is never
+        trusted merely because it exists.
+        """
+
+        session = self.validate_session(
+            principal,
+            session_id=session_id,
+            tenant_id=tenant_id,
+            now=now,
+        )
+
+        return SecurityContext.from_principal(
+            principal,
+            tenant_id=session.tenant_id,
+            session_id=session.session_id,
+        )
