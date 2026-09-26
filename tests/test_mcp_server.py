@@ -5,6 +5,10 @@ from mcp import Client
 import app.mcp_server as mcp_server_module
 
 from app.mcp_server import (
+    LOCAL_MCP_PRINCIPAL,
+    LOCAL_MCP_SESSION,
+    LOCAL_MCP_TENANT_ID,
+    build_mcp_execution_context,
     mcp,
     require_mcp_read_spec,
 )
@@ -308,3 +312,65 @@ def test_mcp_policy_rejects_human_approval_tool(
         require_mcp_read_spec(
             "synthetic_approval_tool"
         )
+
+
+# -------------------------------------------------
+# MCP SESSION-BOUND EXECUTION CONTEXT
+# -------------------------------------------------
+
+
+def test_mcp_execution_context_is_bound_to_server_session():
+
+    context = (
+        build_mcp_execution_context()
+    )
+
+    security_context = (
+        context.security_context
+    )
+
+    assert security_context is not None
+
+    assert (
+        context.principal
+        is LOCAL_MCP_PRINCIPAL
+    )
+
+    assert (
+        security_context.principal_id
+        == LOCAL_MCP_PRINCIPAL.username
+    )
+
+    assert (
+        security_context.tenant_id
+        == LOCAL_MCP_TENANT_ID
+    )
+
+    assert (
+        security_context.session_id
+        == LOCAL_MCP_SESSION.session_id
+    )
+
+
+@pytest.mark.anyio
+async def test_mcp_session_and_tenant_are_not_model_controlled():
+
+    async with Client(
+        mcp,
+        raise_exceptions=True,
+    ) as client:
+
+        listed = await client.list_tools()
+
+        for tool in listed.tools:
+
+            properties = (
+                tool.input_schema
+                .get(
+                    "properties",
+                    {},
+                )
+            )
+
+            assert "session_id" not in properties
+            assert "tenant_id" not in properties
