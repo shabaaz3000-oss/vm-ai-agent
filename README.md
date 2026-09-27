@@ -114,7 +114,7 @@ The evaluation requires no Tenable API credentials, OpenAI API
 credentials, ServiceNow credentials, approval, ticket creation, or
 external execution.
 
-The command runs seven complementary security evaluation layers.
+The command runs eight complementary security evaluation layers.
 
 ### 1. Prompt-Injection Detection Corpus
 
@@ -310,9 +310,48 @@ The corpus exercises:
 - repeated tool-use blocking
 - maximum tool-step enforcement
 
-### 7. Standardized Attack Harness
+### 7. MCP Identity / Session Isolation
 
-The seventh layer executes standardized adversarial scenarios against
+The seventh layer evaluates the trusted identity and session
+boundary around MCP execution.
+
+It verifies:
+
+- server-generated MCP sessions
+- session ownership binding to one authenticated principal
+- tenant binding
+- session expiration
+- rejection of unknown sessions
+- cross-user session-hijack prevention
+- cross-tenant session-reuse prevention
+- mutable identity-claim drift detection
+- protection against model-controlled `session_id`
+- protection against model-controlled `tenant_id`
+
+Current result:
+
+```text
+Total Cases: 8
+Allowed Cases: 1
+Blocked Cases: 5
+Authority Protection Cases: 2
+
+Passed Cases: 8
+Failed Cases: 0
+
+Unexpected Allows: 0
+Unexpected Blocks: 0
+
+MCP Identity / Session Isolation Result: PASS
+```
+
+MCP session and tenant authority are created and validated by
+trusted application code rather than supplied by the language
+model.
+
+### 8. Standardized Attack Harness
+
+The eighth layer executes standardized adversarial scenarios against
 security boundaries in the application.
 
 | Attack | Security property evaluated | Result |
@@ -334,7 +373,7 @@ Total:  7
 Security Score: 100.0%
 ```
 
-The six data-driven corpora currently contain:
+The seven data-driven corpora currently contain:
 
 ```text
 Prompt-Injection Detection: 20 cases
@@ -343,8 +382,9 @@ Tool Security:              16 cases
 Authorization Security:      8 cases
 Data Leakage Security:       8 cases
 Excessive Agency:           12 cases
+MCP Identity / Session:       8 cases
                              --------
-Total Data-Driven Cases:     84 cases
+Total Data-Driven Cases:     92 cases
 ```
 
 The standardized attack harness is reported separately because each standardized attack can exercise multiple application-level security invariants.
@@ -357,7 +397,7 @@ OVERALL SECURITY EVALUATION: PASS
 
 The command returns a non-zero process exit code if any prompt-injection,
 RAG quarantine, tool-security, authorization-security, data-leakage,
-excessive-agency, or standardized attack evaluation fails.
+excessive-agency, MCP identity/session-isolation, or standardized attack evaluation fails.
 
 The same public security-evaluation command is executed in GitHub
 Actions so known AI-security regressions can block a pull request.
@@ -438,7 +478,7 @@ Retrieved knowledge is also treated as non-authoritative data. A source may be t
 
 A dedicated threat model documents the primary trust boundaries, abuse cases, security assumptions, residual risks, and mitigations for the VM AI Agent.
 
-It currently covers 18 threat scenarios, including:
+It currently covers 19 threat scenarios, including:
 
 - direct and indirect prompt injection
 - AI risk manipulation
@@ -455,6 +495,7 @@ It currently covers 18 threat scenarios, including:
 - denial-of-service through malicious files
 - CI and dependency supply-chain risk
 - audit-log manipulation
+- MCP session hijacking and tenant-boundary bypass
 
 See:
 
@@ -750,7 +791,45 @@ Production identity federation such as OIDC is a future enhancement.
 
 ---
 
-### 11. Atomic Execution Claim
+### 11. MCP Identity and Session Isolation
+
+MCP execution derives trusted authority from an authenticated
+application identity and a server-generated session.
+
+Each session is bound to:
+
+```text
+principal identity
+tenant identity
+creation time
+expiration time
+```
+
+Before trusted MCP execution context is created, the session
+manager verifies that:
+
+```text
+the session exists
+the principal owns the session
+the tenant matches
+the session has not expired
+```
+
+The resulting `SecurityContext` is immutable.
+
+The same session-bound context propagates through MCP read
+tools, RAG context construction, and tool dispatch.
+
+The dispatcher revalidates identity claims immediately before
+tool execution so mutable `Principal` state cannot silently
+drift from the trusted session context.
+
+Raw session identifiers are not written to the audit trail.
+A derived session-correlation identifier is used instead.
+
+---
+
+### 12. Atomic Execution Claim
 
 The workflow uses SQLite transaction controls to claim execution before performing an external action.
 
@@ -760,7 +839,7 @@ Execution attempts receive server-controlled state and execution metadata rather
 
 ---
 
-### 12. Uncertain Execution Is Not Blindly Retried
+### 13. Uncertain Execution Is Not Blindly Retried
 
 If execution enters an uncertain state, the workflow can move to:
 
@@ -974,7 +1053,7 @@ Authoritative workflow state is loaded server-side rather than accepted from cli
 The current verified baseline is:
 
 ```text
-526 automated tests
+608 automated tests
 ```
 
 Run the complete suite with:
@@ -1045,6 +1124,14 @@ The test suite covers areas including:
 - server-controlled ticket routing
 - workflow persistence
 - RBAC
+- server-generated MCP session enforcement
+- cross-user MCP session isolation
+- MCP tenant-boundary enforcement
+- MCP session expiration enforcement
+- immutable SecurityContext propagation
+- MCP identity-claim drift detection
+- session-correlated MCP security auditing
+- adversarial MCP identity/session evaluation
 - atomic execution claims
 - uncertain-execution recovery
 - analyzer injection
@@ -1110,6 +1197,7 @@ Security CI runs on the repository's main development workflow and validates:
 
 ```text
 Python automated test suite
+AI security evaluation harness
 Gitleaks secret scanning
 Python dependency vulnerability scanning
 ```
@@ -1211,7 +1299,7 @@ python vm_agent.py security-eval
 
 This mode also requires **no external credentials**.
 
-It loads six local synthetic evaluation corpora:
+It loads seven local synthetic evaluation corpora:
 
 ```text
 evals/adversarial_cases.json
@@ -1220,6 +1308,7 @@ evals/tool_security_cases.json
 evals/authorization_security_cases.json
 evals/data_leakage_security_cases.json
 evals/excessive_agency_security_cases.json
+evals/mcp_identity_security_cases.json
 ```
 
 The command evaluates:
@@ -1287,6 +1376,16 @@ EXCESSIVE AGENCY
 - error mismatches
 - message mismatches
 - scope mismatches
+
+MCP IDENTITY / SESSION ISOLATION
+- total cases
+- allowed cases
+- blocked cases
+- authority protection cases
+- passed cases
+- failed cases
+- unexpected allows
+- unexpected blocks
 
 STANDARDIZED ATTACK HARNESS
 - seven high-level adversarial scenarios

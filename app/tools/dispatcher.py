@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.auth import Principal
+from app.security_context import SecurityContext
 from app.audit import log_event
 
 from app.models import (
@@ -44,6 +45,8 @@ class ToolExecutionContext:
 
     principal: Principal
 
+    security_context: SecurityContext | None = None
+
     finding: VulnerabilityFinding | None = None
 
     asset: AssetContext | None = None
@@ -51,6 +54,111 @@ class ToolExecutionContext:
     risk: RiskResult | None = None
 
     retriever: KnowledgeRetriever | None = None
+
+
+    def __post_init__(
+        self,
+    ) -> None:
+
+        self.validate_security_binding()
+
+
+
+
+    def audit_identity_fields(
+        self,
+    ) -> dict[str, str]:
+        """
+        Return trusted identity metadata for security
+        audit events.
+
+        Raw MCP session identifiers are deliberately
+        excluded.
+        """
+
+        fields = {
+            "username":
+                self.principal.username,
+
+            "role":
+                self.principal.role,
+        }
+
+        security_context = (
+            self.security_context
+        )
+
+        if security_context is None:
+            return fields
+
+        fields.update(
+            {
+                "principal_id":
+                    security_context.principal_id,
+
+                "tenant_id":
+                    security_context.tenant_id,
+
+                "retrieval_access":
+                    security_context.retrieval_access,
+
+                "session_correlation_id":
+                    security_context
+                    .session_correlation_id,
+            }
+        )
+
+        return fields
+
+    def validate_security_binding(
+        self,
+    ) -> None:
+        """
+        Fail closed if authenticated Principal claims
+        diverge from the trusted immutable security
+        context.
+
+        Validation occurs both at context creation and
+        again immediately before dispatch because the
+        Principal object itself is mutable.
+        """
+
+        security_context = (
+            self.security_context
+        )
+
+        # Legacy/non-MCP contexts remain supported while
+        # MCP session isolation is introduced
+        # incrementally.
+        if security_context is None:
+            return
+
+        if (
+            security_context.principal_id
+            != self.principal.username
+        ):
+            raise ValueError(
+                "Tool execution security context "
+                "principal mismatch."
+            )
+
+        if (
+            security_context.role
+            != self.principal.role
+        ):
+            raise ValueError(
+                "Tool execution security context "
+                "role mismatch."
+            )
+
+        if (
+            security_context.retrieval_access
+            != self.principal.retrieval_access
+        ):
+            raise ValueError(
+                "Tool execution security context "
+                "retrieval access mismatch."
+            )
 
 
 # -------------------------------------------------
@@ -63,14 +171,16 @@ def dispatch_llm_tool(
     context: ToolExecutionContext,
 ):
 
+    # Security-significant identity claims are checked
+    # again at execution time so mutable Principal state
+    # cannot drift from the trusted session context.
+    context.validate_security_binding()
+
     log_event(
         "LLM_TOOL_DISPATCH_REQUESTED",
         {
             "tool": tool_name,
-            "username":
-                context.principal.username,
-            "role":
-                context.principal.role,
+            **context.audit_identity_fields(),
         },
     )
 
@@ -90,8 +200,7 @@ def dispatch_llm_tool(
             "LLM_TOOL_DISPATCH_BLOCKED",
             {
                 "tool": tool_name,
-                "username":
-                    context.principal.username,
+                **context.audit_identity_fields(),
                 "reason":
                     "unknown_tool",
             },
@@ -109,8 +218,7 @@ def dispatch_llm_tool(
             "LLM_TOOL_DISPATCH_BLOCKED",
             {
                 "tool": tool_name,
-                "username":
-                    context.principal.username,
+                **context.audit_identity_fields(),
                 "reason":
                     "tool_not_llm_visible",
             },
@@ -131,8 +239,7 @@ def dispatch_llm_tool(
             "LLM_TOOL_DISPATCH_BLOCKED",
             {
                 "tool": tool_name,
-                "username":
-                    context.principal.username,
+                **context.audit_identity_fields(),
                 "reason":
                     "non_read_tool",
             },
@@ -221,10 +328,7 @@ def dispatch_llm_tool(
         "LLM_TOOL_DISPATCHED",
         {
             "tool": tool_name,
-            "username":
-                context.principal.username,
-            "role":
-                context.principal.role,
+            **context.audit_identity_fields(),
         },
     )
 

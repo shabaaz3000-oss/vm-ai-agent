@@ -31,6 +31,10 @@ from app.excessive_agency_security_evaluator import (
     run_excessive_agency_security_evaluation,
 )
 
+from app.mcp_identity_security_evaluator import (
+    run_mcp_identity_security_evaluation,
+)
+
 from run_security_evals import (
     calculate_security_score,
     run_security_evaluations,
@@ -573,6 +577,86 @@ def display_analysis_result(
 
 
 # -------------------------------------------------
+# DISPLAY MCP IDENTITY / SESSION SECURITY
+# -------------------------------------------------
+
+
+def display_mcp_identity_security_evaluation(
+    result,
+) -> None:
+
+    print()
+
+    print(
+        "MCP IDENTITY / SESSION ISOLATION"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        "Total Cases:",
+        result.total_cases,
+    )
+
+    print(
+        "Allowed Cases:",
+        result.allowed_cases,
+    )
+
+    print(
+        "Blocked Cases:",
+        result.blocked_cases,
+    )
+
+    print(
+        "Authority Protection Cases:",
+        result.authority_protection_cases,
+    )
+
+    print()
+
+    print(
+        "Passed Cases:",
+        result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        result.failed_cases,
+    )
+
+    print()
+
+    print(
+        "Unexpected Allows:",
+        result.unexpected_allows,
+    )
+
+    print(
+        "Unexpected Blocks:",
+        result.unexpected_blocks,
+    )
+
+    print()
+
+    if result.passed:
+
+        print(
+            "MCP Identity / Session "
+            "Isolation Result: PASS"
+        )
+
+    else:
+
+        print(
+            "MCP Identity / Session "
+            "Isolation Result: FAIL"
+        )
+
+
+# -------------------------------------------------
 # DISPLAY SECURITY EVALUATION
 # -------------------------------------------------
 
@@ -584,6 +668,7 @@ def display_security_evaluation(
     authorization_result,
     leakage_result,
     agency_result,
+    mcp_identity_result,
     attack_results,
 ) -> None:
 
@@ -1043,6 +1128,14 @@ def display_security_evaluation(
         )
 
     # -------------------------------------------------
+    # MCP IDENTITY / SESSION ISOLATION
+    # -------------------------------------------------
+
+    display_mcp_identity_security_evaluation(
+        mcp_identity_result
+    )
+
+    # -------------------------------------------------
     # STANDARDIZED ATTACK HARNESS
     # -------------------------------------------------
 
@@ -1180,6 +1273,7 @@ def display_security_evaluation(
         and authorization_result.passed
         and leakage_result.passed
         and agency_result.passed
+        and mcp_identity_result.passed
         and attack_harness_passed
     )
 
@@ -1290,6 +1384,7 @@ def run_security_eval() -> int:
     - evaluates authentication and authorization boundaries
     - evaluates sensitive-data leakage controls
     - evaluates excessive-agency controls
+    - evaluates MCP identity and session isolation
     - runs the standardized attack harness
     - reports false negatives
     - reports false positives
@@ -1326,6 +1421,10 @@ def run_security_eval() -> int:
         run_excessive_agency_security_evaluation()
     )
 
+    mcp_identity_result = (
+        run_mcp_identity_security_evaluation()
+    )
+
     attack_results = (
         run_security_evaluations()
     )
@@ -1337,6 +1436,7 @@ def run_security_eval() -> int:
         authorization_result,
         leakage_result,
         agency_result,
+        mcp_identity_result,
         attack_results,
     )
 
@@ -1357,6 +1457,7 @@ def run_security_eval() -> int:
         and authorization_result.passed
         and leakage_result.passed
         and agency_result.passed
+        and mcp_identity_result.passed
         and attack_harness_passed
     ):
 

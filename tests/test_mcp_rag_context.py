@@ -3,6 +3,9 @@ import pytest
 from app import mcp_rag_context
 
 from app.auth import Principal
+from app.security_context import SecurityContext
+
+from app.tools.dispatcher import ToolExecutionContext
 
 from app.models import (
     AssetContext,
@@ -27,6 +30,26 @@ def make_principal():
         username="mcp-rag-test",
         role="ANALYST",
         retrieval_access="standard",
+    )
+
+
+
+def make_base_context(
+    principal: Principal,
+) -> ToolExecutionContext:
+
+    security_context = SecurityContext(
+        principal_id=principal.username,
+        role=principal.role,
+        retrieval_access=
+            principal.retrieval_access,
+        tenant_id="tenant-a",
+        session_id="session-rag-123",
+    )
+
+    return ToolExecutionContext(
+        principal=principal,
+        security_context=security_context,
     )
 
 
@@ -92,6 +115,10 @@ def test_build_mcp_rag_execution_context(
 ):
 
     principal = make_principal()
+
+    base_context = make_base_context(
+        principal
+    )
 
     finding = make_finding()
     asset = make_asset()
@@ -206,7 +233,7 @@ def test_build_mcp_rag_execution_context(
     context = (
         mcp_rag_context
         .build_mcp_rag_execution_context(
-            principal
+            base_context
         )
     )
 
@@ -274,6 +301,19 @@ def test_build_mcp_rag_execution_context(
     # -------------------------------------------------
 
     assert context.principal is principal
+
+    assert (
+        context.security_context
+        is base_context.security_context
+    )
+
+    assert all(
+        call_context.security_context
+        is base_context.security_context
+        for _, call_context
+        in dispatch_calls
+    )
+
     assert context.finding is finding
     assert context.asset is asset
     assert context.risk is risk
@@ -290,6 +330,10 @@ def test_mcp_rag_context_rejects_relationship_mismatch(
 ):
 
     principal = make_principal()
+
+    base_context = make_base_context(
+        principal
+    )
 
     mapping = {
         "get_finding":
@@ -381,7 +425,7 @@ def test_mcp_rag_context_rejects_relationship_mismatch(
         (
             mcp_rag_context
             .build_mcp_rag_execution_context(
-                principal
+                base_context
             )
         )
 
@@ -396,3 +440,24 @@ def test_mcp_rag_context_rejects_relationship_mismatch(
         downstream_calls["retriever"]
         == 0
     )
+
+
+def test_mcp_rag_context_requires_security_context():
+
+    principal = make_principal()
+
+    legacy_context = ToolExecutionContext(
+        principal=principal,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="trusted security context",
+    ):
+
+        (
+            mcp_rag_context
+            .build_mcp_rag_execution_context(
+                legacy_context
+            )
+        )

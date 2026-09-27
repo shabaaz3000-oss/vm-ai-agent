@@ -181,9 +181,23 @@ async def test_mcp_search_knowledge_uses_server_context(
     # PRINCIPAL IS SERVER CONTROLLED
     # -------------------------------------------------
 
-    assert build_calls == [
-        LOCAL_MCP_PRINCIPAL
-    ]
+    assert len(
+        build_calls
+    ) == 1
+
+    build_context = (
+        build_calls[0]
+    )
+
+    assert (
+        build_context.principal
+        is LOCAL_MCP_PRINCIPAL
+    )
+
+    assert (
+        build_context.security_context
+        is not None
+    )
 
     # -------------------------------------------------
     # EXISTING DISPATCHER REMAINS EXECUTION BOUNDARY
@@ -335,9 +349,23 @@ async def test_mcp_search_knowledge_cannot_override_server_authority(
     # SERVER-CONTROLLED PRINCIPAL
     # -------------------------------------------------
 
-    assert build_calls == [
-        LOCAL_MCP_PRINCIPAL
-    ]
+    assert len(
+        build_calls
+    ) == 1
+
+    build_context = (
+        build_calls[0]
+    )
+
+    assert (
+        build_context.principal
+        is LOCAL_MCP_PRINCIPAL
+    )
+
+    assert (
+        build_context.security_context
+        is not None
+    )
 
     assert (
         LOCAL_MCP_PRINCIPAL.username

@@ -2,6 +2,8 @@ from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
 from app.auth import Principal
+from app.mcp_session import MCPSessionManager
+from app.security_context import SecurityContext
 
 from app.mcp_rag_context import (
     build_mcp_rag_execution_context,
@@ -52,6 +54,37 @@ LOCAL_MCP_PRINCIPAL = Principal(
     username="mcp-local-analyst",
     role="ANALYST",
     retrieval_access="standard",
+)
+
+
+# -------------------------------------------------
+# LOCAL MCP SESSION
+# -------------------------------------------------
+#
+# Stdio development uses one server-owned identity
+# and one server-generated MCP session.
+#
+# Neither tenant identity nor session identity is
+# exposed through MCP tool arguments.
+# -------------------------------------------------
+
+
+LOCAL_MCP_TENANT_ID = (
+    "local-development"
+)
+
+
+LOCAL_MCP_SESSION_MANAGER = (
+    MCPSessionManager()
+)
+
+
+LOCAL_MCP_SESSION = (
+    LOCAL_MCP_SESSION_MANAGER
+    .create_session(
+        LOCAL_MCP_PRINCIPAL,
+        tenant_id=LOCAL_MCP_TENANT_ID,
+    )
 )
 
 
@@ -134,12 +167,34 @@ SEARCH_KNOWLEDGE_SPEC = (
 # -------------------------------------------------
 
 
+def build_mcp_security_context(
+) -> SecurityContext:
+    """
+    Revalidate the server-owned MCP session before
+    constructing trusted execution context.
+    """
+
+    return (
+        LOCAL_MCP_SESSION_MANAGER
+        .build_security_context(
+            LOCAL_MCP_PRINCIPAL,
+            session_id=
+                LOCAL_MCP_SESSION.session_id,
+            tenant_id=
+                LOCAL_MCP_TENANT_ID,
+        )
+    )
+
+
 def build_mcp_execution_context(
 ) -> ToolExecutionContext:
 
     return ToolExecutionContext(
         principal=
             LOCAL_MCP_PRINCIPAL,
+
+        security_context=
+            build_mcp_security_context(),
     )
 
 
@@ -281,9 +336,13 @@ def mcp_search_knowledge(
     # BUILD SECURITY-SIGNIFICANT CONTEXT SERVER-SIDE
     # -------------------------------------------------
 
+    base_context = (
+        build_mcp_execution_context()
+    )
+
     context = (
         build_mcp_rag_execution_context(
-            LOCAL_MCP_PRINCIPAL
+            base_context
         )
     )
 

@@ -31,15 +31,30 @@ from app.workflow import (
 
 
 def build_mcp_rag_execution_context(
-    principal: Principal,
+    base_context: ToolExecutionContext,
 ) -> ToolExecutionContext:
 
     # -------------------------------------------------
-    # BASE READ CONTEXT
+    # REQUIRE TRUSTED MCP SECURITY CONTEXT
     # -------------------------------------------------
 
-    base_context = ToolExecutionContext(
-        principal=principal,
+    security_context = (
+        base_context.security_context
+    )
+
+    if security_context is None:
+
+        raise ValueError(
+            "MCP RAG execution requires "
+            "trusted security context."
+        )
+
+    # Fail closed if mutable Principal state has drifted
+    # from the immutable session-bound context.
+    base_context.validate_security_binding()
+
+    principal = (
+        base_context.principal
     )
 
     # -------------------------------------------------
@@ -146,6 +161,7 @@ def build_mcp_rag_execution_context(
 
     return ToolExecutionContext(
         principal=principal,
+        security_context=security_context,
         finding=finding,
         asset=asset,
         risk=risk,

@@ -1,0 +1,66 @@
+﻿[
+  {
+    "id": "MCP-ID-001",
+    "name": "Session owner may build trusted execution context",
+    "category": "legitimate_session",
+    "attack": "valid_owner",
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "MCP-ID-002",
+    "name": "Second user cannot reuse another user's MCP session",
+    "category": "cross_user_session_hijack",
+    "attack": "cross_user",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-003",
+    "name": "Session cannot cross enterprise tenant boundary",
+    "category": "cross_tenant_session_reuse",
+    "attack": "cross_tenant",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-004",
+    "name": "Expired MCP session cannot be reused",
+    "category": "expired_session_reuse",
+    "attack": "expired_session",
+    "expected_behavior": "block",
+    "severity": "high"
+  },
+  {
+    "id": "MCP-ID-005",
+    "name": "Unknown MCP session identifier is rejected",
+    "category": "unknown_session",
+    "attack": "unknown_session",
+    "expected_behavior": "block",
+    "severity": "high"
+  },
+  {
+    "id": "MCP-ID-006",
+    "name": "Mutable principal role drift is rejected before tool execution",
+    "category": "identity_claim_drift",
+    "attack": "role_drift",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-007",
+    "name": "Client cannot inject MCP session identifier",
+    "category": "session_identity_spoofing",
+    "attack": "session_argument_injection",
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-008",
+    "name": "Client cannot inject enterprise tenant identifier",
+    "category": "tenant_identity_spoofing",
+    "attack": "tenant_argument_injection",
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  }
+]
