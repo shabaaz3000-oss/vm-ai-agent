@@ -13,6 +13,9 @@ from app.auth import Principal
 from app.audit import log_event
 from app.security_context import SecurityContext
 
+from app.mcp_session_store import InMemorySessionStore
+from app.mcp_session_store import SessionStore
+
 
 
 
@@ -161,19 +164,22 @@ class MCPSessionManager:
         session_ttl: timedelta = timedelta(
             minutes=30
         ),
+        session_store: SessionStore | None = None,
     ) -> None:
 
-        if session_ttl <= timedelta(0):
+        if session_ttl <= timedelta():
+
             raise ValueError(
-                "session_ttl must be positive"
+                "session_ttl must be greater than zero."
             )
 
         self._session_ttl = session_ttl
 
-        self._sessions: dict[
-            str,
-            MCPSession,
-        ] = {}
+        self._session_store = (
+            session_store
+            if session_store is not None
+            else InMemorySessionStore()
+        )
 
 
     # -------------------------------------------------
@@ -216,9 +222,9 @@ class MCPSessionManager:
             ),
         )
 
-        self._sessions[
-            session.session_id
-        ] = session
+        self._session_store.save(
+            session
+        )
 
         return session
 
@@ -244,7 +250,7 @@ class MCPSessionManager:
         un-revoke operation.
         """
 
-        session = self._sessions.get(
+        session = self._session_store.get(
             session_id
         )
 
@@ -348,9 +354,72 @@ class MCPSessionManager:
             }
         )
 
-        self._sessions[
-            session_id
-        ] = revoked_session
+        replaced = (
+            self._session_store.replace_if_current(
+                expected=session,
+                replacement=revoked_session,
+            )
+        )
+
+        if not replaced:
+
+            authoritative = (
+                self._session_store.get(
+                    session_id
+                )
+            )
+
+            if authoritative is None:
+
+                log_event(
+                    "MCP_SESSION_REVOCATION_BLOCKED",
+                    {
+                        "principal_id":
+                            principal.username,
+
+                        "tenant_id":
+                            tenant_id,
+
+                        "session_correlation_id":
+                            _session_correlation_id(
+                                session_id
+                            ),
+
+                        "reason":
+                            "concurrent_session_disappearance",
+                    },
+                )
+
+                raise MCPSessionNotFound(
+                    "Session no longer exists."
+                )
+
+            if authoritative.revoked_at is not None:
+
+                return authoritative
+
+            log_event(
+                "MCP_SESSION_REVOCATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "concurrent_state_change",
+                },
+            )
+
+            raise MCPSessionAccessDenied(
+                "Session state changed during revocation."
+            )
 
         log_event(
             "MCP_SESSION_REVOKED",
@@ -480,26 +549,14 @@ class MCPSessionManager:
         # immutable records can safely be replaced during
         # iteration without changing dictionary keys.
 
-        for (
-            session_id,
-            session,
-        ) in list(
-            self._sessions.items()
-        ):
+        target_sessions = (
+            self._session_store.list_for_principal(
+                principal_id=target_principal_id,
+                tenant_id=authoritative_tenant_id,
+            )
+        )
 
-            if (
-                session.principal_id
-                != target_principal_id
-            ):
-
-                continue
-
-            if (
-                session.tenant_id
-                != authoritative_tenant_id
-            ):
-
-                continue
+        for session in target_sessions:
 
             matched_sessions += 1
 
@@ -516,11 +573,90 @@ class MCPSessionManager:
                 }
             )
 
-            self._sessions[
-                session_id
-            ] = revoked_session
+            replaced = (
+                self._session_store.replace_if_current(
+                    expected=session,
+                    replacement=revoked_session,
+                )
+            )
 
-            newly_revoked_sessions += 1
+            if replaced:
+
+                newly_revoked_sessions += 1
+
+                continue
+
+            # Another writer changed the authoritative
+            # session after this operation enumerated it.
+            # Reload before deciding how to count the
+            # transition.
+
+            authoritative = (
+                self._session_store.get(
+                    session.session_id
+                )
+            )
+
+            if authoritative is None:
+
+                log_event(
+                    "MCP_PRINCIPAL_SESSION_REVOCATION_BLOCKED",
+                    {
+                        "actor_principal_id":
+                            actor.username,
+
+                        "target_principal_id":
+                            target_principal_id,
+
+                        "tenant_id":
+                            authoritative_tenant_id,
+
+                        "actor_session_correlation_id":
+                            _session_correlation_id(
+                                actor_session_id
+                            ),
+
+                        "reason":
+                            "concurrent_session_disappearance",
+                    },
+                )
+
+                raise MCPSessionNotFound(
+                    "Target session no longer exists."
+                )
+
+            if authoritative.revoked_at is not None:
+
+                already_revoked_sessions += 1
+
+                continue
+
+            log_event(
+                "MCP_PRINCIPAL_SESSION_REVOCATION_BLOCKED",
+                {
+                    "actor_principal_id":
+                        actor.username,
+
+                    "target_principal_id":
+                        target_principal_id,
+
+                    "tenant_id":
+                        authoritative_tenant_id,
+
+                    "actor_session_correlation_id":
+                        _session_correlation_id(
+                            actor_session_id
+                        ),
+
+                    "reason":
+                        "concurrent_state_change",
+                },
+            )
+
+            raise MCPSessionAccessDenied(
+                "Target session state changed during "
+                "administrative revocation."
+            )
 
         result = (
             PrincipalSessionRevocationResult(
@@ -588,7 +724,7 @@ class MCPSessionManager:
         now: datetime | None = None,
     ) -> MCPSession:
 
-        session = self._sessions.get(
+        session = self._session_store.get(
             session_id
         )
 

@@ -1859,7 +1859,11 @@ def test_bulk_revocation_audit_is_aggregate_and_token_safe(
 
 def test_repeat_bulk_revocation_preserves_original_timestamp():
 
-    manager = MCPSessionManager()
+    store = InMemorySessionStore()
+
+    manager = MCPSessionManager(
+        session_store=store
+    )
 
     admin = make_session_admin()
 
@@ -1904,9 +1908,9 @@ def test_repeat_bulk_revocation_preserves_original_timestamp():
     )
 
     first_revoked_at = (
-        manager._sessions[
+        store.get(
             alice_session.session_id
-        ].revoked_at
+        ).revoked_at
     )
 
     manager.revoke_principal_sessions(
@@ -1918,9 +1922,9 @@ def test_repeat_bulk_revocation_preserves_original_timestamp():
     )
 
     second_revoked_at = (
-        manager._sessions[
+        store.get(
             alice_session.session_id
-        ].revoked_at
+        ).revoked_at
     )
 
     assert first_revoked_at == first_time
@@ -1929,3 +1933,166 @@ def test_repeat_bulk_revocation_preserves_original_timestamp():
         second_revoked_at
         == first_revoked_at
     )
+
+
+# -------------------------------------------------
+# SESSION STORE INJECTION
+# -------------------------------------------------
+
+from app.mcp_session_store import InMemorySessionStore
+
+
+def test_session_manager_accepts_injected_store():
+
+    store = InMemorySessionStore()
+
+    manager = MCPSessionManager(
+        session_store=store
+    )
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    assert (
+        store.get(
+            session.session_id
+        )
+        == session
+    )
+
+
+def test_managers_sharing_store_observe_same_session():
+
+    store = InMemorySessionStore()
+
+    first_manager = MCPSessionManager(
+        session_store=store
+    )
+
+    second_manager = MCPSessionManager(
+        session_store=store
+    )
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = first_manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    validated = second_manager.validate_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == session.session_id
+    )
+
+
+def test_shared_store_propagates_revocation_between_managers():
+
+    store = InMemorySessionStore()
+
+    first_manager = MCPSessionManager(
+        session_store=store
+    )
+
+    second_manager = MCPSessionManager(
+        session_store=store
+    )
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = first_manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    first_manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        second_manager.validate_session(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+
+def test_default_session_managers_remain_isolated():
+
+    first_manager = MCPSessionManager()
+
+    second_manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = first_manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    with pytest.raises(
+        MCPSessionNotFound
+    ):
+
+        second_manager.validate_session(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=5
+                )
+            ),
+        )
