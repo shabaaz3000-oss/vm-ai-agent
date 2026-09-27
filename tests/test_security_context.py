@@ -95,6 +95,7 @@ def test_security_context_contains_only_execution_claims():
         "principal_id",
         "role",
         "retrieval_access",
+        "session_revocation_access",
         "tenant_id",
         "session_id",
     }
@@ -149,3 +150,68 @@ def test_session_correlation_does_not_expose_raw_session_id():
     )
 
     assert len(correlation) == 16
+
+
+# -------------------------------------------------
+# SESSION REVOCATION AUTHORITY CONTEXT
+# -------------------------------------------------
+
+
+def test_security_context_snapshots_session_revocation_authority():
+
+    principal = Principal(
+        username="alice",
+        role="ANALYST",
+        retrieval_access="standard",
+        session_revocation_access="tenant_admin",
+    )
+
+    context = SecurityContext.from_principal(
+        principal,
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    assert (
+        context.session_revocation_access
+        == "tenant_admin"
+    )
+
+
+def test_security_context_revocation_authority_is_immutable():
+
+    principal = Principal(
+        username="alice",
+        role="ANALYST",
+        session_revocation_access="self",
+    )
+
+    context = SecurityContext.from_principal(
+        principal,
+        tenant_id="tenant-a",
+        session_id="session-123",
+    )
+
+    with pytest.raises(
+        ValidationError
+    ):
+
+        context.session_revocation_access = (
+            "tenant_admin"
+        )
+
+
+def test_security_context_rejects_invalid_session_revocation_authority():
+
+    with pytest.raises(
+        ValidationError
+    ):
+
+        SecurityContext(
+            principal_id="alice",
+            role="ANALYST",
+            retrieval_access="standard",
+            session_revocation_access="global_admin",
+            tenant_id="tenant-a",
+            session_id="session-123",
+        )

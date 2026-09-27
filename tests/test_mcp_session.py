@@ -1023,3 +1023,909 @@ def test_unknown_session_revocation_is_rejected_and_audited(
         unknown_session_id
         not in str(blocked[0])
     )
+
+
+# -------------------------------------------------
+# PRINCIPAL-WIDE SESSION REVOCATION
+# -------------------------------------------------
+
+
+def make_session_admin(
+    username: str = "session-admin",
+) -> Principal:
+
+    return Principal(
+        username=username,
+        role="ANALYST",
+        retrieval_access="standard",
+        session_revocation_access="tenant_admin",
+    )
+
+
+def test_tenant_admin_can_revoke_principal_sessions():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    first = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    second = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    result = manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    assert result.principal_id == "alice"
+    assert result.tenant_id == "tenant-a"
+    assert result.matched_sessions == 2
+    assert result.newly_revoked_sessions == 2
+    assert result.already_revoked_sessions == 0
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            alice,
+            session_id=first.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            alice,
+            session_id=second.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+
+def test_bulk_revocation_is_tenant_scoped():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    tenant_a_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    tenant_b_session = manager.create_session(
+        alice,
+        tenant_id="tenant-b",
+        now=start,
+    )
+
+    manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            alice,
+            session_id=tenant_a_session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+    validated = manager.validate_session(
+        alice,
+        session_id=tenant_b_session.session_id,
+        tenant_id="tenant-b",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == tenant_b_session.session_id
+    )
+
+
+def test_bulk_revocation_does_not_affect_other_principals():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    bob = make_principal(
+        "bob"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    bob_session = manager.create_session(
+        bob,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    validated = manager.validate_session(
+        bob,
+        session_id=bob_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == bob_session.session_id
+    )
+
+
+def test_ordinary_principal_cannot_bulk_revoke_sessions():
+
+    manager = MCPSessionManager()
+
+    actor = make_principal(
+        "ordinary-user"
+    )
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    actor_session = manager.create_session(
+        actor,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    alice_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.revoke_principal_sessions(
+            actor,
+            actor_session_id=actor_session.session_id,
+            tenant_id="tenant-a",
+            target_principal_id="alice",
+            now=(
+                start
+                + timedelta(
+                    minutes=5
+                )
+            ),
+        )
+
+    validated = manager.validate_session(
+        alice,
+        session_id=alice_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == alice_session.session_id
+    )
+
+
+def test_revoked_admin_session_cannot_bulk_revoke():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    alice_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.revoke_session(
+        admin,
+        session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.revoke_principal_sessions(
+            admin,
+            actor_session_id=admin_session.session_id,
+            tenant_id="tenant-a",
+            target_principal_id="alice",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+    validated = manager.validate_session(
+        alice,
+        session_id=alice_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == alice_session.session_id
+    )
+
+
+def test_expired_admin_session_cannot_bulk_revoke():
+
+    manager = MCPSessionManager(
+        session_ttl=timedelta(
+            minutes=30
+        )
+    )
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    alice_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    with pytest.raises(
+        MCPSessionExpired
+    ):
+
+        manager.revoke_principal_sessions(
+            admin,
+            actor_session_id=admin_session.session_id,
+            tenant_id="tenant-a",
+            target_principal_id="alice",
+            now=(
+                start
+                + timedelta(
+                    minutes=31
+                )
+            ),
+        )
+
+    # Use a time before Alice's own expiration to prove
+    # the failed admin action did not revoke her session.
+    validated = manager.validate_session(
+        alice,
+        session_id=alice_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=20
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == alice_session.session_id
+    )
+
+
+def test_bulk_revocation_is_idempotent():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    first = manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    second = manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert first.matched_sessions == 2
+    assert first.newly_revoked_sessions == 2
+    assert first.already_revoked_sessions == 0
+
+    assert second.matched_sessions == 2
+    assert second.newly_revoked_sessions == 0
+    assert second.already_revoked_sessions == 2
+
+
+# -------------------------------------------------
+# PRINCIPAL-WIDE REVOCATION HARDENING
+# -------------------------------------------------
+
+
+def test_tenant_admin_cannot_use_wrong_tenant_scope():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    alice_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.revoke_principal_sessions(
+            admin,
+            actor_session_id=admin_session.session_id,
+            tenant_id="tenant-b",
+            target_principal_id="alice",
+            now=(
+                start
+                + timedelta(
+                    minutes=5
+                )
+            ),
+        )
+
+    validated = manager.validate_session(
+        alice,
+        session_id=alice_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == alice_session.session_id
+    )
+
+
+def test_approver_cannot_bulk_revoke_without_explicit_authority():
+
+    manager = MCPSessionManager()
+
+    approver = Principal(
+        username="approver",
+        role="APPROVER",
+        retrieval_access="standard",
+    )
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    approver_session = manager.create_session(
+        approver,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    alice_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.revoke_principal_sessions(
+            approver,
+            actor_session_id=(
+                approver_session.session_id
+            ),
+            tenant_id="tenant-a",
+            target_principal_id="alice",
+            now=(
+                start
+                + timedelta(
+                    minutes=5
+                )
+            ),
+        )
+
+    validated = manager.validate_session(
+        alice,
+        session_id=alice_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        validated.session_id
+        == alice_session.session_id
+    )
+
+
+def test_bulk_revocation_rejects_empty_target_principal():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        ValueError
+    ):
+
+        manager.revoke_principal_sessions(
+            admin,
+            actor_session_id=session.session_id,
+            tenant_id="tenant-a",
+            target_principal_id="",
+            now=fixed_time(),
+        )
+
+
+def test_bulk_revocation_of_unknown_target_returns_zero_counts():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    result = manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="does-not-exist",
+        now=fixed_time(),
+    )
+
+    assert result.matched_sessions == 0
+    assert result.newly_revoked_sessions == 0
+    assert result.already_revoked_sessions == 0
+
+
+def test_principal_session_revocation_result_is_immutable():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    result = manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        ValidationError
+    ):
+
+        result.matched_sessions = 999
+
+
+def test_bulk_revocation_audit_is_aggregate_and_token_safe(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    first = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    second = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    result = manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    revoked_events = [
+        details
+        for event_type, details
+        in events
+        if event_type
+        == "MCP_PRINCIPAL_SESSIONS_REVOKED"
+    ]
+
+    assert len(revoked_events) == 1
+
+    details = revoked_events[0]
+
+    assert (
+        details["actor_principal_id"]
+        == admin.username
+    )
+
+    assert (
+        details["target_principal_id"]
+        == "alice"
+    )
+
+    assert (
+        details["tenant_id"]
+        == "tenant-a"
+    )
+
+    assert details["matched_sessions"] == 2
+
+    assert (
+        details["newly_revoked_sessions"]
+        == 2
+    )
+
+    assert (
+        details["already_revoked_sessions"]
+        == 0
+    )
+
+    assert (
+        admin_session.session_id
+        not in str(details)
+    )
+
+    assert (
+        first.session_id
+        not in str(details)
+    )
+
+    assert (
+        second.session_id
+        not in str(details)
+    )
+
+    assert (
+        first.session_id
+        not in str(result)
+    )
+
+    assert (
+        second.session_id
+        not in str(result)
+    )
+
+
+def test_repeat_bulk_revocation_preserves_original_timestamp():
+
+    manager = MCPSessionManager()
+
+    admin = make_session_admin()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    admin_session = manager.create_session(
+        admin,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    alice_session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    first_time = (
+        start
+        + timedelta(
+            minutes=5
+        )
+    )
+
+    second_time = (
+        start
+        + timedelta(
+            minutes=10
+        )
+    )
+
+    manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=first_time,
+    )
+
+    first_revoked_at = (
+        manager._sessions[
+            alice_session.session_id
+        ].revoked_at
+    )
+
+    manager.revoke_principal_sessions(
+        admin,
+        actor_session_id=admin_session.session_id,
+        tenant_id="tenant-a",
+        target_principal_id="alice",
+        now=second_time,
+    )
+
+    second_revoked_at = (
+        manager._sessions[
+            alice_session.session_id
+        ].revoked_at
+    )
+
+    assert first_revoked_at == first_time
+
+    assert (
+        second_revoked_at
+        == first_revoked_at
+    )

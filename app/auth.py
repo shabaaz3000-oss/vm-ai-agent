@@ -57,6 +57,23 @@ class Principal(BaseModel):
         "restricted",
     ] = "standard"
 
+    # -------------------------------------------------
+    # SESSION REVOCATION AUTHORIZATION CLAIM
+    # -------------------------------------------------
+    #
+    # This capability is established by trusted
+    # authentication logic and is independent from
+    # workflow approval and retrieval authority.
+    #
+    # Existing principals default to self-only session
+    # revocation.
+    # -------------------------------------------------
+
+    session_revocation_access: Literal[
+        "self",
+        "tenant_admin",
+    ] = "self"
+
 
 # -------------------------------------------------
 # BEARER TOKEN SCHEME
@@ -111,6 +128,11 @@ def get_configured_tokens():
             os.getenv(
                 "VM_AI_RESTRICTED_ANALYST_TOKEN"
             ),
+
+        "SESSION_ADMIN":
+            os.getenv(
+                "VM_AI_SESSION_ADMIN_TOKEN"
+            ),
     }
 
 
@@ -137,6 +159,10 @@ def authenticate_token(
 
     restricted_analyst_token = configured[
         "RESTRICTED_ANALYST"
+    ]
+
+    session_admin_token = configured[
+        "SESSION_ADMIN"
     ]
 
     # -------------------------------------------------
@@ -200,6 +226,30 @@ def authenticate_token(
             username="api-restricted-analyst",
             role="ANALYST",
             retrieval_access="restricted",
+        )
+
+    # -------------------------------------------------
+    # TENANT SESSION ADMINISTRATOR
+    # -------------------------------------------------
+    #
+    # Session-revocation authority is intentionally
+    # independent from workflow approval and restricted
+    # retrieval authority.
+    # -------------------------------------------------
+
+    if (
+        session_admin_token
+        and secrets.compare_digest(
+            token,
+            session_admin_token
+        )
+    ):
+
+        return Principal(
+            username="api-session-admin",
+            role="ANALYST",
+            retrieval_access="standard",
+            session_revocation_access="tenant_admin",
         )
 
     raise authentication_error()
