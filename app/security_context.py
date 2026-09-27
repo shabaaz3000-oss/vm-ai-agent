@@ -45,6 +45,11 @@ class SecurityContext(BaseModel):
         "restricted",
     ]
 
+    session_revocation_access: Literal[
+        "self",
+        "tenant_admin",
+    ] = "self"
+
     tenant_id: str = Field(
         min_length=1
     )
@@ -87,6 +92,9 @@ class SecurityContext(BaseModel):
             role=principal.role,
             retrieval_access=(
                 principal.retrieval_access
+            ),
+            session_revocation_access=(
+                principal.session_revocation_access
             ),
             tenant_id=tenant_id,
             session_id=session_id,

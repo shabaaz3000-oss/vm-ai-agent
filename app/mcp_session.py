@@ -101,6 +101,44 @@ class MCPSession(BaseModel):
 
 
 # -------------------------------------------------
+# PRINCIPAL SESSION REVOCATION RESULT
+# -------------------------------------------------
+
+
+class PrincipalSessionRevocationResult(BaseModel):
+    """
+    Aggregate result for tenant-scoped principal session
+    revocation.
+
+    Raw session identifiers are deliberately excluded.
+    """
+
+    model_config = ConfigDict(
+        frozen=True
+    )
+
+    principal_id: str = Field(
+        min_length=1
+    )
+
+    tenant_id: str = Field(
+        min_length=1
+    )
+
+    matched_sessions: int = Field(
+        ge=0
+    )
+
+    newly_revoked_sessions: int = Field(
+        ge=0
+    )
+
+    already_revoked_sessions: int = Field(
+        ge=0
+    )
+
+
+# -------------------------------------------------
 # MCP SESSION MANAGER
 # -------------------------------------------------
 
@@ -331,6 +369,210 @@ class MCPSessionManager:
         )
 
         return revoked_session
+
+
+    # -------------------------------------------------
+    # REVOKE PRINCIPAL SESSIONS
+    # -------------------------------------------------
+
+    def revoke_principal_sessions(
+        self,
+        actor: Principal,
+        *,
+        actor_session_id: str,
+        tenant_id: str,
+        target_principal_id: str,
+        now: datetime | None = None,
+    ) -> PrincipalSessionRevocationResult:
+        """
+        Revoke all authoritative sessions for one principal
+        within the actor's validated enterprise tenant.
+
+        Administrative revocation requires both a currently
+        valid actor session and explicit tenant-scoped
+        session-revocation authority.
+        """
+
+        if not target_principal_id:
+
+            raise ValueError(
+                "target_principal_id must not be empty"
+            )
+
+        # -------------------------------------------------
+        # REVALIDATE ACTOR SESSION
+        # -------------------------------------------------
+        #
+        # Administrative authority must never survive a
+        # revoked, expired, mismatched, or otherwise invalid
+        # actor session.
+        # -------------------------------------------------
+
+        actor_session = self.validate_session(
+            actor,
+            session_id=actor_session_id,
+            tenant_id=tenant_id,
+            now=now,
+        )
+
+        # -------------------------------------------------
+        # REQUIRE EXPLICIT REVOCATION AUTHORITY
+        # -------------------------------------------------
+
+        if (
+            actor.session_revocation_access
+            != "tenant_admin"
+        ):
+
+            log_event(
+                "MCP_PRINCIPAL_SESSION_REVOCATION_BLOCKED",
+                {
+                    "actor_principal_id":
+                        actor.username,
+
+                    "target_principal_id":
+                        target_principal_id,
+
+                    "tenant_id":
+                        actor_session.tenant_id,
+
+                    "actor_session_correlation_id":
+                        _session_correlation_id(
+                            actor_session_id
+                        ),
+
+                    "reason":
+                        "insufficient_revocation_authority",
+                },
+            )
+
+            raise MCPSessionAccessDenied(
+                "Tenant session-administration "
+                "authority is required."
+            )
+
+        current_time = (
+            now
+            if now is not None
+            else datetime.now(
+                timezone.utc
+            )
+        )
+
+        # -------------------------------------------------
+        # AUTHORITATIVE TENANT SCOPE
+        # -------------------------------------------------
+        #
+        # Target scope comes from the validated actor
+        # session, not independently from caller-controlled
+        # target parameters.
+        # -------------------------------------------------
+
+        authoritative_tenant_id = (
+            actor_session.tenant_id
+        )
+
+        matched_sessions = 0
+        newly_revoked_sessions = 0
+        already_revoked_sessions = 0
+
+        # Snapshot dictionary items so authoritative
+        # immutable records can safely be replaced during
+        # iteration without changing dictionary keys.
+
+        for (
+            session_id,
+            session,
+        ) in list(
+            self._sessions.items()
+        ):
+
+            if (
+                session.principal_id
+                != target_principal_id
+            ):
+
+                continue
+
+            if (
+                session.tenant_id
+                != authoritative_tenant_id
+            ):
+
+                continue
+
+            matched_sessions += 1
+
+            if session.revoked_at is not None:
+
+                already_revoked_sessions += 1
+
+                continue
+
+            revoked_session = session.model_copy(
+                update={
+                    "revoked_at":
+                        current_time,
+                }
+            )
+
+            self._sessions[
+                session_id
+            ] = revoked_session
+
+            newly_revoked_sessions += 1
+
+        result = (
+            PrincipalSessionRevocationResult(
+                principal_id=target_principal_id,
+                tenant_id=authoritative_tenant_id,
+                matched_sessions=matched_sessions,
+                newly_revoked_sessions=(
+                    newly_revoked_sessions
+                ),
+                already_revoked_sessions=(
+                    already_revoked_sessions
+                ),
+            )
+        )
+
+        # -------------------------------------------------
+        # AGGREGATE SECURITY AUDIT
+        # -------------------------------------------------
+        #
+        # The administrative operation is recorded without
+        # exposing raw actor or target session identifiers.
+        # -------------------------------------------------
+
+        log_event(
+            "MCP_PRINCIPAL_SESSIONS_REVOKED",
+            {
+                "actor_principal_id":
+                    actor.username,
+
+                "target_principal_id":
+                    target_principal_id,
+
+                "tenant_id":
+                    authoritative_tenant_id,
+
+                "actor_session_correlation_id":
+                    _session_correlation_id(
+                        actor_session_id
+                    ),
+
+                "matched_sessions":
+                    matched_sessions,
+
+                "newly_revoked_sessions":
+                    newly_revoked_sessions,
+
+                "already_revoked_sessions":
+                    already_revoked_sessions,
+            },
+        )
+
+        return result
 
 
     # -------------------------------------------------
