@@ -1,8 +1,10 @@
-from datetime import datetime
+﻿from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
 import pytest
+
+from pydantic import ValidationError
 
 from app.auth import Principal
 
@@ -11,6 +13,7 @@ from app.mcp_session import (
     MCPSessionExpired,
     MCPSessionManager,
     MCPSessionNotFound,
+    MCPSessionRevoked,
 )
 
 
@@ -435,5 +438,588 @@ def test_cross_user_session_attempt_is_audited(
 
     assert (
         session.session_id
+        not in str(blocked[0])
+    )
+
+
+
+# -------------------------------------------------
+# SESSION REVOCATION
+# -------------------------------------------------
+
+
+def test_revoked_session_is_rejected():
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    revoked = manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    assert revoked.revoked_at == (
+        start
+        + timedelta(
+            minutes=5
+        )
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+
+def test_user_cannot_revoke_another_users_session():
+
+    manager = MCPSessionManager()
+
+    alice = make_principal(
+        "alice"
+    )
+
+    bob = make_principal(
+        "bob"
+    )
+
+    session = manager.create_session(
+        alice,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.revoke_session(
+            bob,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=fixed_time(),
+        )
+
+    validated = manager.validate_session(
+        alice,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    assert validated.session_id == session.session_id
+
+
+def test_session_revocation_cannot_cross_tenant_boundary():
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        MCPSessionAccessDenied
+    ):
+
+        manager.revoke_session(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-b",
+            now=fixed_time(),
+        )
+
+    validated = manager.validate_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    assert validated.session_id == session.session_id
+
+
+def test_revoked_session_cannot_build_security_context():
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.build_security_context(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+
+def test_session_revocation_is_audited(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    revoked = [
+        details
+        for event_type, details
+        in events
+        if event_type
+        == "MCP_SESSION_REVOKED"
+    ]
+
+    assert len(revoked) == 1
+
+    assert (
+        revoked[0]["principal_id"]
+        == "alice"
+    )
+
+    assert (
+        revoked[0]["tenant_id"]
+        == "tenant-a"
+    )
+
+    assert (
+        session.session_id
+        not in str(revoked[0])
+    )
+
+
+def test_revoked_session_validation_is_audited(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=fixed_time(),
+        )
+
+    blocked = [
+        details
+        for event_type, details
+        in events
+        if (
+            event_type
+            == "MCP_SESSION_VALIDATION_BLOCKED"
+            and details.get("reason")
+            == "session_revoked"
+        )
+    ]
+
+    assert len(blocked) == 1
+
+    assert (
+        blocked[0]["principal_id"]
+        == "alice"
+    )
+
+    assert (
+        blocked[0]["tenant_id"]
+        == "tenant-a"
+    )
+
+    assert (
+        session.session_id
+        not in str(blocked[0])
+    )
+
+
+
+# -------------------------------------------------
+# ADVERSARIAL SESSION LIFECYCLE
+# -------------------------------------------------
+
+
+def test_session_revocation_state_cannot_be_mutated_by_caller():
+
+    manager = MCPSessionManager()
+
+    session = manager.create_session(
+        make_principal(),
+        tenant_id="tenant-a",
+        now=fixed_time(),
+    )
+
+    with pytest.raises(
+        ValidationError
+    ):
+
+        session.revoked_at = fixed_time()
+
+
+def test_repeated_revocation_is_idempotent(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    first_revocation = manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    second_revocation = manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=10
+            )
+        ),
+    )
+
+    assert (
+        first_revocation.revoked_at
+        == start
+        + timedelta(
+            minutes=5
+        )
+    )
+
+    assert (
+        second_revocation.revoked_at
+        == first_revocation.revoked_at
+    )
+
+    revoked_events = [
+        event_type
+        for event_type, _details
+        in events
+        if event_type
+        == "MCP_SESSION_REVOKED"
+    ]
+
+    assert len(revoked_events) == 1
+
+
+def test_stale_session_object_cannot_bypass_revocation():
+
+    manager = MCPSessionManager()
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    original_session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.revoke_session(
+        principal,
+        session_id=original_session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    # The original immutable object is merely a stale
+    # snapshot. The manager's stored record is authoritative.
+    assert original_session.revoked_at is None
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            principal,
+            session_id=original_session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=10
+                )
+            ),
+        )
+
+
+def test_revoked_session_remains_revoked_after_expiration_time():
+
+    manager = MCPSessionManager(
+        session_ttl=timedelta(
+            minutes=30
+        )
+    )
+
+    principal = make_principal(
+        "alice"
+    )
+
+    start = fixed_time()
+
+    session = manager.create_session(
+        principal,
+        tenant_id="tenant-a",
+        now=start,
+    )
+
+    manager.revoke_session(
+        principal,
+        session_id=session.session_id,
+        tenant_id="tenant-a",
+        now=(
+            start
+            + timedelta(
+                minutes=5
+            )
+        ),
+    )
+
+    with pytest.raises(
+        MCPSessionRevoked
+    ):
+
+        manager.validate_session(
+            principal,
+            session_id=session.session_id,
+            tenant_id="tenant-a",
+            now=(
+                start
+                + timedelta(
+                    minutes=31
+                )
+            ),
+        )
+
+
+def test_unknown_session_revocation_is_rejected_and_audited(
+    monkeypatch,
+):
+
+    events = []
+
+    monkeypatch.setattr(
+        "app.mcp_session.log_event",
+        lambda event_type, details=None:
+            events.append(
+                (
+                    event_type,
+                    details or {},
+                )
+            ),
+    )
+
+    manager = MCPSessionManager()
+
+    unknown_session_id = (
+        "attacker-controlled-session-id"
+    )
+
+    with pytest.raises(
+        MCPSessionNotFound
+    ):
+
+        manager.revoke_session(
+            make_principal(
+                "alice"
+            ),
+            session_id=unknown_session_id,
+            tenant_id="tenant-a",
+            now=fixed_time(),
+        )
+
+    blocked = [
+        details
+        for event_type, details
+        in events
+        if event_type
+        == "MCP_SESSION_REVOCATION_BLOCKED"
+    ]
+
+    assert len(blocked) == 1
+
+    assert (
+        blocked[0]["reason"]
+        == "session_not_found"
+    )
+
+    assert (
+        blocked[0]["principal_id"]
+        == "alice"
+    )
+
+    assert (
+        blocked[0]["tenant_id"]
+        == "tenant-a"
+    )
+
+    assert (
+        unknown_session_id
         not in str(blocked[0])
     )
