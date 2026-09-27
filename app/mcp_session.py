@@ -58,6 +58,12 @@ class MCPSessionExpired(MCPSessionError):
     """
 
 
+class MCPSessionRevoked(MCPSessionError):
+    """
+    Raised when an MCP session has been revoked.
+    """
+
+
 # -------------------------------------------------
 # MCP SESSION
 # -------------------------------------------------
@@ -90,6 +96,8 @@ class MCPSession(BaseModel):
     created_at: datetime
 
     expires_at: datetime
+
+    revoked_at: datetime | None = None
 
 
 # -------------------------------------------------
@@ -175,6 +183,154 @@ class MCPSessionManager:
         ] = session
 
         return session
+
+
+    # -------------------------------------------------
+    # REVOKE SESSION
+    # -------------------------------------------------
+
+    def revoke_session(
+        self,
+        principal: Principal,
+        *,
+        session_id: str,
+        tenant_id: str,
+        now: datetime | None = None,
+    ) -> MCPSession:
+        """
+        Revoke an MCP session after verifying ownership
+        and tenant binding.
+
+        Revocation replaces the authoritative immutable
+        session record. There is intentionally no
+        un-revoke operation.
+        """
+
+        session = self._sessions.get(
+            session_id
+        )
+
+        if session is None:
+
+            log_event(
+                "MCP_SESSION_REVOCATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "session_not_found",
+                },
+            )
+
+            raise MCPSessionNotFound(
+                "MCP session was not found."
+            )
+
+        if (
+            session.principal_id
+            != principal.username
+        ):
+
+            log_event(
+                "MCP_SESSION_REVOCATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "principal_mismatch",
+                },
+            )
+
+            raise MCPSessionAccessDenied(
+                "MCP session principal mismatch."
+            )
+
+        if (
+            session.tenant_id
+            != tenant_id
+        ):
+
+            log_event(
+                "MCP_SESSION_REVOCATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "tenant_mismatch",
+                },
+            )
+
+            raise MCPSessionAccessDenied(
+                "MCP session tenant mismatch."
+            )
+
+        if session.revoked_at is not None:
+
+            return session
+
+        current_time = (
+            now
+            if now is not None
+            else datetime.now(
+                timezone.utc
+            )
+        )
+
+        revoked_session = session.model_copy(
+            update={
+                "revoked_at":
+                    current_time,
+            }
+        )
+
+        self._sessions[
+            session_id
+        ] = revoked_session
+
+        log_event(
+            "MCP_SESSION_REVOKED",
+            {
+                "principal_id":
+                    principal.username,
+
+                "tenant_id":
+                    tenant_id,
+
+                "session_correlation_id":
+                    _session_correlation_id(
+                        session_id
+                    ),
+            },
+        )
+
+        return revoked_session
 
 
     # -------------------------------------------------
@@ -273,6 +429,31 @@ class MCPSessionManager:
 
             raise MCPSessionAccessDenied(
                 "MCP session tenant mismatch."
+            )
+
+        if session.revoked_at is not None:
+
+            log_event(
+                "MCP_SESSION_VALIDATION_BLOCKED",
+                {
+                    "principal_id":
+                        principal.username,
+
+                    "tenant_id":
+                        tenant_id,
+
+                    "session_correlation_id":
+                        _session_correlation_id(
+                            session_id
+                        ),
+
+                    "reason":
+                        "session_revoked",
+                },
+            )
+
+            raise MCPSessionRevoked(
+                "MCP session has been revoked."
             )
 
         current_time = (
