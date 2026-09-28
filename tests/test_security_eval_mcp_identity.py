@@ -1,4 +1,4 @@
-﻿from types import SimpleNamespace
+from types import SimpleNamespace
 
 import vm_agent
 
@@ -9,12 +9,12 @@ def make_mcp_result(
 ):
 
     return SimpleNamespace(
-        total_cases=8,
-        allowed_cases=1,
-        blocked_cases=5,
-        authority_protection_cases=2,
+        total_cases=20,
+        allowed_cases=2,
+        blocked_cases=15,
+        authority_protection_cases=3,
         passed_cases=(
-            8 if passed else 7
+            20 if passed else 19
         ),
         failed_cases=(
             0 if passed else 1
@@ -117,10 +117,10 @@ def test_mcp_identity_security_display_reports_pass(
         in output
     )
 
-    assert "Total Cases: 8" in output
+    assert "Total Cases: 20" in output
 
     assert (
-        "Authority Protection Cases: 2"
+        "Authority Protection Cases: 3"
         in output
     )
 

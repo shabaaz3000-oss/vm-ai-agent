@@ -1,4 +1,4 @@
-﻿import json
+import json
 
 from pathlib import Path
 
@@ -32,7 +32,7 @@ def test_mcp_identity_security_corpus_metadata():
         )
     )
 
-    assert len(cases) == 13
+    assert len(cases) == 20
 
     ids = [
         case["id"]
@@ -80,7 +80,7 @@ def test_mcp_identity_security_loader():
         load_mcp_identity_security_cases()
     )
 
-    assert len(cases) == 13
+    assert len(cases) == 20
 
 
 @pytest.mark.anyio
@@ -91,18 +91,18 @@ async def test_mcp_identity_security_evaluator_passes():
         run_mcp_identity_security_evaluation_async()
     )
 
-    assert result.total_cases == 13
+    assert result.total_cases == 20
 
-    assert result.allowed_cases == 1
+    assert result.allowed_cases == 2
 
-    assert result.blocked_cases == 10
+    assert result.blocked_cases == 15
 
     assert (
         result.authority_protection_cases
-        == 2
+        == 3
     )
 
-    assert result.passed_cases == 13
+    assert result.passed_cases == 20
     assert result.failed_cases == 0
 
     assert result.unexpected_allows == 0
