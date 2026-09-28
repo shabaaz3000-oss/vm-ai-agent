@@ -148,14 +148,15 @@ class PrincipalSessionRevocationResult(BaseModel):
 
 class MCPSessionManager:
     """
-    In-memory MCP session manager.
+    Authoritative MCP session manager.
 
-    This implementation intentionally keeps persistence
-    simple while security semantics are established.
+    Session security policy is enforced by this manager,
+    while persistence is delegated to the configured
+    SessionStore implementation.
 
-    A future enterprise implementation can replace the
-    backing store without changing session ownership
-    rules.
+    When no explicit store is supplied, an in-memory
+    store is retained for backward-compatible tests
+    and development use.
     """
 
     def __init__(
