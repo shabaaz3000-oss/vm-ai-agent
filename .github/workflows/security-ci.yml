@@ -20,6 +20,24 @@ jobs:
     name: Python Tests
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vm_ai_agent_test
+          POSTGRES_USER: vm_ai_agent
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vm_ai_agent -d vm_ai_agent_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_POSTGRES_DATABASE_URL: "postgresql://vm_ai_agent@127.0.0.1:5432/vm_ai_agent_test"
+
     steps:
 
       - name: Check out repository
