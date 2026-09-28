@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import json
@@ -33,6 +33,10 @@ from app.mcp_session_runtime import (
     MCPSessionRuntimeConfigurationError,
     build_mcp_session_manager,
     load_mcp_session_runtime_settings,
+)
+
+from app.mcp_sqlite_session_store import (
+    SQLiteSessionStore,
 )
 
 from app.mcp_tenant import (
@@ -571,6 +575,388 @@ async def observe_mcp_identity_case(
                 )
 
             except MCPSessionRevoked:
+                return False
+
+            return True
+
+
+
+    # -------------------------------------------------
+    # POSTGRESQL STORE REQUIRES DATABASE AUTHORITY
+    # -------------------------------------------------
+
+    if attack == "production_postgresql_missing_url":
+
+        try:
+
+            load_mcp_session_runtime_settings(
+                {
+                    "VM_AI_ENV":
+                        "production",
+
+                    "VM_AI_SESSION_STORE":
+                        "postgresql",
+                }
+            )
+
+        except MCPSessionRuntimeConfigurationError:
+
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # POSTGRESQL BACKEND REJECTS WRONG DATABASE SCHEME
+    # -------------------------------------------------
+
+    if attack == "production_postgresql_invalid_scheme":
+
+        try:
+
+            load_mcp_session_runtime_settings(
+                {
+                    "VM_AI_ENV":
+                        "production",
+
+                    "VM_AI_SESSION_STORE":
+                        "postgresql",
+
+                    "VM_AI_SESSION_DATABASE_URL":
+                        "sqlite:///mcp_sessions.db",
+                }
+            )
+
+        except MCPSessionRuntimeConfigurationError:
+
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # PRODUCTION POSTGRESQL CANNOT DOWNGRADE TLS
+    # -------------------------------------------------
+
+    if attack == "production_postgresql_tls_downgrade":
+
+        try:
+
+            load_mcp_session_runtime_settings(
+                {
+                    "VM_AI_ENV":
+                        "production",
+
+                    "VM_AI_SESSION_STORE":
+                        "postgresql",
+
+                    "VM_AI_SESSION_DATABASE_URL":
+                        (
+                            "postgresql://runtime@"
+                            "db.example.test/"
+                            "vm_ai_sessions"
+                            "?sslmode=disable"
+                        ),
+                }
+            )
+
+        except MCPSessionRuntimeConfigurationError:
+
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # SECURE PRODUCTION POSTGRESQL CONFIGURATION
+    # -------------------------------------------------
+
+    if attack == "production_postgresql_secure_config":
+
+        database_url = (
+            "postgresql://runtime@"
+            "db.example.test/"
+            "vm_ai_sessions"
+            "?sslmode=verify-full"
+        )
+
+        try:
+
+            settings = (
+                load_mcp_session_runtime_settings(
+                    {
+                        "VM_AI_ENV":
+                            "production",
+
+                        "VM_AI_SESSION_STORE":
+                            "postgresql",
+
+                        "VM_AI_SESSION_DATABASE_URL":
+                            database_url,
+                    }
+                )
+            )
+
+        except MCPSessionRuntimeConfigurationError:
+
+            return False
+
+        return (
+            settings.store_kind
+            == "postgresql"
+
+            and settings.database_url
+            == database_url
+        )
+
+
+    # -------------------------------------------------
+    # DATABASE SECRET CANNOT LEAK THROUGH SETTINGS REPR
+    # -------------------------------------------------
+
+    if attack == "postgresql_database_url_repr_exposure":
+
+        secret = (
+            "step42-secret-database-password"
+        )
+
+        settings = (
+            load_mcp_session_runtime_settings(
+                {
+                    "VM_AI_ENV":
+                        "development",
+
+                    "VM_AI_SESSION_STORE":
+                        "postgresql",
+
+                    "VM_AI_SESSION_DATABASE_URL":
+                        (
+                            "postgresql://runtime:"
+                            f"{secret}"
+                            "@db.example.test/"
+                            "vm_ai_sessions"
+                        ),
+                }
+            )
+        )
+
+        # True means the attacker obtained secret
+        # material from trusted runtime state.
+        return (
+            secret
+            in repr(settings)
+        )
+
+
+    # -------------------------------------------------
+    # STALE SESSION STATE CANNOT OVERWRITE AUTHORITY
+    # -------------------------------------------------
+
+    if attack == "stale_session_state_overwrite":
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            database_path = (
+                Path(temp_dir)
+                / "mcp_sessions.db"
+            )
+
+            first_store = (
+                SQLiteSessionStore(
+                    database_path=
+                        database_path
+                )
+            )
+
+            second_store = (
+                SQLiteSessionStore(
+                    database_path=
+                        database_path
+                )
+            )
+
+            shared_manager = (
+                MCPSessionManager(
+                    session_store=
+                        first_store
+                )
+            )
+
+            shared_session = (
+                shared_manager.create_session(
+                    alice,
+                    tenant_id="tenant-a",
+                    now=start,
+                )
+            )
+
+            first_expected = (
+                first_store.get(
+                    shared_session.session_id
+                )
+            )
+
+            second_expected = (
+                second_store.get(
+                    shared_session.session_id
+                )
+            )
+
+            if (
+                first_expected is None
+                or second_expected is None
+            ):
+
+                return True
+
+            first_replacement = (
+                first_expected.model_copy(
+                    update={
+                        "revoked_at":
+                            (
+                                start
+                                + timedelta(
+                                    minutes=5
+                                )
+                            )
+                    }
+                )
+            )
+
+            stale_replacement = (
+                second_expected.model_copy(
+                    update={
+                        "revoked_at":
+                            (
+                                start
+                                + timedelta(
+                                    minutes=10
+                                )
+                            )
+                    }
+                )
+            )
+
+            first_success = (
+                first_store.replace_if_current(
+                    expected=
+                        first_expected,
+
+                    replacement=
+                        first_replacement,
+                )
+            )
+
+            stale_success = (
+                second_store.replace_if_current(
+                    expected=
+                        second_expected,
+
+                    replacement=
+                        stale_replacement,
+                )
+            )
+
+            # True means stale authority successfully
+            # overwrote the newer authoritative state.
+            return not (
+                first_success
+                and not stale_success
+            )
+
+
+    # -------------------------------------------------
+    # REVOCATION IS AUTHORITATIVE ACROSS INSTANCES
+    # -------------------------------------------------
+
+    if attack == "cross_instance_revocation_reuse":
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            database_path = (
+                Path(temp_dir)
+                / "mcp_sessions.db"
+            )
+
+            first_store = (
+                SQLiteSessionStore(
+                    database_path=
+                        database_path
+                )
+            )
+
+            second_store = (
+                SQLiteSessionStore(
+                    database_path=
+                        database_path
+                )
+            )
+
+            first_manager = (
+                MCPSessionManager(
+                    session_store=
+                        first_store
+                )
+            )
+
+            second_manager = (
+                MCPSessionManager(
+                    session_store=
+                        second_store
+                )
+            )
+
+            shared_session = (
+                first_manager.create_session(
+                    alice,
+                    tenant_id="tenant-a",
+                    now=start,
+                )
+            )
+
+            second_manager.build_security_context(
+                alice,
+                session_id=
+                    shared_session.session_id,
+                tenant_id="tenant-a",
+                now=(
+                    start
+                    + timedelta(
+                        minutes=1
+                    )
+                ),
+            )
+
+            second_manager.revoke_session(
+                alice,
+                session_id=
+                    shared_session.session_id,
+                tenant_id="tenant-a",
+                now=(
+                    start
+                    + timedelta(
+                        minutes=5
+                    )
+                ),
+            )
+
+            try:
+
+                first_manager.build_security_context(
+                    alice,
+                    session_id=
+                        shared_session.session_id,
+                    tenant_id="tenant-a",
+                    now=(
+                        start
+                        + timedelta(
+                            minutes=6
+                        )
+                    ),
+                )
+
+            except MCPSessionRevoked:
+
                 return False
 
             return True

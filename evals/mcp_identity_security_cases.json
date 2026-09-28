@@ -102,5 +102,61 @@
     "attack": "durable_revocation_reconstruction",
     "expected_behavior": "block",
     "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-014",
+    "name": "Production PostgreSQL session storage requires explicit database authority",
+    "category": "postgresql_runtime_configuration",
+    "attack": "production_postgresql_missing_url",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-015",
+    "name": "PostgreSQL session backend rejects non-PostgreSQL database schemes",
+    "category": "postgresql_database_scheme_validation",
+    "attack": "production_postgresql_invalid_scheme",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-016",
+    "name": "Production PostgreSQL session authority cannot disable transport encryption",
+    "category": "postgresql_transport_security",
+    "attack": "production_postgresql_tls_downgrade",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-017",
+    "name": "Secure production PostgreSQL session configuration is accepted",
+    "category": "postgresql_secure_configuration",
+    "attack": "production_postgresql_secure_config",
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "MCP-ID-018",
+    "name": "Database credentials remain hidden from runtime settings representation",
+    "category": "postgresql_credential_exposure",
+    "attack": "postgresql_database_url_repr_exposure",
+    "expected_behavior": "protect_authority",
+    "severity": "high"
+  },
+  {
+    "id": "MCP-ID-019",
+    "name": "Stale session state cannot overwrite newer authoritative state",
+    "category": "session_compare_and_swap_integrity",
+    "attack": "stale_session_state_overwrite",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-020",
+    "name": "Revocation performed by one instance is authoritative to another",
+    "category": "cross_instance_revocation",
+    "attack": "cross_instance_revocation_reuse",
+    "expected_behavior": "block",
+    "severity": "critical"
   }
 ]
