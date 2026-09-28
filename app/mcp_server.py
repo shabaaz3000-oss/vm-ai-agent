@@ -2,7 +2,10 @@ from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
 from app.auth import Principal
-from app.mcp_session import MCPSessionManager
+from app.mcp_session_runtime import (
+    build_mcp_session_manager,
+)
+from app.mcp_tenant import resolve_mcp_tenant
 from app.security_context import SecurityContext
 
 from app.mcp_rag_context import (
@@ -70,12 +73,14 @@ LOCAL_MCP_PRINCIPAL = Principal(
 
 
 LOCAL_MCP_TENANT_ID = (
-    "local-development"
+    resolve_mcp_tenant(
+        LOCAL_MCP_PRINCIPAL
+    )
 )
 
 
 LOCAL_MCP_SESSION_MANAGER = (
-    MCPSessionManager()
+    build_mcp_session_manager()
 )
 
 

@@ -1,5 +1,7 @@
 ﻿import sqlite3
 
+from contextlib import contextmanager
+
 from pathlib import Path
 
 from app.mcp_session import MCPSession
@@ -9,6 +11,25 @@ from app.mcp_session_store import SessionStore
 # -------------------------------------------------
 # SQLITE MCP SESSION STORE
 # -------------------------------------------------
+
+
+@contextmanager
+def _managed_connection(connection):
+    """
+    Preserve sqlite transaction semantics while
+    deterministically closing the connection.
+
+    sqlite3.Connection context management commits or
+    rolls back transactions but does not close the
+    connection itself.
+    """
+
+    try:
+        with connection:
+            yield connection
+
+    finally:
+        connection.close()
 
 
 class SQLiteSessionStore(SessionStore):
@@ -95,7 +116,7 @@ class SQLiteSessionStore(SessionStore):
         session_id: str,
     ) -> MCPSession | None:
 
-        with self._connect() as connection:
+        with _managed_connection(self._connect()) as connection:
 
             row = connection.execute(
                 """
@@ -132,7 +153,7 @@ class SQLiteSessionStore(SessionStore):
             session.model_dump_json()
         )
 
-        with self._connect() as connection:
+        with _managed_connection(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -194,7 +215,7 @@ class SQLiteSessionStore(SessionStore):
             replacement.model_dump_json()
         )
 
-        with self._connect() as connection:
+        with _managed_connection(self._connect()) as connection:
 
             cursor = connection.execute(
                 """
@@ -236,7 +257,7 @@ class SQLiteSessionStore(SessionStore):
         tenant_id: str,
     ) -> list[MCPSession]:
 
-        with self._connect() as connection:
+        with _managed_connection(self._connect()) as connection:
 
             rows = connection.execute(
                 """

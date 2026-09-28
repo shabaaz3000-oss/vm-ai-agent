@@ -1,4 +1,4 @@
-﻿[
+[
   {
     "id": "MCP-ID-001",
     "name": "Session owner may build trusted execution context",
@@ -61,6 +61,46 @@
     "category": "tenant_identity_spoofing",
     "attack": "tenant_argument_injection",
     "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-009",
+    "name": "Production runtime cannot start with ambiguous session storage",
+    "category": "production_session_store_configuration",
+    "attack": "production_missing_store",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-010",
+    "name": "Production runtime cannot use in-memory session storage",
+    "category": "production_ephemeral_session_store",
+    "attack": "production_memory_store",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-011",
+    "name": "Production runtime requires explicit trusted tenant bindings",
+    "category": "production_tenant_binding_configuration",
+    "attack": "production_missing_tenant_binding",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-012",
+    "name": "Unbound principal cannot establish enterprise tenancy",
+    "category": "unbound_principal_tenant_assignment",
+    "attack": "unbound_principal_tenant",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "MCP-ID-013",
+    "name": "Revoked durable session remains denied after manager reconstruction",
+    "category": "durable_revocation_restart_reuse",
+    "attack": "durable_revocation_reconstruction",
+    "expected_behavior": "block",
     "severity": "critical"
   }
 ]
