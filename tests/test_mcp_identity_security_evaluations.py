@@ -32,7 +32,7 @@ def test_mcp_identity_security_corpus_metadata():
         )
     )
 
-    assert len(cases) == 8
+    assert len(cases) == 13
 
     ids = [
         case["id"]
@@ -80,7 +80,7 @@ def test_mcp_identity_security_loader():
         load_mcp_identity_security_cases()
     )
 
-    assert len(cases) == 8
+    assert len(cases) == 13
 
 
 @pytest.mark.anyio
@@ -91,18 +91,18 @@ async def test_mcp_identity_security_evaluator_passes():
         run_mcp_identity_security_evaluation_async()
     )
 
-    assert result.total_cases == 8
+    assert result.total_cases == 13
 
     assert result.allowed_cases == 1
 
-    assert result.blocked_cases == 5
+    assert result.blocked_cases == 10
 
     assert (
         result.authority_protection_cases
         == 2
     )
 
-    assert result.passed_cases == 8
+    assert result.passed_cases == 13
     assert result.failed_cases == 0
 
     assert result.unexpected_allows == 0

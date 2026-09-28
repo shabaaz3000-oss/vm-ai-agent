@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import tempfile
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,19 @@ from app.mcp_session import (
     MCPSessionExpired,
     MCPSessionManager,
     MCPSessionNotFound,
+    MCPSessionRevoked,
+)
+
+from app.mcp_session_runtime import (
+    MCPSessionRuntimeConfigurationError,
+    build_mcp_session_manager,
+    load_mcp_session_runtime_settings,
+)
+
+from app.mcp_tenant import (
+    MCPTenantResolutionError,
+    load_trusted_mcp_tenant_bindings,
+    resolve_mcp_tenant,
 )
 
 from app.security_context import (
@@ -401,6 +415,166 @@ async def observe_mcp_identity_case(
         )
 
         return attacker_gained_authority
+
+
+    # -------------------------------------------------
+    # PRODUCTION STORE CONFIGURATION MUST BE EXPLICIT
+    # -------------------------------------------------
+
+    if attack == "production_missing_store":
+
+        try:
+            load_mcp_session_runtime_settings(
+                {
+                    "VM_AI_ENV":
+                        "production",
+                }
+            )
+
+        except MCPSessionRuntimeConfigurationError:
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # PRODUCTION CANNOT USE EPHEMERAL SESSION STORAGE
+    # -------------------------------------------------
+
+    if attack == "production_memory_store":
+
+        try:
+            load_mcp_session_runtime_settings(
+                {
+                    "VM_AI_ENV":
+                        "production",
+
+                    "VM_AI_SESSION_STORE":
+                        "memory",
+                }
+            )
+
+        except MCPSessionRuntimeConfigurationError:
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # PRODUCTION TENANT BINDINGS MUST BE EXPLICIT
+    # -------------------------------------------------
+
+    if attack == "production_missing_tenant_binding":
+
+        try:
+            load_trusted_mcp_tenant_bindings(
+                {
+                    "VM_AI_ENV":
+                        "production",
+                }
+            )
+
+        except MCPTenantResolutionError:
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # UNBOUND PRINCIPAL CANNOT SELF-ESTABLISH TENANCY
+    # -------------------------------------------------
+
+    if attack == "unbound_principal_tenant":
+
+        try:
+            resolve_mcp_tenant(
+                alice,
+                environment={
+                    "VM_AI_ENV":
+                        "production",
+
+                    "VM_AI_MCP_TENANT_BINDINGS":
+                        (
+                            '{"bob": "tenant-b"}'
+                        ),
+                },
+            )
+
+        except MCPTenantResolutionError:
+            return False
+
+        return True
+
+
+    # -------------------------------------------------
+    # REVOCATION SURVIVES MANAGER RECONSTRUCTION
+    # -------------------------------------------------
+
+    if attack == "durable_revocation_reconstruction":
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            database_path = (
+                Path(temp_dir)
+                / "mcp_sessions.db"
+            )
+
+            environment = {
+                "VM_AI_ENV":
+                    "production",
+
+                "VM_AI_SESSION_STORE":
+                    "sqlite",
+
+                "VM_AI_SESSION_DB_PATH":
+                    str(database_path),
+
+                "VM_AI_SESSION_TTL_MINUTES":
+                    "30",
+            }
+
+            first_manager = (
+                build_mcp_session_manager(
+                    environment
+                )
+            )
+
+            durable_session = (
+                first_manager.create_session(
+                    alice,
+                    tenant_id="tenant-a",
+                    now=start,
+                )
+            )
+
+            first_manager.revoke_session(
+                alice,
+                session_id=
+                    durable_session.session_id,
+                tenant_id="tenant-a",
+                now=start,
+            )
+
+            reconstructed_manager = (
+                build_mcp_session_manager(
+                    environment
+                )
+            )
+
+            try:
+                reconstructed_manager.build_security_context(
+                    alice,
+                    session_id=
+                        durable_session.session_id,
+                    tenant_id="tenant-a",
+                    now=start,
+                )
+
+            except MCPSessionRevoked:
+                return False
+
+            return True
+
 
     raise ValueError(
         "Unknown MCP identity attack: "
