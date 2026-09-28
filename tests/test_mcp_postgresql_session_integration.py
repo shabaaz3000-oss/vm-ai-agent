@@ -1,4 +1,4 @@
-﻿import os
+import os
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -10,11 +10,19 @@ from threading import Barrier
 
 import pytest
 
+import psycopg
+
+from psycopg import sql
+
 from app.auth import Principal
 
 from app.mcp_session import (
     MCPSessionManager,
     MCPSessionRevoked,
+)
+
+from app.mcp_postgresql_schema import (
+    provision_postgresql_session_schema,
 )
 
 from app.mcp_postgresql_session_store import (
@@ -29,20 +37,122 @@ from app.mcp_postgresql_session_store import (
 
 def postgres_database_url() -> str:
     """
-    Resolve the ephemeral PostgreSQL integration-test
-    database supplied by CI.
-
-    Local development does not require PostgreSQL.
+    Provision the integration schema using a deployment
+    identity, then return a separate least-privileged URL
+    used by PostgreSQLSessionStore.
     """
 
     database_url = os.environ.get(
         "TEST_POSTGRES_DATABASE_URL"
     )
 
-    if not database_url:
+    admin_database_url = os.environ.get(
+        "TEST_POSTGRES_ADMIN_DATABASE_URL"
+    )
+
+    if (
+        not database_url
+        or not admin_database_url
+    ):
 
         pytest.skip(
-            "TEST_POSTGRES_DATABASE_URL is not configured"
+            "PostgreSQL integration-test URLs "
+            "are not configured"
+        )
+
+    provision_postgresql_session_schema(
+        database_url=
+            admin_database_url
+    )
+
+    with psycopg.connect(
+        admin_database_url,
+        autocommit=True,
+    ) as connection:
+
+        role = connection.execute(
+            """
+            SELECT 1
+            FROM pg_roles
+            WHERE rolname = %s
+            """,
+            (
+                "vm_ai_runtime",
+            ),
+        ).fetchone()
+
+        if role is None:
+
+            connection.execute(
+                """
+                CREATE ROLE vm_ai_runtime LOGIN
+                """
+            )
+
+        database_name = (
+            connection.execute(
+                """
+                SELECT current_database()
+                """
+            ).fetchone()[0]
+        )
+
+        connection.execute(
+            sql.SQL(
+                """
+                REVOKE CREATE ON SCHEMA public
+                FROM PUBLIC
+                """
+            )
+        )
+
+        connection.execute(
+            sql.SQL(
+                """
+                REVOKE TEMPORARY ON DATABASE {}
+                FROM PUBLIC
+                """
+            ).format(
+                sql.Identifier(
+                    database_name
+                )
+            )
+        )
+
+        connection.execute(
+            sql.SQL(
+                """
+                GRANT CONNECT ON DATABASE {}
+                TO vm_ai_runtime
+                """
+            ).format(
+                sql.Identifier(
+                    database_name
+                )
+            )
+        )
+
+        connection.execute(
+            """
+            GRANT USAGE ON SCHEMA public
+            TO vm_ai_runtime
+            """
+        )
+
+        connection.execute(
+            """
+            REVOKE ALL PRIVILEGES
+            ON TABLE mcp_sessions
+            FROM PUBLIC
+            """
+        )
+
+        connection.execute(
+            """
+            GRANT SELECT, INSERT, UPDATE
+            ON TABLE mcp_sessions
+            TO vm_ai_runtime
+            """
         )
 
     return database_url
@@ -67,6 +177,59 @@ def make_principal() -> Principal:
         role="ANALYST",
         retrieval_access="standard",
     )
+
+
+
+
+# -------------------------------------------------
+# RUNTIME DATABASE LEAST PRIVILEGE
+# -------------------------------------------------
+
+
+def test_runtime_identity_cannot_create_schema_objects():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    with pytest.raises(
+        psycopg.errors.InsufficientPrivilege
+    ):
+
+        with psycopg.connect(
+            database_url
+        ) as connection:
+
+            connection.execute(
+                """
+                CREATE TABLE
+                    mcp_runtime_ddl_should_fail (
+                        id INTEGER
+                    )
+                """
+            )
+
+
+def test_runtime_identity_cannot_delete_session_rows():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    with pytest.raises(
+        psycopg.errors.InsufficientPrivilege
+    ):
+
+        with psycopg.connect(
+            database_url
+        ) as connection:
+
+            connection.execute(
+                """
+                DELETE FROM mcp_sessions
+                WHERE FALSE
+                """
+            )
 
 
 # -------------------------------------------------

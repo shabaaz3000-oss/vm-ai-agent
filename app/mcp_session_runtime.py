@@ -3,14 +3,20 @@ from __future__ import annotations
 import os
 
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs
+from urllib.parse import urlsplit
 from typing import Mapping
 
 from app.mcp_session import MCPSessionManager
 from app.mcp_session_store import (
     InMemorySessionStore,
     SessionStore,
+)
+from app.mcp_postgresql_session_store import (
+    PostgreSQLSessionStore,
 )
 from app.mcp_sqlite_session_store import (
     SQLiteSessionStore,
@@ -33,6 +39,7 @@ SUPPORTED_ENVIRONMENTS = {
 SUPPORTED_SESSION_STORES = {
     "memory",
     "sqlite",
+    "postgresql",
 }
 
 
@@ -59,6 +66,100 @@ class MCPSessionRuntimeSettings:
     session_ttl: timedelta
 
     database_path: Path | None
+
+    database_url: str | None = field(
+        repr=False
+    )
+
+
+
+def _validate_postgresql_database_url(
+    database_url: str,
+    *,
+    production: bool,
+) -> str:
+    """
+    Validate trusted server-side PostgreSQL configuration
+    without exposing credentials in configuration errors.
+    """
+
+    normalized = (
+        database_url.strip()
+    )
+
+    if not normalized:
+
+        raise MCPSessionRuntimeConfigurationError(
+            "VM_AI_SESSION_DATABASE_URL must "
+            "not be empty."
+        )
+
+    try:
+
+        parsed = urlsplit(
+            normalized
+        )
+
+        hostname = parsed.hostname
+
+    except ValueError as exc:
+
+        raise MCPSessionRuntimeConfigurationError(
+            "VM_AI_SESSION_DATABASE_URL is invalid."
+        ) from exc
+
+    if parsed.scheme.lower() != "postgresql":
+
+        raise MCPSessionRuntimeConfigurationError(
+            "VM_AI_SESSION_DATABASE_URL must use "
+            "the postgresql:// scheme."
+        )
+
+    if not hostname:
+
+        raise MCPSessionRuntimeConfigurationError(
+            "VM_AI_SESSION_DATABASE_URL must include "
+            "a database host."
+        )
+
+    if (
+        not parsed.path
+        or parsed.path == "/"
+    ):
+
+        raise MCPSessionRuntimeConfigurationError(
+            "VM_AI_SESSION_DATABASE_URL must include "
+            "a database name."
+        )
+
+    if production:
+
+        query = parse_qs(
+            parsed.query
+        )
+
+        sslmode = (
+            query.get(
+                "sslmode",
+                [""],
+            )[-1]
+            .strip()
+            .lower()
+        )
+
+        if sslmode not in {
+            "require",
+            "verify-ca",
+            "verify-full",
+        }:
+
+            raise MCPSessionRuntimeConfigurationError(
+                "Production PostgreSQL session storage "
+                "must require TLS with sslmode=require, "
+                "verify-ca, or verify-full."
+            )
+
+    return normalized
 
 
 def load_mcp_session_runtime_settings(
@@ -163,6 +264,8 @@ def load_mcp_session_runtime_settings(
 
     database_path: Path | None = None
 
+    database_url: str | None = None
+
     if store_kind == "sqlite":
 
         configured_database_path = (
@@ -180,6 +283,7 @@ def load_mcp_session_runtime_settings(
                 runtime_environment
                 == "production"
             ):
+
                 raise (
                     MCPSessionRuntimeConfigurationError(
                         "VM_AI_SESSION_DB_PATH must "
@@ -199,6 +303,35 @@ def load_mcp_session_runtime_settings(
                 configured_database_path
             )
 
+    if store_kind == "postgresql":
+
+        configured_database_url = (
+            source.get(
+                "VM_AI_SESSION_DATABASE_URL"
+            )
+        )
+
+        if (
+            configured_database_url is None
+            or not configured_database_url.strip()
+        ):
+
+            raise MCPSessionRuntimeConfigurationError(
+                "VM_AI_SESSION_DATABASE_URL must "
+                "be explicitly configured when "
+                "PostgreSQL session storage is used."
+            )
+
+        database_url = (
+            _validate_postgresql_database_url(
+                configured_database_url,
+                production=(
+                    runtime_environment
+                    == "production"
+                ),
+            )
+        )
+
     return MCPSessionRuntimeSettings(
         environment=runtime_environment,
         store_kind=store_kind,
@@ -206,6 +339,7 @@ def load_mcp_session_runtime_settings(
             minutes=ttl_minutes
         ),
         database_path=database_path,
+        database_url=database_url,
     )
 
 
@@ -231,6 +365,20 @@ def build_mcp_session_store(
         return SQLiteSessionStore(
             database_path=
                 settings.database_path,
+        )
+
+    if settings.store_kind == "postgresql":
+
+        if settings.database_url is None:
+
+            raise MCPSessionRuntimeConfigurationError(
+                "PostgreSQL session storage requires "
+                "a database URL."
+            )
+
+        return PostgreSQLSessionStore(
+            database_url=
+                settings.database_url,
         )
 
     raise MCPSessionRuntimeConfigurationError(

@@ -20,8 +20,9 @@ class PostgreSQLSessionStore(SessionStore):
 
     Security policy remains in MCPSessionManager.
 
-    The database is responsible only for durable,
-    transactionally consistent session state.
+    Schema provisioning is intentionally separate from
+    runtime persistence so that the application identity
+    does not require DDL privileges.
     """
 
     def __init__(
@@ -65,58 +66,18 @@ class PostgreSQLSessionStore(SessionStore):
         self,
     ) -> psycopg.Connection:
         """
-        Open one PostgreSQL connection and ensure that
-        the MCP session schema exists.
+        Open one runtime PostgreSQL connection.
 
-        The database URL is trusted server-side
-        configuration and is never emitted to logs.
+        Schema provisioning is deliberately not performed
+        here. Runtime credentials require only the minimum
+        DML privileges needed by SessionStore.
         """
 
-        connection = psycopg.connect(
+        return psycopg.connect(
             self._database_url,
             connect_timeout=
                 self._connect_timeout_seconds,
         )
-
-        try:
-
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS
-                    mcp_sessions (
-                        session_id TEXT PRIMARY KEY,
-                        principal_id TEXT NOT NULL,
-                        tenant_id TEXT NOT NULL,
-                        payload TEXT NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL
-                            DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMPTZ NOT NULL
-                            DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-            )
-
-            connection.execute(
-                """
-                CREATE INDEX IF NOT EXISTS
-                    idx_mcp_sessions_principal_tenant
-                ON mcp_sessions (
-                    principal_id,
-                    tenant_id
-                )
-                """
-            )
-
-            connection.commit()
-
-            return connection
-
-        except Exception:
-
-            connection.rollback()
-            connection.close()
-
-            raise
 
 
     # -------------------------------------------------
@@ -212,10 +173,9 @@ class PostgreSQLSessionStore(SessionStore):
         only when its persisted payload still matches
         the caller's expected state.
 
-        PostgreSQL performs the comparison and update
-        as one statement. This preserves CAS semantics
-        across independent application processes and
-        hosts.
+        The comparison and replacement occur in one
+        PostgreSQL statement, preserving CAS semantics
+        across independent processes and hosts.
         """
 
         if (

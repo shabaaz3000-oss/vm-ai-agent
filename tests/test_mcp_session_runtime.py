@@ -15,6 +15,10 @@ from app.mcp_session_store import (
     InMemorySessionStore,
 )
 
+from app.mcp_postgresql_session_store import (
+    PostgreSQLSessionStore,
+)
+
 from app.mcp_sqlite_session_store import (
     SQLiteSessionStore,
 )
@@ -225,4 +229,176 @@ def test_runtime_factory_uses_shared_sqlite_state(
     assert (
         validated.session_id
         == session.session_id
+    )
+
+def test_explicit_postgresql_store_is_built():
+
+    database_url = (
+        "postgresql://runtime@db.example.test/"
+        "vm_ai_sessions"
+    )
+
+    settings = (
+        load_mcp_session_runtime_settings(
+            {
+                "VM_AI_ENV":
+                    "development",
+
+                "VM_AI_SESSION_STORE":
+                    "postgresql",
+
+                "VM_AI_SESSION_DATABASE_URL":
+                    database_url,
+            }
+        )
+    )
+
+    store = build_mcp_session_store(
+        settings
+    )
+
+    assert isinstance(
+        store,
+        PostgreSQLSessionStore,
+    )
+
+    assert (
+        settings.database_url
+        == database_url
+    )
+
+    assert settings.database_path is None
+
+
+def test_postgresql_requires_database_url():
+
+    with pytest.raises(
+        MCPSessionRuntimeConfigurationError
+    ):
+
+        load_mcp_session_runtime_settings(
+            {
+                "VM_AI_ENV":
+                    "development",
+
+                "VM_AI_SESSION_STORE":
+                    "postgresql",
+            }
+        )
+
+
+def test_postgresql_rejects_non_postgresql_url():
+
+    with pytest.raises(
+        MCPSessionRuntimeConfigurationError
+    ):
+
+        load_mcp_session_runtime_settings(
+            {
+                "VM_AI_ENV":
+                    "development",
+
+                "VM_AI_SESSION_STORE":
+                    "postgresql",
+
+                "VM_AI_SESSION_DATABASE_URL":
+                    "sqlite:///sessions.db",
+            }
+        )
+
+
+def test_production_postgresql_requires_tls():
+
+    with pytest.raises(
+        MCPSessionRuntimeConfigurationError
+    ):
+
+        load_mcp_session_runtime_settings(
+            {
+                "VM_AI_ENV":
+                    "production",
+
+                "VM_AI_SESSION_STORE":
+                    "postgresql",
+
+                "VM_AI_SESSION_DATABASE_URL":
+                    (
+                        "postgresql://runtime@"
+                        "db.example.test/"
+                        "vm_ai_sessions"
+                    ),
+            }
+        )
+
+
+def test_production_postgresql_secure_url_is_accepted():
+
+    database_url = (
+        "postgresql://runtime@db.example.test/"
+        "vm_ai_sessions?sslmode=verify-full"
+    )
+
+    settings = (
+        load_mcp_session_runtime_settings(
+            {
+                "VM_AI_ENV":
+                    "production",
+
+                "VM_AI_SESSION_STORE":
+                    "postgresql",
+
+                "VM_AI_SESSION_DATABASE_URL":
+                    database_url,
+            }
+        )
+    )
+
+    store = build_mcp_session_store(
+        settings
+    )
+
+    assert isinstance(
+        store,
+        PostgreSQLSessionStore,
+    )
+
+    assert (
+        settings.database_url
+        == database_url
+    )
+
+
+def test_database_url_is_hidden_from_settings_repr():
+
+    secret = "do-not-expose-this-password"
+
+    settings = (
+        load_mcp_session_runtime_settings(
+            {
+                "VM_AI_ENV":
+                    "development",
+
+                "VM_AI_SESSION_STORE":
+                    "postgresql",
+
+                "VM_AI_SESSION_DATABASE_URL":
+                    (
+                        "postgresql://runtime:"
+                        f"{secret}"
+                        "@db.example.test/"
+                        "vm_ai_sessions"
+                    ),
+            }
+        )
+    )
+
+    rendered = repr(
+        settings
+    )
+
+    assert secret not in rendered
+
+    assert (
+        "VM_AI_SESSION_DATABASE_URL"
+        not in rendered
     )
