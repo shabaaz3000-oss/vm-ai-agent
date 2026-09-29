@@ -115,8 +115,16 @@ class KnowledgeDocument(BaseModel):
     #     owning tenant for principal-aware retrieval.
     #
     # allowed_principal_ids:
-    #     None  -> tenant-wide access
-    #     tuple -> explicit document ACL
+    #     None  -> no principal ACL branch
+    #     tuple -> explicit principal allowlist
+    #
+    # allowed_group_ids:
+    #     None  -> no group ACL branch
+    #     tuple -> explicit Entra group allowlist
+    #
+    # When either ACL branch is configured, authorization
+    # succeeds when the trusted principal OR one trusted
+    # authoritative group matches.
     #
     # These values must be assigned by trusted ingestion
     # context, never parsed from document content.
@@ -129,6 +137,8 @@ class KnowledgeDocument(BaseModel):
     )
 
     allowed_principal_ids: tuple[str, ...] | None = None
+
+    allowed_group_ids: tuple[str, ...] | None = None
 
 
 class KnowledgeChunk(BaseModel):
@@ -177,8 +187,16 @@ class KnowledgeChunk(BaseModel):
     #     owning tenant for principal-aware retrieval.
     #
     # allowed_principal_ids:
-    #     None  -> tenant-wide access
-    #     tuple -> explicit document ACL
+    #     None  -> no principal ACL branch
+    #     tuple -> explicit principal allowlist
+    #
+    # allowed_group_ids:
+    #     None  -> no group ACL branch
+    #     tuple -> explicit Entra group allowlist
+    #
+    # When either ACL branch is configured, authorization
+    # succeeds when the trusted principal OR one trusted
+    # authoritative group matches.
     #
     # These values must be assigned by trusted ingestion
     # context, never parsed from document content.
@@ -191,6 +209,8 @@ class KnowledgeChunk(BaseModel):
     )
 
     allowed_principal_ids: tuple[str, ...] | None = None
+
+    allowed_group_ids: tuple[str, ...] | None = None
 
 
 class RetrievedEvidence(BaseModel):

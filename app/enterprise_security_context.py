@@ -1,9 +1,15 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Mapping
 from typing import Sequence
 
 from pydantic import ValidationError
+
+from app.enterprise_authorization_evidence import (
+    EnterpriseGroupMembershipUnavailable,
+    ValidatedEnterpriseToken,
+    require_authoritative_group_ids,
+)
 
 from app.enterprise_identity import EnterpriseIdentity
 
@@ -20,6 +26,10 @@ from app.enterprise_tenant_binding import (
 )
 
 from app.security_context import SecurityContext
+
+from app.retrieval_authorization import (
+    RetrievalPrincipal,
+)
 
 
 # -------------------------------------------------
@@ -145,4 +155,109 @@ def resolve_enterprise_security_context(
             principal_bindings,
         tenant_bindings=
             tenant_bindings,
+    )
+
+
+# -------------------------------------------------
+# ENTERPRISE RETRIEVAL AUTHORITY
+# -------------------------------------------------
+
+
+def build_enterprise_retrieval_principal_from_validated_token(
+    validated_token: ValidatedEnterpriseToken,
+    *,
+    session_id: str,
+    principal_bindings: Sequence[
+        EnterprisePrincipalBinding
+    ],
+    tenant_bindings: Sequence[
+        EnterpriseTenantBinding
+    ],
+) -> RetrievalPrincipal:
+    """
+    Build one immutable retrieval authorization principal
+    from the same cryptographically validated enterprise
+    token used to establish identity.
+
+    SecurityContext remains execution-only.
+
+    Group membership is attached directly to the retrieval
+    authority boundary only when membership is complete or
+    Graph-resolved.
+
+    Missing or incomplete group authority is represented as
+    group_ids=None and therefore cannot authorize a
+    group-protected document.
+    """
+
+    context = (
+        build_enterprise_security_context(
+            validated_token.identity,
+            session_id=session_id,
+            principal_bindings=
+                principal_bindings,
+            tenant_bindings=
+                tenant_bindings,
+        )
+    )
+
+    try:
+
+        group_ids = (
+            require_authoritative_group_ids(
+                validated_token.authorization
+            )
+        )
+
+    except EnterpriseGroupMembershipUnavailable:
+
+        group_ids = None
+
+    return RetrievalPrincipal(
+        principal_id=
+            context.principal_id,
+        tenant_id=
+            context.tenant_id,
+        retrieval_access=
+            context.retrieval_access,
+        group_ids=
+            group_ids,
+    )
+
+
+def resolve_enterprise_retrieval_principal_from_validated_token(
+    validated_token: ValidatedEnterpriseToken,
+    *,
+    session_id: str,
+    environment: Mapping[str, str] | None = None,
+) -> RetrievalPrincipal:
+    """
+    Resolve Principal policy, internal tenancy, and complete
+    enterprise group membership from one validated-token
+    authority boundary.
+
+    No caller-selected group IDs are accepted.
+    """
+
+    principal_bindings = (
+        load_enterprise_principal_bindings(
+            environment
+        )
+    )
+
+    tenant_bindings = (
+        load_enterprise_tenant_bindings(
+            environment
+        )
+    )
+
+    return (
+        build_enterprise_retrieval_principal_from_validated_token(
+            validated_token,
+            session_id=session_id,
+            principal_bindings=
+                principal_bindings,
+            tenant_bindings=
+                tenant_bindings,
+        )
     )
