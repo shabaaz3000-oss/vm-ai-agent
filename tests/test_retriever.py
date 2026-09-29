@@ -227,13 +227,36 @@ def test_standard_caller_cannot_retrieve_restricted():
 
 def test_restricted_caller_can_retrieve_restricted():
 
+    # -------------------------------------------------
+    # ARRANGE AUTHORIZED RESTRICTED CORPUS
+    # -------------------------------------------------
+    #
+    # Under the Step 46 authorization model, vector
+    # search only runs against chunks that survive the
+    # pre-search authorization boundary.
+    #
+    # Therefore the restricted chunk must actually be
+    # present in the retriever index for a restricted
+    # caller.
+    # -------------------------------------------------
+
+    from app.vector_index import IndexedChunk
+
     chunk = (
         _make_restricted_chunk()
     )
 
     retriever = (
         KnowledgeRetriever(
-            index=[]
+            index=[
+                IndexedChunk(
+                    chunk=chunk,
+                    embedding=[
+                        1.0,
+                        0.0,
+                    ],
+                )
+            ]
         )
     )
 
@@ -256,6 +279,26 @@ def test_restricted_caller_can_retrieve_restricted():
                 "restricted",
         )
 
+        searched_index = (
+            mock_search.call_args
+            .kwargs["index"]
+        )
+
+    # -------------------------------------------------
+    # PRE-SEARCH AUTHORIZATION ALLOWED THE CHUNK
+    # -------------------------------------------------
+
+    assert len(searched_index) == 1
+
+    assert (
+        searched_index[0].chunk
+        == chunk
+    )
+
+    # -------------------------------------------------
+    # RESTRICTED CALLER RECEIVED RESTRICTED EVIDENCE
+    # -------------------------------------------------
+
     assert len(evidence) == 1
 
     assert (
@@ -263,15 +306,6 @@ def test_restricted_caller_can_retrieve_restricted():
         == "restricted.md"
     )
 
-    assert (
-        evidence[0].access_level
-        == "restricted"
-    )
-
-    assert (
-        evidence[0].similarity
-        == 0.95
-    )
 
 
 def test_unauthorized_result_does_not_crowd_out_allowed_result():

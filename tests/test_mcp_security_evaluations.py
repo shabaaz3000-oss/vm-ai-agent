@@ -84,7 +84,8 @@ class OfflineKnowledgeRetriever(
         query,
         top_k,
         min_similarity,
-        caller_access,
+        caller_access=None,
+        retrieval_principal=None,
     ):
 
         return []
@@ -105,7 +106,7 @@ def use_offline_mcp_rag_retriever(
         mcp_rag_context.KnowledgeRetriever,
         "from_trusted_knowledge",
         classmethod(
-            lambda cls:
+            lambda cls, **kwargs:
                 retriever
         ),
     )

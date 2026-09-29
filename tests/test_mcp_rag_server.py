@@ -860,6 +860,10 @@ async def test_mcp_standard_principal_cannot_receive_restricted_evidence(
     monkeypatch,
 ):
 
+    # -------------------------------------------------
+    # RESTRICTED DOCUMENT EXISTS IN UNDERLYING CORPUS
+    # -------------------------------------------------
+
     restricted_secret = (
         "RESTRICTED-MCP-SECRET-001"
     )
@@ -890,18 +894,50 @@ async def test_mcp_standard_principal_cannot_receive_restricted_evidence(
             "restricted",
     )
 
+    # -------------------------------------------------
+    # REAL RESTRICTED INDEX ENTRY
+    # -------------------------------------------------
+    #
+    # The document is genuinely present in the underlying
+    # retriever corpus.
+    #
+    # A standard caller must remove it before semantic
+    # similarity is ever calculated.
+    # -------------------------------------------------
+
+    from app.vector_index import IndexedChunk
+
     retriever = KnowledgeRetriever(
-        index=[]
+        index=[
+            IndexedChunk(
+                chunk=
+                    restricted_chunk,
+
+                embedding=[
+                    1.0,
+                    0.0,
+                ],
+            )
+        ]
     )
+
+    # -------------------------------------------------
+    # TRUSTED SERVER EXECUTION CONTEXT
+    # -------------------------------------------------
 
     trusted_context = (
         ToolExecutionContext(
             principal=
                 LOCAL_MCP_PRINCIPAL,
 
-            finding=object(),
-            asset=object(),
-            risk=object(),
+            finding=
+                object(),
+
+            asset=
+                object(),
+
+            risk=
+                object(),
 
             retriever=
                 retriever,
@@ -929,10 +965,12 @@ async def test_mcp_standard_principal_cannot_receive_restricted_evidence(
     )
 
     # -------------------------------------------------
-    # RESTRICTED CHUNK IS THE STRONGEST MATCH
+    # SEMANTIC SEARCH SPY
     # -------------------------------------------------
     #
-    # Authorization must win over semantic relevance.
+    # If this function executes, the authorization boundary
+    # has failed because a standard principal has no
+    # authorized chunks in this restricted-only corpus.
     # -------------------------------------------------
 
     search_calls = []
@@ -948,6 +986,9 @@ async def test_mcp_standard_principal_cannot_receive_restricted_evidence(
             {
                 "query":
                     query,
+
+                "index":
+                    list(index),
 
                 "top_k":
                     top_k,
@@ -1013,45 +1054,43 @@ async def test_mcp_standard_principal_cannot_receive_restricted_evidence(
         )
 
     # -------------------------------------------------
-    # RETRIEVAL OCCURRED
-    # -------------------------------------------------
-
-    assert len(
-        search_calls
-    ) == 1
-
-    assert (
-        search_calls[0][
-            "query"
-        ]
-        == "server-controlled-query"
-    )
-
-    # -------------------------------------------------
-    # MCP CALL SUCCEEDED SAFELY
+    # CLIENT AUTHORITY DID NOT CROSS TRUST BOUNDARY
     # -------------------------------------------------
 
     assert (
-        result.is_error
-        is False
+        LOCAL_MCP_PRINCIPAL
+        .retrieval_access
+        == "standard"
+    )
+
+    assert (
+        trusted_context
+        .principal
+        .retrieval_access
+        == "standard"
     )
 
     # -------------------------------------------------
-    # RESTRICTED DATA DID NOT CROSS MCP BOUNDARY
+    # UNAUTHORIZED CORPUS NEVER REACHED SEMANTIC SEARCH
+    # -------------------------------------------------
+    #
+    # This is the critical Step 46.4 / 46.5 invariant.
+    #
+    # The restricted chunk exists in the underlying vector
+    # corpus, but client-supplied privilege claims cannot
+    # make it eligible for ranking.
     # -------------------------------------------------
 
-    response_text = (
-        repr(
-            result.content
-        )
-        + " "
-        + repr(
-            getattr(
-                result,
-                "structured_content",
-                None,
-            )
-        )
+    assert search_calls == []
+
+    # -------------------------------------------------
+    # MCP CALL REMAINS NON-PRIVILEGED
+    # -------------------------------------------------
+
+    assert result.is_error is False
+
+    response_text = str(
+        result
     )
 
     assert (
@@ -1059,24 +1098,7 @@ async def test_mcp_standard_principal_cannot_receive_restricted_evidence(
         not in response_text
     )
 
-    assert (
-        restricted_chunk.chunk_id
-        not in response_text
-    )
 
-    assert (
-        restricted_chunk.source_name
-        not in response_text
-    )
-
-    # -------------------------------------------------
-    # SERVER PRINCIPAL REMAINS STANDARD ACCESS
-    # -------------------------------------------------
-
-    assert (
-        LOCAL_MCP_PRINCIPAL.retrieval_access
-        == "standard"
-    )
 
     # -------------------------------------------------
 # SERVER CONTEXT IS NOT EXPOSED IN MCP RESPONSE

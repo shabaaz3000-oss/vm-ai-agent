@@ -35,6 +35,10 @@ from app.mcp_identity_security_evaluator import (
     run_mcp_identity_security_evaluation,
 )
 
+from app.identity_aware_rag_security_evaluator import (
+    run_identity_aware_rag_security_evaluation,
+)
+
 from run_security_evals import (
     calculate_security_score,
     run_security_evaluations,
@@ -657,6 +661,97 @@ def display_mcp_identity_security_evaluation(
 
 
 # -------------------------------------------------
+# IDENTITY-AWARE RAG SECURITY DISPLAY
+# -------------------------------------------------
+
+
+def display_identity_aware_rag_security_evaluation(
+    result,
+) -> None:
+
+    print(
+        "\nIDENTITY-AWARE RAG AUTHORIZATION"
+    )
+
+    print(
+        "-" * 70
+    )
+
+    print(
+        f"Total Cases: {result.total_cases}"
+    )
+
+    print(
+        f"Authorized Cases: "
+        f"{result.authorized_cases}"
+    )
+
+    print(
+        f"Blocked Cases: {result.blocked_cases}"
+    )
+
+    print(
+        f"Cross-Tenant Cases: "
+        f"{result.cross_tenant_cases}"
+    )
+
+    print(
+        f"Cross-User ACL Cases: "
+        f"{result.cross_user_acl_cases}"
+    )
+
+    print(
+        f"Classification Cases: "
+        f"{result.classification_cases}"
+    )
+
+    print(
+        f"Fail-Closed Cases: "
+        f"{result.fail_closed_cases}"
+    )
+
+    print(
+        f"Backend Injection Cases: "
+        f"{result.backend_injection_cases}"
+    )
+
+    print(
+        f"Passed Cases: {result.passed_cases}"
+    )
+
+    print(
+        f"Failed Cases: {result.failed_cases}"
+    )
+
+    print(
+        f"Unauthorized Exposures: "
+        f"{result.unauthorized_exposures}"
+    )
+
+    print(
+        f"Pre-Search Boundary Failures: "
+        f"{result.pre_search_boundary_failures}"
+    )
+
+    print(
+        f"Audit Failures: "
+        f"{result.audit_failures}"
+    )
+
+    print(
+        "Identity-Aware RAG Authorization "
+        "Result: "
+        + (
+            "PASS"
+            if result.passed
+            else "FAIL"
+        )
+    )
+
+
+
+
+# -------------------------------------------------
 # DISPLAY SECURITY EVALUATION
 # -------------------------------------------------
 
@@ -670,6 +765,7 @@ def display_security_evaluation(
     agency_result,
     mcp_identity_result,
     attack_results,
+    identity_rag_result=None,
 ) -> None:
 
     print()
@@ -1135,6 +1231,12 @@ def display_security_evaluation(
         mcp_identity_result
     )
 
+    if identity_rag_result is not None:
+
+        display_identity_aware_rag_security_evaluation(
+            identity_rag_result
+        )
+
     # -------------------------------------------------
     # STANDARDIZED ATTACK HARNESS
     # -------------------------------------------------
@@ -1274,6 +1376,10 @@ def display_security_evaluation(
         and leakage_result.passed
         and agency_result.passed
         and mcp_identity_result.passed
+        and (
+            identity_rag_result is None
+            or identity_rag_result.passed
+        )
         and attack_harness_passed
     )
 
@@ -1425,6 +1531,10 @@ def run_security_eval() -> int:
         run_mcp_identity_security_evaluation()
     )
 
+    identity_rag_result = (
+        run_identity_aware_rag_security_evaluation()
+    )
+
     attack_results = (
         run_security_evaluations()
     )
@@ -1438,6 +1548,8 @@ def run_security_eval() -> int:
         agency_result,
         mcp_identity_result,
         attack_results,
+        identity_rag_result=
+            identity_rag_result,
     )
 
     attack_harness_passed = (
@@ -1458,6 +1570,7 @@ def run_security_eval() -> int:
         and leakage_result.passed
         and agency_result.passed
         and mcp_identity_result.passed
+        and identity_rag_result.passed
         and attack_harness_passed
     ):
 

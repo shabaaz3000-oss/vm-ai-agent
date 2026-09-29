@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Literal
 
 from app.models import RetrievedEvidence
 
@@ -8,22 +7,20 @@ from app.rag_ingestion import (
     build_knowledge_chunks,
 )
 
+from app.retrieval_authorization import (
+    RetrievalAccess,
+    RetrievalPrincipal,
+    is_knowledge_chunk_authorized,
+)
+
 from app.vector_index import (
     IndexedChunk,
     build_vector_index,
     search_vector_index,
 )
 
-
-# -------------------------------------------------
-# RETRIEVAL ACCESS LEVEL
-# -------------------------------------------------
-
-
-RetrievalAccess = Literal[
-    "standard",
-    "restricted"
-]
+from app.audit import log_event
+from app.retrieval_authorization import evaluate_knowledge_chunk_authorization
 
 
 # -------------------------------------------------
@@ -49,10 +46,18 @@ class KnowledgeRetriever:
     def from_trusted_knowledge(
         cls,
         root: Path = TRUSTED_KNOWLEDGE_DIR,
+        *,
+        tenant_id: str | None = None,
+        document_acl: dict[
+            str,
+            tuple[str, ...],
+        ] | None = None,
     ) -> "KnowledgeRetriever":
 
         chunks = build_knowledge_chunks(
-            root
+            root,
+            tenant_id=tenant_id,
+            document_acl=document_acl,
         )
 
         index = build_vector_index(
@@ -73,7 +78,8 @@ class KnowledgeRetriever:
         query: str,
         top_k: int = 3,
         min_similarity: float = 0.0,
-        caller_access: RetrievalAccess = "standard",
+        caller_access: RetrievalAccess | None = None,
+        retrieval_principal: RetrievalPrincipal | None = None,
     ) -> list[RetrievedEvidence]:
 
         cleaned_query = (
@@ -103,47 +109,160 @@ class KnowledgeRetriever:
                 "between -1.0 and 1.0."
             )
 
-        if caller_access not in (
-            "standard",
-            "restricted",
+        if (
+            retrieval_principal is None
         ):
 
-            raise ValueError(
-                "caller_access must be "
-                "'standard' or 'restricted'."
+            effective_access = (
+                caller_access
+                or "standard"
+            )
+
+            if effective_access not in (
+                "standard",
+                "restricted",
+            ):
+
+                raise ValueError(
+                    "caller_access must be "
+                    "'standard' or 'restricted'."
+                )
+
+        else:
+
+            if caller_access is not None:
+
+                raise ValueError(
+                    "caller_access cannot be supplied "
+                    "with retrieval_principal."
+                )
+
+            effective_access = (
+                retrieval_principal
+                .retrieval_access
             )
 
         # -------------------------------------------------
-        # SEARCH CANDIDATE CHUNKS
+        # AUTHORIZE RETRIEVAL CORPUS BEFORE SEARCH
         # -------------------------------------------------
         #
-        # Search across all available indexed chunks
-        # before applying authorization.
+        # SECURITY INVARIANT:
         #
-        # This prevents unauthorized high-ranking
-        # results from crowding authorized results
-        # out of the requested top_k.
+        # Unauthorized chunks must never participate in:
         #
-        # max(..., top_k) also ensures the search
-        # function never receives top_k=0 when the
-        # index is empty.
+        # - semantic similarity calculation
+        # - ranking
+        # - top-k selection
+        #
+        # Authorization therefore occurs against the
+        # indexed corpus before search_vector_index().
         # -------------------------------------------------
 
-        candidate_limit = max(
-            len(self._index),
-            top_k,
-        )
+        authorized_index = []
+
+        for indexed_chunk in self._index:
+
+            decision = (
+                evaluate_knowledge_chunk_authorization(
+                    chunk=
+                        indexed_chunk.chunk,
+
+                    caller_access=(
+                        effective_access
+                        if retrieval_principal is None
+                        else None
+                    ),
+
+                    retrieval_principal=
+                        retrieval_principal,
+                )
+            )
+
+            # -----------------------------------------
+            # RETRIEVAL AUTHORIZATION AUDIT
+            # -----------------------------------------
+            #
+            # Only principal-aware enterprise retrieval
+            # has sufficient authoritative identity to
+            # emit identity-aware authorization events.
+            #
+            # Never log:
+            #
+            # - document content
+            # - vector embeddings
+            # - retrieval query
+            # - session identifiers
+            # - client-provided authority claims
+            # -----------------------------------------
+
+            if retrieval_principal is not None:
+
+                event_type = (
+                    "RAG_AUTHORIZATION_ALLOWED"
+                    if decision.allowed
+                    else
+                    "RAG_AUTHORIZATION_DENIED"
+                )
+
+                log_event(
+                    event_type,
+                    {
+                        "principal_id":
+                            retrieval_principal
+                            .principal_id,
+
+                        "tenant_id":
+                            retrieval_principal
+                            .tenant_id,
+
+                        "source_id":
+                            indexed_chunk
+                            .chunk
+                            .source_id,
+
+                        "chunk_id":
+                            indexed_chunk
+                            .chunk
+                            .chunk_id,
+
+                        "decision": (
+                            "allowed"
+                            if decision.allowed
+                            else "denied"
+                        ),
+
+                        "reason":
+                            decision.reason,
+                    },
+                )
+
+            if decision.allowed:
+
+                authorized_index.append(
+                    indexed_chunk
+                )
+
+        # -------------------------------------------------
+        # FAIL CLOSED WHEN NOTHING IS AUTHORIZED
+        # -------------------------------------------------
+
+        if not authorized_index:
+            return []
+
+        # -------------------------------------------------
+        # SEMANTIC SEARCH ? AUTHORIZED CORPUS ONLY
+        # -------------------------------------------------
 
         results = search_vector_index(
             query=cleaned_query,
-            index=self._index,
-            top_k=candidate_limit,
+            index=authorized_index,
+            top_k=top_k,
         )
 
         evidence = []
 
         # -------------------------------------------------
-        # FILTER AND AUTHORIZE RESULTS
+        # VALIDATE SEARCH RESULTS
         # -------------------------------------------------
 
         for result in results:
@@ -161,21 +280,34 @@ class KnowledgeRetriever:
             chunk = result.chunk
 
             # ---------------------------------------------
-            # AUTHORIZATION FILTER
+            # DEFENSE-IN-DEPTH AUTHORIZATION RECHECK
             # ---------------------------------------------
             #
-            # Semantic similarity does not grant access.
+            # The vector search implementation should only
+            # be capable of returning chunks from the
+            # authorized index.
             #
-            # A standard caller cannot retrieve a
-            # restricted chunk even if that chunk is
-            # the highest-scoring semantic match.
+            # Rechecking here protects against:
+            #
+            # - implementation regressions
+            # - buggy retrieval backends
+            # - mocked/adversarial search results
+            #
+            # This check is not the primary security
+            # boundary. Pre-search corpus authorization is.
             # ---------------------------------------------
 
-            if (
-                chunk.access_level
-                == "restricted"
-                and caller_access
-                != "restricted"
+            if not is_knowledge_chunk_authorized(
+                chunk=chunk,
+
+                caller_access=(
+                    effective_access
+                    if retrieval_principal is None
+                    else None
+                ),
+
+                retrieval_principal=
+                    retrieval_principal,
             ):
                 continue
 
@@ -213,9 +345,5 @@ class KnowledgeRetriever:
                         chunk.access_level,
                 )
             )
-
-        # -------------------------------------------------
-        # RETURN TOP AUTHORIZED RESULTS
-        # -------------------------------------------------
 
         return evidence[:top_k]

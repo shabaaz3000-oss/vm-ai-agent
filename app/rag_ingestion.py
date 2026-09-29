@@ -505,6 +505,12 @@ def chunk_document(
 
             access_level=
                 document.access_level,
+
+            tenant_id=
+                document.tenant_id,
+
+            allowed_principal_ids=
+                document.allowed_principal_ids,
         )
 
     # -------------------------------------------------
@@ -616,8 +622,25 @@ def chunk_document(
 
 
 def build_knowledge_chunks(
-    root: Path = TRUSTED_KNOWLEDGE_DIR
+    root: Path = TRUSTED_KNOWLEDGE_DIR,
+    *,
+    tenant_id: str | None = None,
+    document_acl: dict[
+        str,
+        tuple[str, ...],
+    ] | None = None,
 ) -> list[KnowledgeChunk]:
+    """
+    Build trusted knowledge chunks.
+
+    tenant_id and document_acl are trusted application
+    inputs. They are not derived from Markdown content.
+
+    Legacy callers may omit tenant_id. Those chunks remain
+    unscoped and are therefore ineligible for principal-aware
+    tenant retrieval, while legacy access-level-only tests can
+    continue to exercise the older low-level interface.
+    """
 
     documents = (
         load_trusted_documents(
@@ -625,13 +648,54 @@ def build_knowledge_chunks(
         )
     )
 
+    if (
+        document_acl is not None
+        and tenant_id is None
+    ):
+        raise ValueError(
+            "Document ACLs require an explicit "
+            "trusted tenant_id."
+        )
+
+    acl = (
+        document_acl
+        or {}
+    )
+
     chunks = []
 
     for document in documents:
 
+        allowed_principal_ids = (
+            None
+        )
+
+        if (
+            document.source_id
+            in acl
+        ):
+
+            allowed_principal_ids = tuple(
+                acl[
+                    document.source_id
+                ]
+            )
+
+        scoped_document = (
+            document.model_copy(
+                update={
+                    "tenant_id":
+                        tenant_id,
+
+                    "allowed_principal_ids":
+                        allowed_principal_ids,
+                }
+            )
+        )
+
         chunks.extend(
             chunk_document(
-                document
+                scoped_document
             )
         )
 

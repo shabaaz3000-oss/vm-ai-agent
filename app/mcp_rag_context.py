@@ -142,7 +142,10 @@ def build_mcp_rag_execution_context(
 
     retriever = (
         KnowledgeRetriever
-        .from_trusted_knowledge()
+        .from_trusted_knowledge(
+            tenant_id=
+                security_context.tenant_id,
+        )
     )
 
     if not isinstance(
