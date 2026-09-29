@@ -230,4 +230,4 @@ class KnowledgeRetriever:
                 )
             )
 
-        return evidence
+        return evidence[:top_k]
