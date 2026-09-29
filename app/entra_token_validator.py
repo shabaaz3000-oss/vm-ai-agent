@@ -11,7 +11,13 @@ from jwt.exceptions import PyJWTError
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import ValidationError
 from pydantic import field_validator
+
+from app.enterprise_authorization_evidence import (
+    EnterpriseAuthorizationEvidence,
+    ValidatedEnterpriseToken,
+)
 
 from app.enterprise_identity import EnterpriseIdentity
 
@@ -36,10 +42,10 @@ class EnterpriseTokenValidationError(
 ):
     """
     Raised when an enterprise access token cannot be
-    authenticated against the trusted IdP configuration.
+    authenticated against trusted IdP configuration.
 
-    Low-level JWT details and token contents are deliberately
-    not exposed through this exception.
+    Raw token values and low-level JWT details are never
+    included in the public error message.
     """
 
 
@@ -51,10 +57,7 @@ class EnterpriseTokenValidationError(
 class EntraTokenValidationSettings(BaseModel):
     """
     Server-controlled validation settings for one trusted
-    Microsoft Entra tenant and one protected API audience.
-
-    These values must come from trusted application
-    configuration, never from token claims or request input.
+    Microsoft Entra tenant and protected API audience.
     """
 
     model_config = ConfigDict(
@@ -125,18 +128,7 @@ class EntraTokenValidationSettings(BaseModel):
 class EntraAccessTokenValidator:
     """
     Validate Microsoft Entra access tokens before identity
-    enters the application's trusted security boundary.
-
-    Security properties:
-
-    - signing key comes from trusted JWKS configuration
-    - signing algorithm is fixed server-side to RS256
-    - issuer must exactly match trusted configuration
-    - audience must exactly match this API
-    - exp, nbf, and iat are validated
-    - subject is mandatory
-    - tenant ID is mandatory and must match configuration
-    - raw credentials are never stored in EnterpriseIdentity
+    or authorization evidence crosses the trust boundary.
     """
 
     def __init__(
@@ -156,15 +148,14 @@ class EntraAccessTokenValidator:
             )
         )
 
-    def validate(
+    # -------------------------------------------------
+    # CRYPTOGRAPHIC CLAIM VALIDATION
+    # -------------------------------------------------
+
+    def _decode_verified_claims(
         self,
         token: str,
-    ) -> EnterpriseIdentity:
-        """
-        Cryptographically validate an Entra access token and
-        return only the authenticated enterprise identity
-        facts required by the application trust boundary.
-        """
+    ) -> dict[str, Any]:
 
         if (
             not isinstance(
@@ -232,6 +223,25 @@ class EntraAccessTokenValidator:
                 "Enterprise access token validation failed."
             ) from exc
 
+        if not isinstance(
+            claims,
+            dict,
+        ):
+            raise EnterpriseTokenValidationError(
+                "Enterprise access token validation failed."
+            )
+
+        return claims
+
+    # -------------------------------------------------
+    # AUTHENTICATED IDENTITY
+    # -------------------------------------------------
+
+    def _build_identity(
+        self,
+        claims: dict[str, Any],
+    ) -> EnterpriseIdentity:
+
         tenant_id = claims.get(
             "tid"
         )
@@ -248,25 +258,217 @@ class EntraAccessTokenValidator:
                 "Enterprise access token validation failed."
             )
 
-        issuer = claims.get(
-            "iss"
-        )
-
-        subject = claims.get(
-            "sub"
-        )
-
         try:
 
             return EnterpriseIdentity(
-                issuer=issuer,
-                subject=subject,
+                issuer=
+                    claims.get(
+                        "iss"
+                    ),
+                subject=
+                    claims.get(
+                        "sub"
+                    ),
                 identity_provider_tenant_id=
                     tenant_id,
             )
 
-        except Exception as exc:
+        except ValidationError as exc:
 
             raise EnterpriseTokenValidationError(
                 "Enterprise access token validation failed."
             ) from exc
+
+    # -------------------------------------------------
+    # AUTHORIZATION EVIDENCE
+    # -------------------------------------------------
+
+    def _build_authorization_evidence(
+        self,
+        claims: dict[str, Any],
+    ) -> EnterpriseAuthorizationEvidence:
+
+        raw_roles = claims.get(
+            "roles",
+            [],
+        )
+
+        if not isinstance(
+            raw_roles,
+            list,
+        ):
+            raise EnterpriseTokenValidationError(
+                "Enterprise access token validation failed."
+            )
+
+        # ---------------------------------------------
+        # DETECT GROUP OVERAGE
+        # ---------------------------------------------
+
+        group_overage = False
+
+        if "_claim_names" in claims:
+
+            claim_names = claims[
+                "_claim_names"
+            ]
+
+            if not isinstance(
+                claim_names,
+                dict,
+            ):
+                raise EnterpriseTokenValidationError(
+                    "Enterprise access token validation failed."
+                )
+
+            if "groups" in claim_names:
+
+                source_name = claim_names[
+                    "groups"
+                ]
+
+                if (
+                    not isinstance(
+                        source_name,
+                        str,
+                    )
+                    or not source_name.strip()
+                ):
+                    raise EnterpriseTokenValidationError(
+                        "Enterprise access token validation failed."
+                    )
+
+                group_overage = True
+
+        if "hasgroups" in claims:
+
+            if claims[
+                "hasgroups"
+            ] is not True:
+                raise EnterpriseTokenValidationError(
+                    "Enterprise access token validation failed."
+                )
+
+            group_overage = True
+
+        groups_present = (
+            "groups" in claims
+        )
+
+        if (
+            group_overage
+            and groups_present
+        ):
+            raise EnterpriseTokenValidationError(
+                "Enterprise access token validation failed."
+            )
+
+        # ---------------------------------------------
+        # GROUP MEMBERSHIP STATE
+        # ---------------------------------------------
+
+        if group_overage:
+
+            group_state = "overage"
+            raw_groups = []
+
+        elif groups_present:
+
+            group_state = "complete"
+            raw_groups = claims[
+                "groups"
+            ]
+
+            if not isinstance(
+                raw_groups,
+                list,
+            ):
+                raise EnterpriseTokenValidationError(
+                    "Enterprise access token validation failed."
+                )
+
+        else:
+
+            group_state = "not_present"
+            raw_groups = []
+
+        raw_oid = claims.get(
+            "oid"
+        )
+
+        try:
+
+            return EnterpriseAuthorizationEvidence(
+                app_roles=
+                    raw_roles,
+                group_ids=
+                    raw_groups,
+                group_membership_state=
+                    group_state,
+                directory_object_id=
+                    raw_oid,
+            )
+
+        except ValidationError as exc:
+
+            raise EnterpriseTokenValidationError(
+                "Enterprise access token validation failed."
+            ) from exc
+
+    # -------------------------------------------------
+    # FULL VALIDATED TOKEN
+    # -------------------------------------------------
+
+    def validate_token(
+        self,
+        token: str,
+    ) -> ValidatedEnterpriseToken:
+        """
+        Validate one access token and return only trusted,
+        normalized identity and authorization evidence.
+
+        Raw token material and distributed-claim URLs are
+        deliberately excluded from the returned object.
+        """
+
+        claims = (
+            self._decode_verified_claims(
+                token
+            )
+        )
+
+        identity = (
+            self._build_identity(
+                claims
+            )
+        )
+
+        authorization = (
+            self._build_authorization_evidence(
+                claims
+            )
+        )
+
+        return ValidatedEnterpriseToken(
+            identity=identity,
+            authorization=authorization,
+        )
+
+    # -------------------------------------------------
+    # BACKWARD-COMPATIBLE IDENTITY INTERFACE
+    # -------------------------------------------------
+
+    def validate(
+        self,
+        token: str,
+    ) -> EnterpriseIdentity:
+        """
+        Preserve the Step 47.3 identity-only interface.
+
+        All validation still flows through the complete
+        validated-token path.
+        """
+
+        return self.validate_token(
+            token
+        ).identity
