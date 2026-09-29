@@ -96,6 +96,7 @@ def patch_security_eval_dependencies(
         "run_data_leakage_security_evaluation",
         "run_excessive_agency_security_evaluation",
         "run_mcp_identity_security_evaluation",
+        "run_enterprise_identity_security_evaluation",
     ]:
 
         monkeypatch.setattr(
