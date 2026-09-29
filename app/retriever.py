@@ -9,6 +9,7 @@ from app.rag_ingestion import (
 
 from app.retrieval_authorization import (
     RetrievalAccess,
+    RetrievalPrincipal,
     is_knowledge_chunk_authorized,
 )
 
@@ -42,10 +43,18 @@ class KnowledgeRetriever:
     def from_trusted_knowledge(
         cls,
         root: Path = TRUSTED_KNOWLEDGE_DIR,
+        *,
+        tenant_id: str | None = None,
+        document_acl: dict[
+            str,
+            tuple[str, ...],
+        ] | None = None,
     ) -> "KnowledgeRetriever":
 
         chunks = build_knowledge_chunks(
-            root
+            root,
+            tenant_id=tenant_id,
+            document_acl=document_acl,
         )
 
         index = build_vector_index(
@@ -66,7 +75,8 @@ class KnowledgeRetriever:
         query: str,
         top_k: int = 3,
         min_similarity: float = 0.0,
-        caller_access: RetrievalAccess = "standard",
+        caller_access: RetrievalAccess | None = None,
+        retrieval_principal: RetrievalPrincipal | None = None,
     ) -> list[RetrievedEvidence]:
 
         cleaned_query = (
@@ -96,14 +106,37 @@ class KnowledgeRetriever:
                 "between -1.0 and 1.0."
             )
 
-        if caller_access not in (
-            "standard",
-            "restricted",
+        if (
+            retrieval_principal is None
         ):
 
-            raise ValueError(
-                "caller_access must be "
-                "'standard' or 'restricted'."
+            effective_access = (
+                caller_access
+                or "standard"
+            )
+
+            if effective_access not in (
+                "standard",
+                "restricted",
+            ):
+
+                raise ValueError(
+                    "caller_access must be "
+                    "'standard' or 'restricted'."
+                )
+
+        else:
+
+            if caller_access is not None:
+
+                raise ValueError(
+                    "caller_access cannot be supplied "
+                    "with retrieval_principal."
+                )
+
+            effective_access = (
+                retrieval_principal
+                .retrieval_access
             )
 
         # -------------------------------------------------
@@ -129,8 +162,16 @@ class KnowledgeRetriever:
             in self._index
 
             if is_knowledge_chunk_authorized(
-                caller_access=caller_access,
                 chunk=indexed_chunk.chunk,
+
+                caller_access=(
+                    effective_access
+                    if retrieval_principal is None
+                    else None
+                ),
+
+                retrieval_principal=
+                    retrieval_principal,
             )
         ]
 
@@ -190,8 +231,16 @@ class KnowledgeRetriever:
             # ---------------------------------------------
 
             if not is_knowledge_chunk_authorized(
-                caller_access=caller_access,
                 chunk=chunk,
+
+                caller_access=(
+                    effective_access
+                    if retrieval_principal is None
+                    else None
+                ),
+
+                retrieval_principal=
+                    retrieval_principal,
             ):
                 continue
 

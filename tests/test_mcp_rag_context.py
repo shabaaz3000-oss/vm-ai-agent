@@ -225,7 +225,7 @@ def test_build_mcp_rag_execution_context(
         mcp_rag_context.KnowledgeRetriever,
         "from_trusted_knowledge",
         classmethod(
-            lambda cls:
+            lambda cls, **kwargs:
                 retriever
         ),
     )

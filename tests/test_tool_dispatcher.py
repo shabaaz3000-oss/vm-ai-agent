@@ -179,7 +179,25 @@ def test_search_knowledge_uses_server_context(
     monkeypatch,
 ):
 
+    from app.security_context import (
+        SecurityContext,
+    )
+
     principal = make_principal()
+
+    # -------------------------------------------------
+    # AUTHORITATIVE SERVER SECURITY CONTEXT
+    # -------------------------------------------------
+
+    security_context = (
+        SecurityContext.from_principal(
+            principal,
+            tenant_id=
+                "tenant-a",
+            session_id=
+                "server-owned-session",
+        )
+    )
 
     finding = object()
     asset = object()
@@ -192,12 +210,17 @@ def test_search_knowledge_uses_server_context(
         object(),
     ]
 
+    # -------------------------------------------------
+    # KNOWLEDGE TOOL SPY
+    # -------------------------------------------------
+
     def fake_search_knowledge(
         principal,
         finding,
         asset,
         risk,
         retriever,
+        security_context,
     ):
 
         received[
@@ -220,7 +243,12 @@ def test_search_knowledge_uses_server_context(
             "retriever"
         ] = retriever
 
+        received[
+            "security_context"
+        ] = security_context
+
         return expected
+
 
     monkeypatch.setattr(
         dispatcher,
@@ -231,23 +259,47 @@ def test_search_knowledge_uses_server_context(
     monkeypatch.setattr(
         dispatcher,
         "log_event",
-        lambda *args, **kwargs: None,
+        lambda *args, **kwargs:
+            None,
     )
 
+    # -------------------------------------------------
+    # COMPLETE TRUSTED EXECUTION CONTEXT
+    # -------------------------------------------------
+
     context = ToolExecutionContext(
-        principal=principal,
-        finding=finding,
-        asset=asset,
-        risk=risk,
-        retriever=retriever,
+        principal=
+            principal,
+
+        security_context=
+            security_context,
+
+        finding=
+            finding,
+
+        asset=
+            asset,
+
+        risk=
+            risk,
+
+        retriever=
+            retriever,
     )
 
     result = dispatcher.dispatch_llm_tool(
-        tool_name="search_knowledge",
-        context=context,
+        tool_name=
+            "search_knowledge",
+
+        context=
+            context,
     )
 
-    assert result is expected
+    # -------------------------------------------------
+    # SERVER CONTEXT REACHED KNOWLEDGE TOOL UNCHANGED
+    # -------------------------------------------------
+
+    assert result == expected
 
     assert (
         received["principal"]
@@ -273,6 +325,29 @@ def test_search_knowledge_uses_server_context(
         received["retriever"]
         is retriever
     )
+
+    assert (
+        received[
+            "security_context"
+        ]
+        is security_context
+    )
+
+    assert (
+        received[
+            "security_context"
+        ].tenant_id
+        == "tenant-a"
+    )
+
+    assert (
+        received[
+            "security_context"
+        ].principal_id
+        == principal.username
+    )
+
+
 
 
 # -------------------------------------------------

@@ -103,60 +103,102 @@ def build_retrieval_principal(
 
 def is_knowledge_chunk_authorized(
     *,
-    caller_access: RetrievalAccess,
     chunk: KnowledgeChunk,
+    caller_access: RetrievalAccess | None = None,
+    retrieval_principal: RetrievalPrincipal | None = None,
 ) -> bool:
     """
-    Determine whether a knowledge chunk is eligible
-    to participate in retrieval.
+    Decide whether a knowledge chunk is eligible for
+    retrieval before semantic search.
 
-    Authorization is intentionally evaluated before
-    semantic similarity or ranking.
+    Principal-aware authorization evaluates:
 
-    Current Step 46 policy:
+    1. authoritative tenant membership
+    2. document-level principal ACL
+    3. standard/restricted knowledge access
 
-    standard caller:
-        standard -> allow
-        restricted -> deny
-
-    restricted caller:
-        standard -> allow
-        restricted -> allow
-
-    Any unknown caller authority or document
-    classification is denied by default.
-
-    Tenant and document ACL evaluation will extend
-    this policy in later Step 46 work.
+    Legacy callers without RetrievalPrincipal retain the
+    historical access-level-only behavior for compatibility.
     """
 
-    if caller_access not in (
+    # -------------------------------------------------
+    # PRINCIPAL-AWARE ENTERPRISE AUTHORIZATION
+    # -------------------------------------------------
+
+    if retrieval_principal is not None:
+
+        # ---------------------------------------------
+        # TENANT ISOLATION ? DEFAULT DENY
+        # ---------------------------------------------
+
+        if chunk.tenant_id is None:
+            return False
+
+        if (
+            chunk.tenant_id
+            != retrieval_principal.tenant_id
+        ):
+            return False
+
+        # ---------------------------------------------
+        # DOCUMENT ACL
+        # ---------------------------------------------
+        #
+        # None:
+        #     document is available tenant-wide.
+        #
+        # tuple:
+        #     principal must explicitly appear.
+        #
+        # Empty tuple therefore denies everyone.
+        # ---------------------------------------------
+
+        if (
+            chunk.allowed_principal_ids
+            is not None
+            and
+            retrieval_principal.principal_id
+            not in chunk.allowed_principal_ids
+        ):
+            return False
+
+        effective_access = (
+            retrieval_principal
+            .retrieval_access
+        )
+
+    # -------------------------------------------------
+    # LEGACY ACCESS-LEVEL AUTHORIZATION
+    # -------------------------------------------------
+
+    else:
+
+        effective_access = (
+            caller_access
+            or "standard"
+        )
+
+    if effective_access not in (
         "standard",
         "restricted",
     ):
         return False
 
-    access_level = chunk.access_level
+    # -------------------------------------------------
+    # KNOWLEDGE CLASSIFICATION
+    # -------------------------------------------------
 
-    if access_level == "standard":
+    if chunk.access_level == "standard":
         return True
 
-    if access_level == "restricted":
+    if chunk.access_level == "restricted":
 
         return (
-            caller_access
+            effective_access
             == "restricted"
         )
 
-    # -------------------------------------------------
-    # DEFAULT DENY
-    # -------------------------------------------------
-    #
-    # A new/unknown classification must never become
-    # searchable merely because application code has
-    # not yet learned how to authorize it.
-    # -------------------------------------------------
-
+    # Unknown classification.
     return False
 
 

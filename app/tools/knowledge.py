@@ -15,7 +15,12 @@ from app.rag_security import (
 )
 
 from app.retrieval_authorization import (
+    build_retrieval_principal,
     get_retrieval_access,
+)
+
+from app.security_context import (
+    SecurityContext,
 )
 
 from app.retrieval_query import (
@@ -44,6 +49,7 @@ def search_knowledge(
     retriever: KnowledgeRetriever,
     top_k: int = 3,
     min_similarity: float = 0.0,
+    security_context: SecurityContext | None = None,
 ) -> list[RetrievedEvidence]:
 
     log_event(
@@ -89,11 +95,48 @@ def search_knowledge(
     # deliberately independent.
     # -------------------------------------------------
 
-    retrieval_access = (
-        get_retrieval_access(
-            principal
+    retrieval_principal = None
+
+    if security_context is not None:
+
+        if (
+            security_context.principal_id
+            != principal.username
+        ):
+
+            raise ValueError(
+                "Knowledge retrieval principal "
+                "does not match security context."
+            )
+
+        if (
+            security_context.retrieval_access
+            != principal.retrieval_access
+        ):
+
+            raise ValueError(
+                "Knowledge retrieval access "
+                "does not match security context."
+            )
+
+        retrieval_principal = (
+            build_retrieval_principal(
+                security_context
+            )
         )
-    )
+
+        retrieval_access = (
+            retrieval_principal
+            .retrieval_access
+        )
+
+    else:
+
+        retrieval_access = (
+            get_retrieval_access(
+                principal
+            )
+        )
 
     log_event(
         "RAG_ACCESS_RESOLVED",
@@ -136,12 +179,25 @@ def search_knowledge(
     # never from model-supplied tool arguments.
     # -------------------------------------------------
 
-    retrieved_evidence = retriever.retrieve(
-        query=query,
-        top_k=top_k,
-        min_similarity=min_similarity,
-        caller_access=retrieval_access,
-    )
+    if retrieval_principal is not None:
+
+        retrieved_evidence = retriever.retrieve(
+            query=query,
+            top_k=top_k,
+            min_similarity=min_similarity,
+            retrieval_principal=
+                retrieval_principal,
+        )
+
+    else:
+
+        retrieved_evidence = retriever.retrieve(
+            query=query,
+            top_k=top_k,
+            min_similarity=min_similarity,
+            caller_access=
+                retrieval_access,
+        )
 
     # -------------------------------------------------
     # SECURITY-INSPECT RETRIEVED CONTENT

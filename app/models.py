@@ -107,6 +107,29 @@ class KnowledgeDocument(BaseModel):
         "restricted"
     ] = "standard"
 
+    # -------------------------------------------------
+    # SERVER-OWNED RETRIEVAL AUTHORIZATION METADATA
+    # -------------------------------------------------
+    #
+    # tenant_id:
+    #     owning tenant for principal-aware retrieval.
+    #
+    # allowed_principal_ids:
+    #     None  -> tenant-wide access
+    #     tuple -> explicit document ACL
+    #
+    # These values must be assigned by trusted ingestion
+    # context, never parsed from document content.
+    # -------------------------------------------------
+
+    tenant_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+
+    allowed_principal_ids: tuple[str, ...] | None = None
+
 
 class KnowledgeChunk(BaseModel):
 
@@ -145,6 +168,29 @@ class KnowledgeChunk(BaseModel):
         "standard",
         "restricted"
     ] = "standard"
+
+    # -------------------------------------------------
+    # SERVER-OWNED RETRIEVAL AUTHORIZATION METADATA
+    # -------------------------------------------------
+    #
+    # tenant_id:
+    #     owning tenant for principal-aware retrieval.
+    #
+    # allowed_principal_ids:
+    #     None  -> tenant-wide access
+    #     tuple -> explicit document ACL
+    #
+    # These values must be assigned by trusted ingestion
+    # context, never parsed from document content.
+    # -------------------------------------------------
+
+    tenant_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+
+    allowed_principal_ids: tuple[str, ...] | None = None
 
 
 class RetrievedEvidence(BaseModel):

@@ -306,6 +306,9 @@ def dispatch_llm_tool(
 
             retriever=
                 context.retriever,
+
+            security_context=
+                context.security_context,
         )
 
     else:
