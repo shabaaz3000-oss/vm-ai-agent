@@ -8,6 +8,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from app.auth import Principal
+from app.models import KnowledgeChunk
 
 from app.security_context import (
     SecurityContext,
@@ -93,6 +94,70 @@ def build_retrieval_principal(
         retrieval_access=
             security_context.retrieval_access,
     )
+
+
+# -------------------------------------------------
+# DEFAULT-DENY KNOWLEDGE AUTHORIZATION
+# -------------------------------------------------
+
+
+def is_knowledge_chunk_authorized(
+    *,
+    caller_access: RetrievalAccess,
+    chunk: KnowledgeChunk,
+) -> bool:
+    """
+    Determine whether a knowledge chunk is eligible
+    to participate in retrieval.
+
+    Authorization is intentionally evaluated before
+    semantic similarity or ranking.
+
+    Current Step 46 policy:
+
+    standard caller:
+        standard -> allow
+        restricted -> deny
+
+    restricted caller:
+        standard -> allow
+        restricted -> allow
+
+    Any unknown caller authority or document
+    classification is denied by default.
+
+    Tenant and document ACL evaluation will extend
+    this policy in later Step 46 work.
+    """
+
+    if caller_access not in (
+        "standard",
+        "restricted",
+    ):
+        return False
+
+    access_level = chunk.access_level
+
+    if access_level == "standard":
+        return True
+
+    if access_level == "restricted":
+
+        return (
+            caller_access
+            == "restricted"
+        )
+
+    # -------------------------------------------------
+    # DEFAULT DENY
+    # -------------------------------------------------
+    #
+    # A new/unknown classification must never become
+    # searchable merely because application code has
+    # not yet learned how to authorize it.
+    # -------------------------------------------------
+
+    return False
 
 
 # -------------------------------------------------

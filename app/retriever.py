@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Literal
 
 from app.models import RetrievedEvidence
 
@@ -8,22 +7,16 @@ from app.rag_ingestion import (
     build_knowledge_chunks,
 )
 
+from app.retrieval_authorization import (
+    RetrievalAccess,
+    is_knowledge_chunk_authorized,
+)
+
 from app.vector_index import (
     IndexedChunk,
     build_vector_index,
     search_vector_index,
 )
-
-
-# -------------------------------------------------
-# RETRIEVAL ACCESS LEVEL
-# -------------------------------------------------
-
-
-RetrievalAccess = Literal[
-    "standard",
-    "restricted"
-]
 
 
 # -------------------------------------------------
@@ -114,36 +107,54 @@ class KnowledgeRetriever:
             )
 
         # -------------------------------------------------
-        # SEARCH CANDIDATE CHUNKS
+        # AUTHORIZE RETRIEVAL CORPUS BEFORE SEARCH
         # -------------------------------------------------
         #
-        # Search across all available indexed chunks
-        # before applying authorization.
+        # SECURITY INVARIANT:
         #
-        # This prevents unauthorized high-ranking
-        # results from crowding authorized results
-        # out of the requested top_k.
+        # Unauthorized chunks must never participate in:
         #
-        # max(..., top_k) also ensures the search
-        # function never receives top_k=0 when the
-        # index is empty.
+        # - semantic similarity calculation
+        # - ranking
+        # - top-k selection
+        #
+        # Authorization therefore occurs against the
+        # indexed corpus before search_vector_index().
         # -------------------------------------------------
 
-        candidate_limit = max(
-            len(self._index),
-            top_k,
-        )
+        authorized_index = [
+            indexed_chunk
+
+            for indexed_chunk
+            in self._index
+
+            if is_knowledge_chunk_authorized(
+                caller_access=caller_access,
+                chunk=indexed_chunk.chunk,
+            )
+        ]
+
+        # -------------------------------------------------
+        # FAIL CLOSED WHEN NOTHING IS AUTHORIZED
+        # -------------------------------------------------
+
+        if not authorized_index:
+            return []
+
+        # -------------------------------------------------
+        # SEMANTIC SEARCH ? AUTHORIZED CORPUS ONLY
+        # -------------------------------------------------
 
         results = search_vector_index(
             query=cleaned_query,
-            index=self._index,
-            top_k=candidate_limit,
+            index=authorized_index,
+            top_k=top_k,
         )
 
         evidence = []
 
         # -------------------------------------------------
-        # FILTER AND AUTHORIZE RESULTS
+        # VALIDATE SEARCH RESULTS
         # -------------------------------------------------
 
         for result in results:
@@ -161,21 +172,26 @@ class KnowledgeRetriever:
             chunk = result.chunk
 
             # ---------------------------------------------
-            # AUTHORIZATION FILTER
+            # DEFENSE-IN-DEPTH AUTHORIZATION RECHECK
             # ---------------------------------------------
             #
-            # Semantic similarity does not grant access.
+            # The vector search implementation should only
+            # be capable of returning chunks from the
+            # authorized index.
             #
-            # A standard caller cannot retrieve a
-            # restricted chunk even if that chunk is
-            # the highest-scoring semantic match.
+            # Rechecking here protects against:
+            #
+            # - implementation regressions
+            # - buggy retrieval backends
+            # - mocked/adversarial search results
+            #
+            # This check is not the primary security
+            # boundary. Pre-search corpus authorization is.
             # ---------------------------------------------
 
-            if (
-                chunk.access_level
-                == "restricted"
-                and caller_access
-                != "restricted"
+            if not is_knowledge_chunk_authorized(
+                caller_access=caller_access,
+                chunk=chunk,
             ):
                 continue
 
@@ -214,8 +230,4 @@ class KnowledgeRetriever:
                 )
             )
 
-        # -------------------------------------------------
-        # RETURN TOP AUTHORIZED RESULTS
-        # -------------------------------------------------
-
-        return evidence[:top_k]
+        return evidence
