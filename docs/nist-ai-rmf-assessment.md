@@ -49,7 +49,10 @@ The VM AI Agent implements several technical and procedural controls that suppor
 - **Audit logging:** Security-relevant workflow events are recorded to support accountability and investigation.
 - **Audit trace reconstruction:** Workflow activity can be reconstructed to review execution order, tool usage, and RAG activity.
 - **AI security evaluations:** Expected and adversarial AI behavior is evaluated through repeatable security test cases.
-- **Automated testing and Security CI:** Application tests, dependency checks, and secret scanning provide ongoing validation of security requirements.
+- **Automated testing and Security CI:** Application tests, PostgreSQL integration tests, AI security evaluations, dependency checks, and secret scanning provide ongoing validation of security requirements.
+- **Protected repository delivery:** The `main` branch is governed by an active repository ruleset that requires pull requests and required GitHub Actions status checks, requires the branch to be tested with current `main`, and blocks force pushes and deletion.
+- **No routine governance bypass:** The protected-branch ruleset has no configured bypass actors, and the repository owner cannot bypass the ruleset through the normal account path.
+- **Negative-control validation:** Repository enforcement was tested by attempting a direct push to `main` and attempting to merge a pull request with a deliberately failing required test. GitHub rejected both operations.
 - **Controlled tool execution:** AI-assisted workflows operate through defined application functions rather than unrestricted access to external systems.
 
 #### Human-AI Responsibilities
@@ -229,7 +232,8 @@ The project currently includes the following measurement and evaluation mechanis
 - **Workflow-state testing:** workflow transitions and execution claims are tested to reduce the likelihood of invalid, duplicate, or conflicting execution.
 - **Audit-trace testing:** recorded events can be reconstructed and checked for expected ordering and relevant workflow evidence.
 - **Tool-use observation:** tool activity can be identified through application and audit evidence rather than relying solely on model-generated descriptions.
-- **Security CI:** automated checks execute on repository changes to identify application test failures, exposed secrets, and selected dependency risks.
+- **Security CI:** automated checks execute on repository changes to identify application test failures, AI-security regressions, PostgreSQL session-state integration failures, exposed secrets, and selected dependency risks.
+- **Repository-enforcement testing:** negative-control exercises validate that protected-branch rules reject direct updates to `main` and prevent pull requests with failed required checks from merging.
 
 #### Example Risk-to-Measurement Mapping
 
@@ -243,6 +247,7 @@ The project currently includes the following measurement and evaluation mechanis
 | Excessive or unexpected tool use | Inspect audit traces and evaluation results for tool invocation order and frequency |
 | Incomplete audit evidence | Reconstruct workflows from recorded events and verify expected security-relevant activity is present |
 | Software dependency or secret exposure | Run dependency and secret-scanning checks through Security CI |
+| Repository security-gate bypass | Attempt a direct update to protected `main` and attempt to merge a pull request with a failed required status check; verify both are rejected |
 
 #### Measurement Limitations
 
