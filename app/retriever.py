@@ -19,6 +19,9 @@ from app.vector_index import (
     search_vector_index,
 )
 
+from app.audit import log_event
+from app.retrieval_authorization import evaluate_knowledge_chunk_authorization
+
 
 # -------------------------------------------------
 # KNOWLEDGE RETRIEVER
@@ -155,25 +158,89 @@ class KnowledgeRetriever:
         # indexed corpus before search_vector_index().
         # -------------------------------------------------
 
-        authorized_index = [
-            indexed_chunk
+        authorized_index = []
 
-            for indexed_chunk
-            in self._index
+        for indexed_chunk in self._index:
 
-            if is_knowledge_chunk_authorized(
-                chunk=indexed_chunk.chunk,
+            decision = (
+                evaluate_knowledge_chunk_authorization(
+                    chunk=
+                        indexed_chunk.chunk,
 
-                caller_access=(
-                    effective_access
-                    if retrieval_principal is None
-                    else None
-                ),
+                    caller_access=(
+                        effective_access
+                        if retrieval_principal is None
+                        else None
+                    ),
 
-                retrieval_principal=
-                    retrieval_principal,
+                    retrieval_principal=
+                        retrieval_principal,
+                )
             )
-        ]
+
+            # -----------------------------------------
+            # RETRIEVAL AUTHORIZATION AUDIT
+            # -----------------------------------------
+            #
+            # Only principal-aware enterprise retrieval
+            # has sufficient authoritative identity to
+            # emit identity-aware authorization events.
+            #
+            # Never log:
+            #
+            # - document content
+            # - vector embeddings
+            # - retrieval query
+            # - session identifiers
+            # - client-provided authority claims
+            # -----------------------------------------
+
+            if retrieval_principal is not None:
+
+                event_type = (
+                    "RAG_AUTHORIZATION_ALLOWED"
+                    if decision.allowed
+                    else
+                    "RAG_AUTHORIZATION_DENIED"
+                )
+
+                log_event(
+                    event_type,
+                    {
+                        "principal_id":
+                            retrieval_principal
+                            .principal_id,
+
+                        "tenant_id":
+                            retrieval_principal
+                            .tenant_id,
+
+                        "source_id":
+                            indexed_chunk
+                            .chunk
+                            .source_id,
+
+                        "chunk_id":
+                            indexed_chunk
+                            .chunk
+                            .chunk_id,
+
+                        "decision": (
+                            "allowed"
+                            if decision.allowed
+                            else "denied"
+                        ),
+
+                        "reason":
+                            decision.reason,
+                    },
+                )
+
+            if decision.allowed:
+
+                authorized_index.append(
+                    indexed_chunk
+                )
 
         # -------------------------------------------------
         # FAIL CLOSED WHEN NOTHING IS AUTHORIZED

@@ -101,24 +101,53 @@ def build_retrieval_principal(
 # -------------------------------------------------
 
 
-def is_knowledge_chunk_authorized(
+RetrievalAuthorizationReason = Literal[
+    "allowed",
+    "missing_tenant_scope",
+    "tenant_mismatch",
+    "principal_acl_denied",
+    "invalid_retrieval_access",
+    "classification_denied",
+    "invalid_authorization_metadata",
+]
+
+
+class RetrievalAuthorizationDecision(BaseModel):
+    """
+    Structured result for a knowledge authorization decision.
+
+    The decision intentionally contains no document content,
+    embedding data, session identifiers, or raw client input.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    allowed: bool
+
+    reason: RetrievalAuthorizationReason
+
+
+def evaluate_knowledge_chunk_authorization(
     *,
     chunk: KnowledgeChunk,
     caller_access: RetrievalAccess | None = None,
     retrieval_principal: RetrievalPrincipal | None = None,
-) -> bool:
+) -> RetrievalAuthorizationDecision:
     """
-    Decide whether a knowledge chunk is eligible for
+    Evaluate whether a knowledge chunk is eligible for
     retrieval before semantic search.
 
     Principal-aware authorization evaluates:
 
     1. authoritative tenant membership
     2. document-level principal ACL
-    3. standard/restricted knowledge access
+    3. standard/restricted knowledge classification
 
-    Legacy callers without RetrievalPrincipal retain the
-    historical access-level-only behavior for compatibility.
+    The returned reason code is deterministic and safe for
+    structured audit logging.
     """
 
     # -------------------------------------------------
@@ -128,29 +157,30 @@ def is_knowledge_chunk_authorized(
     if retrieval_principal is not None:
 
         # ---------------------------------------------
-        # TENANT ISOLATION ? DEFAULT DENY
+        # TENANT SCOPE ? DEFAULT DENY
         # ---------------------------------------------
 
         if chunk.tenant_id is None:
-            return False
+
+            return RetrievalAuthorizationDecision(
+                allowed=False,
+                reason=
+                    "missing_tenant_scope",
+            )
 
         if (
             chunk.tenant_id
             != retrieval_principal.tenant_id
         ):
-            return False
+
+            return RetrievalAuthorizationDecision(
+                allowed=False,
+                reason=
+                    "tenant_mismatch",
+            )
 
         # ---------------------------------------------
         # DOCUMENT ACL
-        # ---------------------------------------------
-        #
-        # None:
-        #     document is available tenant-wide.
-        #
-        # tuple:
-        #     principal must explicitly appear.
-        #
-        # Empty tuple therefore denies everyone.
         # ---------------------------------------------
 
         if (
@@ -160,7 +190,12 @@ def is_knowledge_chunk_authorized(
             retrieval_principal.principal_id
             not in chunk.allowed_principal_ids
         ):
-            return False
+
+            return RetrievalAuthorizationDecision(
+                allowed=False,
+                reason=
+                    "principal_acl_denied",
+            )
 
         effective_access = (
             retrieval_principal
@@ -178,28 +213,79 @@ def is_knowledge_chunk_authorized(
             or "standard"
         )
 
+    # -------------------------------------------------
+    # RETRIEVAL AUTHORITY VALIDATION
+    # -------------------------------------------------
+
     if effective_access not in (
         "standard",
         "restricted",
     ):
-        return False
+
+        return RetrievalAuthorizationDecision(
+            allowed=False,
+            reason=
+                "invalid_retrieval_access",
+        )
 
     # -------------------------------------------------
     # KNOWLEDGE CLASSIFICATION
     # -------------------------------------------------
 
     if chunk.access_level == "standard":
-        return True
+
+        return RetrievalAuthorizationDecision(
+            allowed=True,
+            reason="allowed",
+        )
 
     if chunk.access_level == "restricted":
 
-        return (
-            effective_access
-            == "restricted"
+        if effective_access == "restricted":
+
+            return RetrievalAuthorizationDecision(
+                allowed=True,
+                reason="allowed",
+            )
+
+        return RetrievalAuthorizationDecision(
+            allowed=False,
+            reason=
+                "classification_denied",
         )
 
-    # Unknown classification.
-    return False
+    # Unknown or malformed authorization metadata.
+    return RetrievalAuthorizationDecision(
+        allowed=False,
+        reason=
+            "invalid_authorization_metadata",
+    )
+
+
+def is_knowledge_chunk_authorized(
+    *,
+    chunk: KnowledgeChunk,
+    caller_access: RetrievalAccess | None = None,
+    retrieval_principal: RetrievalPrincipal | None = None,
+) -> bool:
+    """
+    Backward-compatible boolean authorization helper.
+
+    New authorization-aware code should prefer
+    evaluate_knowledge_chunk_authorization() when the
+    structured reason is required.
+    """
+
+    decision = (
+        evaluate_knowledge_chunk_authorization(
+            chunk=chunk,
+            caller_access=caller_access,
+            retrieval_principal=
+                retrieval_principal,
+        )
+    )
+
+    return decision.allowed
 
 
 # -------------------------------------------------
