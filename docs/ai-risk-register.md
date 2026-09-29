@@ -48,7 +48,7 @@ Residual risk represents the estimated remaining risk after considering existing
 | AIR-008 | Same workflow is executed multiple times | Information Security | Low | Medium | Atomic execution claims, persistent workflow state, stale-workflow reconciliation | Low | Mitigate |
 | AIR-009 | Sensitive enterprise information is exposed through prompts, outputs, RAG, or logs | Data Privacy | Medium | High | Authentication, RBAC, controlled workflows, secret scanning | Medium-High | Mitigate |
 | AIR-010 | External model-provider change alters application behavior | Value Chain and Component Integration | Medium | Medium | Automated testing, AI security evaluations, deterministic application controls | Medium | Monitor / Mitigate |
-| AIR-011 | Compromised or vulnerable software dependency affects application security | Value Chain and Component Integration | Medium | High | Dependency scanning, Security CI, automated tests | Medium | Mitigate / Monitor |
+| AIR-011 | Compromised or vulnerable software dependency affects application security | Value Chain and Component Integration | Medium | High | Dependency scanning, Security CI, automated tests, immutable GitHub Action pinning, protected `main`, required PR status checks | Medium | Mitigate / Monitor |
 | AIR-012 | Audit records are incomplete or insufficient for investigation | Information Security | Low-Medium | Medium | Security-event logging, trace reconstruction, audit-trace tests | Low-Medium | Mitigate / Monitor |
 
 ---
@@ -254,6 +254,7 @@ The risk register should be reassessed when significant changes occur, including
 - changing authentication or authorization logic;
 - introducing sensitive enterprise data;
 - modifying human-approval requirements;
+- modifying Security CI, repository rulesets, required status checks, or protected-branch policy;
 - discovering a significant AI security vulnerability; or
 - observing unexpected behavior during evaluation or production monitoring.
 

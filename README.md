@@ -382,9 +382,9 @@ Tool Security:              16 cases
 Authorization Security:      8 cases
 Data Leakage Security:       8 cases
 Excessive Agency:           12 cases
-MCP Identity / Session:       8 cases
+MCP Identity / Session:      20 cases
                              --------
-Total Data-Driven Cases:     92 cases
+Total Data-Driven Cases:    104 cases
 ```
 
 The standardized attack harness is reported separately because each standardized attack can exercise multiple application-level security invariants.
@@ -1203,6 +1203,34 @@ Python dependency vulnerability scanning
 ```
 
 The workflow uses read-only repository permissions where possible.
+
+### Protected Main and Required Security Gates
+
+The repository's `main` branch is governed by an active GitHub repository ruleset.
+
+Changes to `main` must arrive through a pull request, and the pull request branch must be tested against the current state of `main`.
+
+The following Security CI checks are required before merge:
+
+```text
+Python Tests
+Dependency Vulnerability Scan
+Gitleaks Secret Scan
+```
+
+The Python Tests job also executes the PostgreSQL-backed integration tests and the AI security evaluation harness.
+
+The repository ruleset also:
+
+- blocks force pushes to `main`;
+- blocks deletion of `main`;
+- requires the pull request branch to be current with `main`;
+- has no configured bypass actors; and
+- does not permit the repository owner to bypass the ruleset through the normal account path.
+
+The enforcement boundary was validated with negative-control testing. GitHub rejected a direct push to `main` and also prevented a pull request containing an intentionally failing required test from merging.
+
+The negative-control pull request was closed without merge after the enforcement behavior was verified.
 
 A Gitleaks SARIF artifact is produced for security-scan results.
 

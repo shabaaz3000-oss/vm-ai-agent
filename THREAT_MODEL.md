@@ -766,6 +766,15 @@ Possible outcomes include:
 - Gitleaks secret scanning
 - Python dependency vulnerability scanning in Security CI
 - Dependabot configuration for Python and GitHub Actions dependency updates
+- GitHub Actions used by Security CI are pinned to immutable commit SHAs
+- `main` is protected by an active repository ruleset
+- changes to `main` must arrive through a pull request
+- Python Tests, Dependency Vulnerability Scan, and Gitleaks Secret Scan are required before merge
+- required status checks are bound to the trusted GitHub Actions integration
+- strict status-check enforcement requires the pull request branch to be tested with current `main`
+- force pushes and deletion of `main` are blocked
+- no repository-ruleset bypass actors are configured
+- negative-control testing verified that direct pushes and failed-check merges are rejected
 - CI responsibilities are intentionally limited
 
 ### Residual Risk
@@ -776,7 +785,6 @@ Third-party GitHub Actions and transitive dependencies remain trust dependencies
 
 ### Future Enhancements
 
-- pin GitHub Actions to immutable commit SHAs
 - SBOM generation
 - package hash verification
 - artifact signing
@@ -875,7 +883,7 @@ A successful attack could cause:
 - raw session identifiers are excluded from audit events
 - derived session-correlation identifiers support investigation
 - blocked session-validation attempts are audited
-- an eight-case adversarial evaluator continuously tests the boundary
+- a twenty-case adversarial evaluator continuously tests the boundary
 - MCP isolation participates in the overall `security-eval` exit code
 
 ### Residual Risk
@@ -910,7 +918,7 @@ security telemetry.
 | AI data leakage | Principal-derived retrieval authorization, canary tests, controlled invocation |
 | Terminal injection | Safe output rendering |
 | File-based DoS | CSV resource limits |
-| Supply-chain compromise | Minimal CI permissions, dependency scanning, Dependabot |
+| Supply-chain compromise | Minimal CI permissions, immutable Action pinning, dependency scanning, protected main, required PR security checks, Dependabot |
 | Audit manipulation | Structured audit logging |
 | MCP session hijacking / tenant bypass | Server-generated sessions, principal/tenant binding, expiration, immutable SecurityContext, dispatcher revalidation, adversarial evaluation |
 
@@ -945,7 +953,7 @@ Known limitations include:
 - static development bearer tokens
 - no enterprise OIDC identity provider
 - no enterprise document ACL or external authorization policy engine
-- MCP session/tenant isolation currently uses an in-memory local session manager; broader application resource ownership and production multi-tenant persistence remain future work
+- MCP session/tenant isolation supports shared PostgreSQL authority for multi-instance runtime use; broader application resource ownership, enterprise identity federation, database high availability, and full production multi-tenant authorization remain future work
 - retrieval authorization occurs after semantic candidate search rather than before embedding or search
 - lightweight local vector index rather than a production vector database
 - mock ticketing rather than production ServiceNow
@@ -954,7 +962,7 @@ Known limitations include:
 - no enterprise secrets manager
 - no distributed transaction coordination
 - no production outbound DLP policy
-- the current 92-case data-driven evaluation corpus is synthetic and does not represent a comprehensive production AI red-team program
+- the current 104-case data-driven evaluation corpus is synthetic and does not represent a comprehensive production AI red-team program
 - the seven standardized attack evaluations cover defined application properties rather than every possible AI or agent attack
 - no external AI red-team framework such as PyRIT or garak is integrated
 - no longitudinal evaluation trend reporting
@@ -975,9 +983,9 @@ Tool Security:              16 cases
 Authorization Security:      8 cases
 Data Leakage Security:       8 cases
 Excessive Agency:           12 cases
-MCP Identity / Session:      8 cases
+MCP Identity / Session:     20 cases
                              --------
-Total Data-Driven Cases:     92 cases
+Total Data-Driven Cases:    104 cases
 ```
 
 It also includes seven separately reported standardized attacks:
@@ -1021,7 +1029,6 @@ Planned or potential improvements include:
 - SIEM integration
 - OpenTelemetry
 - policy-as-code
-- immutable GitHub Action pinning
 - SBOM generation
 - package hash verification
 - artifact signing
