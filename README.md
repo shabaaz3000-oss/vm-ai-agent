@@ -10,6 +10,16 @@ The project is designed to demonstrate how an AI agent can assist a vulnerabilit
 
 ---
 
+## Security Proof at a Glance
+
+The implementation validates several security properties beyond the core AI workflow:
+
+- MCP session and tenant authority are server-controlled and backed by authoritative PostgreSQL state, including atomic compare-and-swap (CAS) semantics for security-sensitive state transitions.
+- Server-controlled session revocation prevents a revoked MCP session from remaining authoritative across application instances.
+- Protected `main` requires pull requests and required status checks, including Python Tests, Dependency Vulnerability Scan, and Gitleaks Secret Scan, before normal merges are allowed.
+
+---
+
 ## Why This Project Exists
 
 Traditional vulnerability management platforms can identify thousands of findings, but security teams still need to answer questions such as:
