@@ -9,6 +9,49 @@ from app.providers.servicenow_ticket_provider import (
 )
 
 
+from app.ticket_execution_context import (
+    TicketExecutionContext,
+)
+
+from app.providers.servicenow_routing import (
+    ServiceNowRoutingPolicy,
+)
+
+
+_TEST_TENANT_ID = "tenant-alpha"
+
+_TEST_GROUP_SYS_ID = (
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+)
+
+
+def _test_execution_context(
+) -> TicketExecutionContext:
+
+    return TicketExecutionContext(
+        tenant_id=
+            _TEST_TENANT_ID,
+
+        workflow_id=
+            "WF-SERVICENOW-TEST",
+
+        execution_attempt_id=
+            "EXEC-SERVICENOW-TEST",
+    )
+
+
+def _test_routing_policy(
+) -> ServiceNowRoutingPolicy:
+
+    return ServiceNowRoutingPolicy(
+        {
+            _TEST_TENANT_ID:
+                _TEST_GROUP_SYS_ID,
+        }
+    )
+
+
+
 class RecordingClient:
 
     def __init__(self):
@@ -89,12 +132,14 @@ def test_real_application_approval_is_consumed_before_servicenow_post():
     client = RecordingClient()
 
     provider = ServiceNowTicketProvider(
-        client
+        client,
+                   routing_policy=_test_routing_policy(),
     )
 
     result = provider.create_ticket(
         ticket=candidate,
         approval=approval,
+                 execution_context=_test_execution_context(),
     )
 
     assert (
@@ -116,6 +161,7 @@ def test_real_application_approval_is_consumed_before_servicenow_post():
         provider.create_ticket(
             ticket=candidate,
             approval=approval,
+            execution_context=_test_execution_context(),
         )
 
     assert len(
@@ -128,7 +174,8 @@ def test_forged_nonblank_approval_id_cannot_reach_http_client():
     client = RecordingClient()
 
     provider = ServiceNowTicketProvider(
-        client
+        client,
+                   routing_policy=_test_routing_policy(),
     )
 
     with pytest.raises(
@@ -142,6 +189,7 @@ def test_forged_nonblank_approval_id_cannot_reach_http_client():
                 "approval_id":
                     "APR-FORGED123",
             },
+            execution_context=_test_execution_context(),
         )
 
     assert (
@@ -174,7 +222,8 @@ def test_approval_bound_to_different_ticket_cannot_reach_http_client():
     client = RecordingClient()
 
     provider = ServiceNowTicketProvider(
-        client
+        client,
+                   routing_policy=_test_routing_policy(),
     )
 
     with pytest.raises(
@@ -185,6 +234,7 @@ def test_approval_bound_to_different_ticket_cannot_reach_http_client():
         provider.create_ticket(
             ticket=modified_ticket,
             approval=approval,
+            execution_context=_test_execution_context(),
         )
 
     assert (
@@ -209,7 +259,8 @@ def test_provider_cleanup_closes_http_client():
     client = ClosableClient()
 
     provider = ServiceNowTicketProvider(
-        client
+        client,
+                   routing_policy=_test_routing_policy(),
     )
 
     provider.close()

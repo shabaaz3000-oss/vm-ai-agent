@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.models import TicketDraft
+from app.ticket_execution_context import (
+    TicketExecutionContext,
+)
 from app.ticketing import create_mock_ticket
 
 
@@ -11,12 +14,10 @@ class MockTicketProvider:
     Compatibility adapter for the existing portfolio/demo
     ticket implementation.
 
-    This adapter intentionally delegates to create_mock_ticket
-    instead of duplicating its security checks.
-
-    As a result, the existing trusted approval validation,
-    one-time approval consumption, JSONL persistence behavior,
-    and ticket-record shape remain unchanged.
+    The mock side effect has no tenant-specific external
+    routing destination. A trusted execution context may be
+    supplied by the common provider boundary, but it is not
+    used to derive mock ticket authority.
     """
 
     provider_name = "mock"
@@ -26,13 +27,16 @@ class MockTicketProvider:
         *,
         ticket: TicketDraft,
         approval: dict[str, Any],
+        execution_context:
+            TicketExecutionContext | None = None,
     ) -> dict[str, Any]:
+
+        del execution_context
 
         return create_mock_ticket(
             ticket=ticket,
             approval=approval,
         )
-
 
     def close(
         self,

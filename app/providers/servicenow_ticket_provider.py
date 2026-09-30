@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from app.approval import consume_approval
 from typing import Any
 
+from app.approval import consume_approval
 from app.models import TicketDraft
+
 from app.providers.servicenow_client import (
     ServiceNowClient,
+)
+
+from app.providers.servicenow_routing import (
+    ServiceNowRoutingPolicy,
+    normalize_assignment_group_sys_id,
+)
+
+from app.ticket_execution_context import (
+    TicketExecutionContext,
 )
 
 
@@ -13,13 +23,17 @@ class ServiceNowTicketProvider:
     """
     Production ServiceNow ticket provider.
 
-    This provider is intentionally responsible only for mapping
-    an already-authorized TicketDraft to a tightly controlled
-    ServiceNow payload and submitting it through the hardened
-    ServiceNow client.
+    This provider maps an already-authorized TicketDraft and
+    trusted TicketExecutionContext to a tightly controlled
+    ServiceNow payload.
 
-    It does NOT establish approval, workflow, identity, tenant,
-    priority, assignment-group, or execution authority.
+    It does NOT establish workflow, approval, identity, tenant,
+    priority, or provider-selection authority.
+
+    ServiceNow assignment routing is resolved exclusively from
+    the server-owned ServiceNowRoutingPolicy using the trusted
+    execution tenant. TicketDraft.assignment_group is never a
+    production routing authority.
     """
 
     provider_name = "servicenow"
@@ -37,9 +51,24 @@ class ServiceNowTicketProvider:
     def __init__(
         self,
         client: ServiceNowClient,
+        routing_policy:
+            ServiceNowRoutingPolicy,
     ) -> None:
 
+        if not isinstance(
+            routing_policy,
+            ServiceNowRoutingPolicy,
+        ):
+
+            raise TypeError(
+                "ServiceNowRoutingPolicy is required."
+            )
+
         self._client = client
+
+        self._routing_policy = (
+            routing_policy
+        )
 
     @staticmethod
     def _build_description(
@@ -48,7 +77,8 @@ class ServiceNowTicketProvider:
 
         validation_steps = "\n".join(
             f"- {step}"
-            for step in ticket.validation_steps
+            for step
+            in ticket.validation_steps
         )
 
         return (
@@ -56,9 +86,12 @@ class ServiceNowTicketProvider:
             "Security Context\n"
             f"Asset: {ticket.asset_name}\n"
             f"CVE: {ticket.cve}\n"
-            f"Risk Rating: {ticket.risk_rating}\n"
-            f"Risk Score: {ticket.risk_score}\n"
-            f"SLA Hours: {ticket.sla_hours}\n\n"
+            f"Risk Rating: "
+            f"{ticket.risk_rating}\n"
+            f"Risk Score: "
+            f"{ticket.risk_score}\n"
+            f"SLA Hours: "
+            f"{ticket.sla_hours}\n\n"
             "Remediation\n"
             f"{ticket.remediation}\n\n"
             "Validation Steps\n"
@@ -70,6 +103,7 @@ class ServiceNowTicketProvider:
         cls,
         *,
         ticket: TicketDraft,
+        assignment_group_sys_id: str,
         correlation_id: str,
     ) -> dict[str, Any]:
 
@@ -78,9 +112,17 @@ class ServiceNowTicketProvider:
         )
 
         if not normalized_correlation_id:
+
             raise ValueError(
-                "ServiceNow correlation_id cannot be blank."
+                "ServiceNow correlation_id "
+                "cannot be blank."
             )
+
+        trusted_assignment_group = (
+            normalize_assignment_group_sys_id(
+                assignment_group_sys_id
+            )
+        )
 
         payload = {
             "short_description":
@@ -102,18 +144,21 @@ class ServiceNowTicketProvider:
                 ],
 
             "assignment_group":
-                ticket.assignment_group,
+                trusted_assignment_group,
 
             "correlation_id":
                 normalized_correlation_id,
         }
 
         unexpected_fields = (
-            set(payload)
+            set(
+                payload
+            )
             - cls._ALLOWED_PAYLOAD_FIELDS
         )
 
         if unexpected_fields:
+
             raise ValueError(
                 "ServiceNow payload contains "
                 "non-allowlisted fields."
@@ -126,12 +171,25 @@ class ServiceNowTicketProvider:
         *,
         ticket: TicketDraft,
         approval: dict[str, Any],
+        execution_context:
+            TicketExecutionContext | None = None,
     ) -> dict[str, Any]:
+
+        if not isinstance(
+            execution_context,
+            TicketExecutionContext,
+        ):
+
+            raise PermissionError(
+                "Trusted ticket execution context "
+                "is required for ServiceNow routing."
+            )
 
         if not isinstance(
             approval,
             dict,
         ):
+
             raise TypeError(
                 "approval must be a dictionary."
             )
@@ -147,34 +205,45 @@ class ServiceNowTicketProvider:
             )
             or not approval_id.strip()
         ):
+
             raise ValueError(
                 "A trusted approval_id is required."
             )
 
-        # Approval is application-issued authority, not
-        # ServiceNow authority. Validate and atomically consume
-        # the exact-ticket approval immediately before the
-        # provider prepares and performs its external side
-        # effect.
-        #
-        # This also protects direct provider invocation from
-        # forged or replayed approval dictionaries.
+        # Resolve trusted tenant routing before consuming the
+        # one-time approval. Configuration/routing failures
+        # therefore cannot burn an approval without an
+        # attempted external side effect.
+
+        assignment_group_sys_id = (
+            self._routing_policy
+            .resolve_assignment_group(
+                execution_context
+                .tenant_id
+            )
+        )
+
+        payload = self.build_payload(
+            ticket=ticket,
+            assignment_group_sys_id=
+                assignment_group_sys_id,
+            correlation_id=
+                approval_id,
+        )
+
+        # Consume the exact-ticket approval immediately before
+        # the external ServiceNow side effect.
 
         if not consume_approval(
             ticket=ticket,
             approval=approval,
         ):
+
             raise PermissionError(
                 "Valid application-issued approval "
                 "is required before ServiceNow "
                 "ticket creation."
             )
-
-        payload = self.build_payload(
-            ticket=ticket,
-            correlation_id=
-                approval_id,
-        )
 
         result = self._client.create_record(
             payload
@@ -182,6 +251,13 @@ class ServiceNowTicketProvider:
 
         return {
             **ticket.model_dump(),
+
+            # Authoritative external routing metadata is
+            # written after model_dump() so the generic
+            # TicketDraft display value cannot overwrite it.
+
+            "assignment_group":
+                assignment_group_sys_id,
 
             "ticket_id":
                 result["number"],

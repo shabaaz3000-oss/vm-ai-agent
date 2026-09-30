@@ -146,6 +146,7 @@ def test_execution_helper_cannot_accept_provider_selection():
     ) == {
         "ticket",
         "approval",
+        "execution_context",
     }
 
     for forbidden in (

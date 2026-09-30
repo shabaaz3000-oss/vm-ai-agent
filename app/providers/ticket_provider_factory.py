@@ -15,6 +15,10 @@ from app.providers.servicenow_config import (
 from app.providers.servicenow_ticket_provider import (
     ServiceNowTicketProvider,
 )
+from app.providers.servicenow_routing import (
+    ServiceNowRoutingConfigurationError,
+    ServiceNowRoutingPolicy,
+)
 from app.providers.ticket_provider import (
     TicketProvider,
 )
@@ -108,12 +112,46 @@ def build_ticket_provider(
             )
         )
 
+        try:
+
+            routing_policy = (
+                ServiceNowRoutingPolicy
+                .from_environment(
+                    source
+                )
+            )
+
+        except (
+            ServiceNowRoutingConfigurationError
+        ) as error:
+
+            raise (
+                TicketProviderConfigurationError(
+                    "Invalid ServiceNow tenant "
+                    "routing configuration."
+                )
+            ) from error
+
+        if not (
+            routing_policy
+            .configured_tenants
+        ):
+
+            raise (
+                TicketProviderConfigurationError(
+                    "ServiceNow tenant routing "
+                    "configuration is required."
+                )
+            )
+
         client = ServiceNowClient(
             settings
         )
 
         return ServiceNowTicketProvider(
-            client
+            client,
+            routing_policy=
+                routing_policy,
         )
 
     # Defense in depth. The allowlist above should make this

@@ -2,6 +2,9 @@ from app.approval import create_approval
 from app.audit import log_event
 
 from app.models import WorkflowResult
+from app.ticket_execution_context import (
+    TicketExecutionContext,
+)
 from app.security_context import SecurityContext
 from app.workflow_tenant import require_workflow_tenant
 
@@ -24,14 +27,18 @@ def _create_ticket_with_selected_provider(
     *,
     ticket,
     approval,
+    execution_context:
+        TicketExecutionContext | None = None,
 ):
     """
     Execute a ticket through the server-selected provider.
 
-    The selected provider is derived exclusively from trusted
-    server configuration. Workflow, model, MCP, ticket,
-    approval, identity, and tenant inputs cannot choose the
-    backend.
+    Provider selection remains derived exclusively from trusted
+    server configuration.
+
+    A trusted TicketExecutionContext may carry already-validated
+    workflow tenant metadata to a tenant-sensitive provider,
+    but it cannot select the backend itself.
 
     Provider cleanup is guaranteed even when the external
     action raises.
@@ -41,9 +48,22 @@ def _create_ticket_with_selected_provider(
 
     try:
 
+        if execution_context is None:
+
+            # Preserve compatibility for providers and local
+            # workflows that do not require external
+            # tenant-specific routing.
+
+            return provider.create_ticket(
+                ticket=ticket,
+                approval=approval,
+            )
+
         return provider.create_ticket(
             ticket=ticket,
             approval=approval,
+            execution_context=
+                execution_context,
         )
 
     finally:
@@ -195,6 +215,23 @@ def _execute_ticket_bound_workflow(
         security_context=security_context,
     )
 
+    execution_context = None
+
+    if result.tenant_id is not None:
+
+        execution_context = (
+            TicketExecutionContext(
+                tenant_id=
+                    result.tenant_id,
+
+                workflow_id=
+                    result.workflow_id,
+
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            )
+        )
+
     ticket = result.ticket
 
     # -------------------------------------------------
@@ -249,10 +286,25 @@ def _execute_ticket_bound_workflow(
 
     try:
 
-        created_ticket = _create_ticket_with_selected_provider(
-            ticket=ticket,
-            approval=approval_record
-        )
+        if execution_context is None:
+
+            created_ticket = (
+                _create_ticket_with_selected_provider(
+                    ticket=ticket,
+                    approval=approval_record,
+                )
+            )
+
+        else:
+
+            created_ticket = (
+                _create_ticket_with_selected_provider(
+                    ticket=ticket,
+                    approval=approval_record,
+                    execution_context=
+                        execution_context,
+                )
+            )
 
     except PermissionError as error:
 

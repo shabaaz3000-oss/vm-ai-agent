@@ -36,6 +36,8 @@ def servicenow_environment():
 
         "SERVICENOW_TIMEOUT_SECONDS":
             "10",
+
+               "SERVICENOW_TENANT_ASSIGNMENT_GROUPS": '{"tenant-alpha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
     }
 
 

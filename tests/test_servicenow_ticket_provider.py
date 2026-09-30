@@ -11,6 +11,49 @@ from app.providers.ticket_provider import (
 )
 
 
+from app.ticket_execution_context import (
+    TicketExecutionContext,
+)
+
+from app.providers.servicenow_routing import (
+    ServiceNowRoutingPolicy,
+)
+
+
+_TEST_TENANT_ID = "tenant-alpha"
+
+_TEST_GROUP_SYS_ID = (
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+)
+
+
+def _test_execution_context(
+) -> TicketExecutionContext:
+
+    return TicketExecutionContext(
+        tenant_id=
+            _TEST_TENANT_ID,
+
+        workflow_id=
+            "WF-SERVICENOW-TEST",
+
+        execution_attempt_id=
+            "EXEC-SERVICENOW-TEST",
+    )
+
+
+def _test_routing_policy(
+) -> ServiceNowRoutingPolicy:
+
+    return ServiceNowRoutingPolicy(
+        {
+            _TEST_TENANT_ID:
+                _TEST_GROUP_SYS_ID,
+        }
+    )
+
+
+
 class FakeClient:
 
     def __init__(self):
@@ -76,7 +119,8 @@ def ticket() -> TicketDraft:
 def test_servicenow_provider_satisfies_contract():
 
     provider = ServiceNowTicketProvider(
-        FakeClient()
+        FakeClient(),
+                   routing_policy=_test_routing_policy(),
     )
 
     assert isinstance(
@@ -93,6 +137,7 @@ def test_payload_is_strictly_allowlisted():
             ticket=ticket(),
             correlation_id=
                 "APR-12345678",
+            assignment_group_sys_id=_TEST_GROUP_SYS_ID,
         )
     )
 
@@ -115,6 +160,7 @@ def test_authoritative_ticket_fields_are_mapped():
             ticket=ticket(),
             correlation_id=
                 "APR-12345678",
+            assignment_group_sys_id=_TEST_GROUP_SYS_ID,
         )
     )
 
@@ -125,7 +171,7 @@ def test_authoritative_ticket_fields_are_mapped():
 
     assert (
         payload["assignment_group"]
-        == "Vulnerability Management"
+        == _TEST_GROUP_SYS_ID
     )
 
     assert (
@@ -176,6 +222,7 @@ def test_all_application_priorities_map_to_servicenow_values():
 
                 correlation_id=
                     "APR-PRIORITY-MAP",
+                assignment_group_sys_id=_TEST_GROUP_SYS_ID,
             )
         )
 
@@ -201,7 +248,8 @@ def test_provider_normalizes_external_result(
     client = FakeClient()
 
     provider = ServiceNowTicketProvider(
-        client
+        client,
+                   routing_policy=_test_routing_policy(),
     )
 
     result = provider.create_ticket(
@@ -210,6 +258,7 @@ def test_provider_normalizes_external_result(
             "approval_id":
                 "APR-12345678",
         },
+                 execution_context=_test_execution_context(),
     )
 
     assert (
@@ -249,7 +298,8 @@ def test_approval_dictionary_cannot_override_payload(
     client = FakeClient()
 
     provider = ServiceNowTicketProvider(
-        client
+        client,
+                   routing_policy=_test_routing_policy(),
     )
 
     provider.create_ticket(
@@ -273,6 +323,7 @@ def test_approval_dictionary_cannot_override_payload(
             "instance_url":
                 "https://attacker.example",
         },
+        execution_context=_test_execution_context(),
     )
 
     assert (
@@ -282,7 +333,7 @@ def test_approval_dictionary_cannot_override_payload(
 
     assert (
         client.payload["assignment_group"]
-        == "Vulnerability Management"
+        == _TEST_GROUP_SYS_ID
     )
 
     assert (
@@ -304,7 +355,8 @@ def test_approval_dictionary_cannot_override_payload(
 def test_blank_approval_id_is_rejected():
 
     provider = ServiceNowTicketProvider(
-        FakeClient()
+        FakeClient(),
+                   routing_policy=_test_routing_policy(),
     )
 
     try:
@@ -314,6 +366,7 @@ def test_blank_approval_id_is_rejected():
                 "approval_id":
                     "   ",
             },
+            execution_context=_test_execution_context(),
         )
 
     except ValueError:
