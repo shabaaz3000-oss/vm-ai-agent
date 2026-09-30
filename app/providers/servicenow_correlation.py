@@ -19,6 +19,50 @@ class ServiceNowCorrelationError(
     """
 
 
+def validate_servicenow_correlation_id(
+    value: str,
+) -> str:
+    """
+    Validate the exact application-owned correlation format.
+
+    The restricted alphabet prevents encoded-query operators,
+    separators, scripting fragments, or caller-controlled query
+    structure from entering the ServiceNow lookup boundary.
+    """
+
+    if not isinstance(
+        value,
+        str,
+    ):
+
+        raise ServiceNowCorrelationError(
+            "ServiceNow correlation_id "
+            "must be a string."
+        )
+
+    if (
+        len(value) != 69
+        or not value.startswith(
+            "VMAI-"
+        )
+        or any(
+            character
+            not in "0123456789abcdef"
+            for character
+            in value[
+                5:
+            ]
+        )
+    ):
+
+        raise ServiceNowCorrelationError(
+            "ServiceNow correlation_id "
+            "has an invalid format."
+        )
+
+    return value
+
+
 def build_servicenow_correlation_id(
     execution_context: TicketExecutionContext,
 ) -> str:
@@ -94,4 +138,6 @@ def build_servicenow_correlation_id(
             "exceeds the supported length."
         )
 
-    return correlation_id
+    return validate_servicenow_correlation_id(
+        correlation_id
+    )
