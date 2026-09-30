@@ -26,6 +26,8 @@ from app.ticket_execution_context import (
 )
 
 from app.workflow_store import (
+    authorize_reconciled_retry,
+    confirm_reconciled_ticket_creation,
     get_workflow,
 )
 
@@ -50,6 +52,8 @@ class ServiceNowReconciliationError(
 class ServiceNowReconciliationResult:
 
     workflow_id: str
+
+    execution_attempt_id: str
 
     outcome: Literal[
         "NOT_FOUND",
@@ -221,6 +225,9 @@ def reconcile_servicenow_workflow(
             workflow_id=
                 workflow.workflow_id,
 
+            execution_attempt_id=
+                workflow.execution_attempt_id,
+
             outcome=
                 "NOT_FOUND",
 
@@ -240,6 +247,9 @@ def reconcile_servicenow_workflow(
         return ServiceNowReconciliationResult(
             workflow_id=
                 workflow.workflow_id,
+
+            execution_attempt_id=
+                workflow.execution_attempt_id,
 
             outcome=
                 "CONFIRMED",
@@ -265,6 +275,9 @@ def reconcile_servicenow_workflow(
         workflow_id=
             workflow.workflow_id,
 
+        execution_attempt_id=
+            workflow.execution_attempt_id,
+
         outcome=
             "CONFLICT",
 
@@ -273,4 +286,146 @@ def reconcile_servicenow_workflow(
 
         match_count=
             match_count,
+    )
+
+def resolve_servicenow_workflow(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext,
+):
+    """
+    Resolve one NEEDS_REVIEW workflow from fresh ServiceNow
+    external truth.
+
+    The caller controls only workflow identity and supplies the
+    trusted SecurityContext. Outcome, correlation ID, ticket
+    identifiers, tenant identity, and retry decision are never
+    accepted as caller authority.
+    """
+
+    evidence = (
+        reconcile_servicenow_workflow(
+            workflow_id,
+            security_context=
+                security_context,
+        )
+    )
+
+    if (
+        evidence.workflow_id
+        != workflow_id
+    ):
+
+        raise ServiceNowReconciliationError(
+            "Reconciliation workflow identity "
+            "does not match the requested workflow."
+        )
+
+    if (
+        not isinstance(
+            evidence.execution_attempt_id,
+            str,
+        )
+        or not evidence.execution_attempt_id.strip()
+        or evidence.execution_attempt_id
+        != evidence.execution_attempt_id.strip()
+    ):
+
+        raise ServiceNowReconciliationError(
+            "Reconciliation evidence does not "
+            "contain a trusted execution attempt."
+        )
+
+    if (
+        evidence.outcome
+        == "CONFIRMED"
+    ):
+
+        if (
+            evidence.match_count
+            != 1
+            or not isinstance(
+                evidence.ticket_number,
+                str,
+            )
+            or not evidence.ticket_number.strip()
+            or evidence.ticket_number
+            != evidence.ticket_number.strip()
+            or not isinstance(
+                evidence.external_sys_id,
+                str,
+            )
+            or not evidence.external_sys_id.strip()
+        ):
+
+            raise ServiceNowReconciliationError(
+                "Confirmed reconciliation evidence "
+                "is incomplete or inconsistent."
+            )
+
+        return (
+            confirm_reconciled_ticket_creation(
+                workflow_id,
+                expected_execution_attempt_id=
+                    evidence.execution_attempt_id,
+                ticket_id=
+                    evidence.ticket_number,
+                security_context=
+                    security_context,
+            )
+        )
+
+    if (
+        evidence.outcome
+        == "NOT_FOUND"
+    ):
+
+        if (
+            evidence.match_count
+            != 0
+            or evidence.ticket_number
+            is not None
+            or evidence.external_sys_id
+            is not None
+        ):
+
+            raise ServiceNowReconciliationError(
+                "NOT_FOUND reconciliation evidence "
+                "is inconsistent."
+            )
+
+        return (
+            authorize_reconciled_retry(
+                workflow_id,
+                expected_execution_attempt_id=
+                    evidence.execution_attempt_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+    if (
+        evidence.outcome
+        == "CONFLICT"
+    ):
+
+        if (
+            evidence.match_count
+            < 2
+        ):
+
+            raise ServiceNowReconciliationError(
+                "CONFLICT reconciliation evidence "
+                "is inconsistent."
+            )
+
+        raise ServiceNowReconciliationError(
+            "ServiceNow reconciliation found "
+            "multiple matching records. "
+            "Workflow remains NEEDS_REVIEW "
+            "and retry is forbidden."
+        )
+
+    raise ServiceNowReconciliationError(
+        "Unknown ServiceNow reconciliation outcome."
     )

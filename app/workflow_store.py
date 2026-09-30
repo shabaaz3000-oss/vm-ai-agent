@@ -661,3 +661,388 @@ def clear_workflows() -> None:
             DELETE FROM workflows
             """
         )
+
+# -------------------------------------------------
+# RECONCILIATION RESOLUTION
+# -------------------------------------------------
+
+
+def _validate_reconciliation_transition_target(
+    current: WorkflowResult,
+    *,
+    expected_execution_attempt_id: str,
+    security_context: SecurityContext,
+) -> None:
+    """
+    Validate the authoritative state required before applying a
+    ServiceNow reconciliation result.
+
+    This helper is called only while the workflow database is
+    protected by BEGIN IMMEDIATE.
+    """
+
+    if not isinstance(
+        security_context,
+        SecurityContext,
+    ):
+
+        raise PermissionError(
+            "Trusted SecurityContext is required "
+            "for reconciliation resolution."
+        )
+
+    if (
+        security_context.role
+        != "APPROVER"
+    ):
+
+        raise PermissionError(
+            "Reconciliation resolution requires "
+            "APPROVER security context."
+        )
+
+    require_workflow_tenant(
+        current,
+        security_context=
+            security_context,
+    )
+
+    if (
+        not isinstance(
+            expected_execution_attempt_id,
+            str,
+        )
+        or not expected_execution_attempt_id.strip()
+        or expected_execution_attempt_id
+        != expected_execution_attempt_id.strip()
+    ):
+
+        raise ValueError(
+            "expected_execution_attempt_id must be "
+            "a non-blank normalized string."
+        )
+
+    if (
+        current.execution_attempt_id
+        != expected_execution_attempt_id
+    ):
+
+        raise PermissionError(
+            "Workflow execution attempt changed "
+            "after reconciliation."
+        )
+
+
+def confirm_reconciled_ticket_creation(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    ticket_id: str,
+    security_context: SecurityContext,
+) -> WorkflowResult:
+    """
+    Atomically resolve a confirmed external ServiceNow ticket.
+
+    Only NEEDS_REVIEW may transition to TICKET_CREATED.
+
+    The transition re-checks tenant authority and the exact
+    execution attempt under the same database write lock used
+    for the state change.
+    """
+
+    if (
+        not isinstance(
+            workflow_id,
+            str,
+        )
+        or not workflow_id.strip()
+        or workflow_id
+        != workflow_id.strip()
+    ):
+
+        raise ValueError(
+            "workflow_id must be a non-blank "
+            "normalized string."
+        )
+
+    if (
+        not isinstance(
+            ticket_id,
+            str,
+        )
+        or not ticket_id.strip()
+        or ticket_id
+        != ticket_id.strip()
+    ):
+
+        raise ValueError(
+            "ticket_id must be a non-blank "
+            "normalized string."
+        )
+
+    with connect_database() as connection:
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+
+            FROM workflows
+
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            )
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: {workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "NEEDS_REVIEW"
+        ):
+
+            raise PermissionError(
+                "Only a NEEDS_REVIEW workflow can "
+                "be confirmed after reconciliation."
+            )
+
+        original_payload = (
+            row[
+                "payload"
+            ]
+        )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                original_payload
+            )
+        )
+
+        _validate_reconciliation_transition_target(
+            current,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            security_context=
+                security_context,
+        )
+
+        if (
+            current.ticket_id
+            is not None
+        ):
+
+            raise PermissionError(
+                "NEEDS_REVIEW workflow already "
+                "contains a ticket identifier."
+            )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "TICKET_CREATED",
+
+                "ticket_id":
+                    ticket_id,
+            }
+        )
+
+        resolved = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'NEEDS_REVIEW'
+                AND payload = ?
+            """,
+            (
+                resolved.status,
+                resolved.model_dump_json(),
+                workflow_id,
+                original_payload,
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow state changed before "
+                "confirmed reconciliation could "
+                "be committed."
+            )
+
+    return resolved
+
+
+def authorize_reconciled_retry(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    security_context: SecurityContext,
+) -> WorkflowResult:
+    """
+    Atomically authorize a new human-triggered execution after
+    ServiceNow reconciliation proves the ambiguous attempt was
+    NOT_FOUND.
+
+    The old execution_attempt_id is intentionally preserved in
+    AWAITING_APPROVAL for audit provenance. The next atomic
+    claim must overwrite it with a freshly generated attempt.
+    """
+
+    if (
+        not isinstance(
+            workflow_id,
+            str,
+        )
+        or not workflow_id.strip()
+        or workflow_id
+        != workflow_id.strip()
+    ):
+
+        raise ValueError(
+            "workflow_id must be a non-blank "
+            "normalized string."
+        )
+
+    with connect_database() as connection:
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+
+            FROM workflows
+
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            )
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: {workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "NEEDS_REVIEW"
+        ):
+
+            raise PermissionError(
+                "Only a NEEDS_REVIEW workflow can "
+                "be authorized for reconciled retry."
+            )
+
+        original_payload = (
+            row[
+                "payload"
+            ]
+        )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                original_payload
+            )
+        )
+
+        _validate_reconciliation_transition_target(
+            current,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            security_context=
+                security_context,
+        )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "AWAITING_APPROVAL",
+
+                "approval_id":
+                    None,
+
+                "ticket_id":
+                    None,
+            }
+        )
+
+        authorized = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'NEEDS_REVIEW'
+                AND payload = ?
+            """,
+            (
+                authorized.status,
+                authorized.model_dump_json(),
+                workflow_id,
+                original_payload,
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow state changed before "
+                "retry authorization could "
+                "be committed."
+            )
+
+    return authorized
