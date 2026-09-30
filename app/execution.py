@@ -3,7 +3,7 @@ from app.audit import log_event
 
 from app.models import WorkflowResult
 
-from app.ticketing import create_mock_ticket
+from app.providers.ticket_provider_factory import build_ticket_provider
 
 from app.workflow_store import (
     claim_workflow_for_execution,
@@ -15,6 +15,38 @@ from app.workflow_store import (
 # -------------------------------------------------
 # WORKFLOW STATE VALIDATION
 # -------------------------------------------------
+
+
+
+def _create_ticket_with_selected_provider(
+    *,
+    ticket,
+    approval,
+):
+    """
+    Execute a ticket through the server-selected provider.
+
+    The selected provider is derived exclusively from trusted
+    server configuration. Workflow, model, MCP, ticket,
+    approval, identity, and tenant inputs cannot choose the
+    backend.
+
+    Provider cleanup is guaranteed even when the external
+    action raises.
+    """
+
+    provider = build_ticket_provider()
+
+    try:
+
+        return provider.create_ticket(
+            ticket=ticket,
+            approval=approval,
+        )
+
+    finally:
+
+        provider.close()
 
 
 def require_awaiting_approval(
@@ -143,7 +175,7 @@ def _execute_ticket_bound_workflow(
 
     try:
 
-        created_ticket = create_mock_ticket(
+        created_ticket = _create_ticket_with_selected_provider(
             ticket=ticket,
             approval=approval_record
         )

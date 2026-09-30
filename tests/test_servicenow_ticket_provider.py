@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import app.providers.servicenow_ticket_provider as servicenow_module
+
 from app.models import TicketDraft
 from app.providers.servicenow_ticket_provider import (
     ServiceNowTicketProvider,
@@ -183,7 +185,18 @@ def test_all_application_priorities_map_to_servicenow_values():
         )
 
 
-def test_provider_normalizes_external_result():
+def test_provider_normalizes_external_result(
+    monkeypatch,
+):
+
+    monkeypatch.setattr(
+        servicenow_module,
+        "consume_approval",
+        lambda *,
+        ticket,
+        approval:
+            True,
+    )
 
     client = FakeClient()
 
@@ -220,7 +233,18 @@ def test_provider_normalizes_external_result():
     )
 
 
-def test_approval_dictionary_cannot_override_payload():
+def test_approval_dictionary_cannot_override_payload(
+    monkeypatch,
+):
+
+    monkeypatch.setattr(
+        servicenow_module,
+        "consume_approval",
+        lambda *,
+        ticket,
+        approval:
+            True,
+    )
 
     client = FakeClient()
 

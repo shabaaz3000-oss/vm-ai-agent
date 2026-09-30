@@ -1,6 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
+from typing import Protocol
+from typing import runtime_checkable
 
 from app.models import TicketDraft
 
@@ -8,30 +10,16 @@ from app.models import TicketDraft
 @runtime_checkable
 class TicketProvider(Protocol):
     """
-    Contract for controlled external ticket creation.
+    Contract for controlled external ticket providers.
 
-    A TicketProvider is deliberately below the authoritative
-    workflow, authorization, approval, and execution-claim
-    boundaries.
+    Implementations operate below workflow authorization,
+    human approval issuance, identity authority, tenant
+    authority, deterministic risk calculation, and ticket
+    construction.
 
-    Implementations MUST NOT be treated as sources of:
-
-    - workflow authorization
-    - approval authority
-    - ticket priority authority
-    - assignment-routing authority
-    - tenant authority
-    - principal authority
-
-    Those decisions remain application-controlled.
-
-    The current approval argument is retained because the
-    existing mock ticket path validates and consumes the
-    application-issued approval immediately before its side
-    effect.
-
-    Production providers must eventually be invoked only
-    through the same trusted execution boundary.
+    A provider may enforce application-issued approval before
+    its side effect, but it must never establish approval or
+    derive security authority from caller-controlled input.
     """
 
     provider_name: str
@@ -43,9 +31,19 @@ class TicketProvider(Protocol):
         approval: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Create one external ticket for an already-authorized
-        workflow execution.
-
-        Implementations return a normalized ticket record.
+        Execute the provider-specific ticket side effect.
         """
+
+        ...
+
+    def close(
+        self,
+    ) -> None:
+        """
+        Release provider-owned resources.
+
+        Implementations without persistent resources should
+        provide a no-op implementation.
+        """
+
         ...

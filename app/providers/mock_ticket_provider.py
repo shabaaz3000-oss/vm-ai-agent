@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -32,3 +32,14 @@ class MockTicketProvider:
             ticket=ticket,
             approval=approval,
         )
+
+
+    def close(
+        self,
+    ) -> None:
+        """
+        The JSONL-backed mock provider owns no persistent
+        network resources.
+        """
+
+        return None

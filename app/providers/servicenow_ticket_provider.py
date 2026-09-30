@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.approval import consume_approval
 from typing import Any
 
 from app.models import TicketDraft
@@ -150,6 +151,25 @@ class ServiceNowTicketProvider:
                 "A trusted approval_id is required."
             )
 
+        # Approval is application-issued authority, not
+        # ServiceNow authority. Validate and atomically consume
+        # the exact-ticket approval immediately before the
+        # provider prepares and performs its external side
+        # effect.
+        #
+        # This also protects direct provider invocation from
+        # forged or replayed approval dictionaries.
+
+        if not consume_approval(
+            ticket=ticket,
+            approval=approval,
+        ):
+            raise PermissionError(
+                "Valid application-issued approval "
+                "is required before ServiceNow "
+                "ticket creation."
+            )
+
         payload = self.build_payload(
             ticket=ticket,
             correlation_id=
@@ -161,6 +181,8 @@ class ServiceNowTicketProvider:
         )
 
         return {
+            **ticket.model_dump(),
+
             "ticket_id":
                 result["number"],
 
@@ -175,6 +197,13 @@ class ServiceNowTicketProvider:
 
             "approval_id":
                 approval_id,
-
-            **ticket.model_dump(),
         }
+
+    def close(
+        self,
+    ) -> None:
+        """
+        Release the underlying HTTP client.
+        """
+
+        self._client.close()
