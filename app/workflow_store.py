@@ -7,6 +7,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.models import WorkflowResult
+from app.security_context import SecurityContext
+from app.workflow_tenant import require_workflow_tenant
 
 
 # -------------------------------------------------
@@ -213,7 +215,9 @@ def update_workflow(
 
 
 def claim_workflow_for_execution(
-    workflow_id: str
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
 
     """
@@ -269,6 +273,35 @@ def claim_workflow_for_execution(
                 row["payload"]
             )
         )
+
+        # -------------------------------------------------
+        # TENANT AUTHORITY GATE
+        # -------------------------------------------------
+        #
+        # A tenant-bound workflow may only be claimed by a
+        # trusted SecurityContext for that exact tenant.
+        #
+        # This check executes while BEGIN IMMEDIATE holds
+        # the write lock and BEFORE AWAITING_APPROVAL is
+        # changed to PROCESSING.
+        #
+        # Therefore a cross-tenant caller cannot consume or
+        # poison the execution claim.
+        # -------------------------------------------------
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow execution "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=security_context,
+            )
 
         updated_data = (
             current.model_dump()

@@ -377,7 +377,9 @@ def test_atomic_execution_claim_preserves_tenant_binding(
     claimed = (
         workflow_store
         .claim_workflow_for_execution(
-            bound.workflow_id
+            bound.workflow_id,
+            security_context=
+                make_context(),
         )
     )
 
@@ -417,7 +419,9 @@ def test_recovery_preserves_tenant_binding(
 
     workflow_store \
         .claim_workflow_for_execution(
-            bound.workflow_id
+            bound.workflow_id,
+            security_context=
+                make_context(),
         )
 
     review = (

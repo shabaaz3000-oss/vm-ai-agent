@@ -2,6 +2,8 @@ from app.approval import create_approval
 from app.audit import log_event
 
 from app.models import WorkflowResult
+from app.security_context import SecurityContext
+from app.workflow_tenant import require_workflow_tenant
 
 from app.providers.ticket_provider_factory import build_ticket_provider
 
@@ -47,6 +49,67 @@ def _create_ticket_with_selected_provider(
     finally:
 
         provider.close()
+
+
+
+def _validate_execution_security_identity(
+    *,
+    approved_by: str,
+    security_context: SecurityContext | None,
+) -> None:
+    """
+    Validate immutable server-side execution identity
+    before any workflow claim can occur.
+    """
+
+    if security_context is None:
+        return
+
+    if (
+        security_context.principal_id
+        != approved_by
+    ):
+        raise PermissionError(
+            "Workflow execution security context "
+            "principal mismatch."
+        )
+
+    if security_context.role != "APPROVER":
+        raise PermissionError(
+            "Workflow execution requires "
+            "APPROVER security context."
+        )
+
+
+def _require_bound_workflow_execution_context(
+    *,
+    result: WorkflowResult,
+    approved_by: str,
+    security_context: SecurityContext | None,
+) -> None:
+    """
+    Revalidate tenant authority immediately before
+    ticket-bound approval creation and provider execution.
+    """
+
+    if result.tenant_id is None:
+        return
+
+    if security_context is None:
+        raise PermissionError(
+            "Tenant-bound workflow execution "
+            "requires trusted security context."
+        )
+
+    _validate_execution_security_identity(
+        approved_by=approved_by,
+        security_context=security_context,
+    )
+
+    require_workflow_tenant(
+        result,
+        security_context=security_context,
+    )
 
 
 def require_awaiting_approval(
@@ -118,8 +181,19 @@ def reject_workflow(
 
 def _execute_ticket_bound_workflow(
     result: WorkflowResult,
-    approved_by: str
+    approved_by: str,
+    *,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
+
+    # Revalidate trusted tenant authority before
+    # create_approval() or any provider side effect.
+
+    _require_bound_workflow_execution_context(
+        result=result,
+        approved_by=approved_by,
+        security_context=security_context,
+    )
 
     ticket = result.ticket
 
@@ -282,16 +356,26 @@ def _execute_ticket_bound_workflow(
 
 def approve_and_execute_workflow(
     result: WorkflowResult,
-    approved_by: str
+    approved_by: str,
+    *,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
 
     require_awaiting_approval(
         result
     )
 
+    if security_context is None:
+
+        return _execute_ticket_bound_workflow(
+            result=result,
+            approved_by=approved_by,
+        )
+
     return _execute_ticket_bound_workflow(
         result=result,
-        approved_by=approved_by
+        approved_by=approved_by,
+        security_context=security_context,
     )
 
 
@@ -302,16 +386,44 @@ def approve_and_execute_workflow(
 
 def claim_and_execute_workflow(
     workflow_id: str,
-    approved_by: str
+    approved_by: str,
+    *,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
+
+    # Validate the immutable identity before the
+    # atomic workflow claim begins.
+
+    _validate_execution_security_identity(
+        approved_by=approved_by,
+        security_context=security_context,
+    )
+
 
     try:
 
-        claimed_result = (
-            claim_workflow_for_execution(
-                workflow_id
+        if security_context is None:
+
+            # Legacy/local compatibility.
+            #
+            # A tenant-bound workflow still fails closed
+            # in workflow_store before PROCESSING.
+
+            claimed_result = (
+                claim_workflow_for_execution(
+                    workflow_id
+                )
             )
-        )
+
+        else:
+
+            claimed_result = (
+                claim_workflow_for_execution(
+                    workflow_id,
+                    security_context=
+                        security_context,
+                )
+            )
 
     except PermissionError as error:
 
@@ -360,9 +472,17 @@ def claim_and_execute_workflow(
 
     try:
 
+        if security_context is None:
+
+            return _execute_ticket_bound_workflow(
+                result=claimed_result,
+                approved_by=approved_by,
+            )
+
         return _execute_ticket_bound_workflow(
             result=claimed_result,
-            approved_by=approved_by
+            approved_by=approved_by,
+            security_context=security_context,
         )
 
     except Exception as error:

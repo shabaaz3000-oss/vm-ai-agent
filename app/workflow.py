@@ -25,6 +25,9 @@ from app.retriever import KnowledgeRetriever
 from app.risk_engine import calculate_risk
 from app.ticketing import build_ticket
 
+from app.security_context import SecurityContext
+from app.workflow_tenant import bind_workflow_tenant
+
 
 # -------------------------------------------------
 # DEFAULT DEMO FINDING
@@ -620,4 +623,39 @@ def prepare_workflow(
 
         ticket=
             ticket
+    )
+
+# -------------------------------------------------
+# PREPARE TENANT-BOUND ENTERPRISE WORKFLOW
+# -------------------------------------------------
+
+
+def prepare_tenant_bound_workflow(
+    *,
+    security_context: SecurityContext,
+    provider: VulnerabilityProvider | None = None,
+    finding_id: str = DEFAULT_FINDING_ID,
+    analyzer: VulnerabilityAnalyzer | None = None,
+) -> WorkflowResult:
+    """
+    Prepare a workflow and bind its internal application
+    tenant exclusively from trusted SecurityContext authority.
+
+    No raw tenant identifier is accepted by this boundary.
+
+    The existing prepare_workflow() path intentionally remains
+    available for local/demo and legacy workflows, which stay
+    explicitly unbound until they cross a trusted tenant-aware
+    boundary.
+    """
+
+    result = prepare_workflow(
+        provider=provider,
+        finding_id=finding_id,
+        analyzer=analyzer,
+    )
+
+    return bind_workflow_tenant(
+        result,
+        security_context=security_context,
     )
