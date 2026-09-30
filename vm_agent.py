@@ -35,6 +35,10 @@ from app.mcp_identity_security_evaluator import (
     run_mcp_identity_security_evaluation,
 )
 
+from app.enterprise_identity_security_evaluator import (
+    run_enterprise_identity_security_evaluation,
+)
+
 from app.identity_aware_rag_security_evaluator import (
     run_identity_aware_rag_security_evaluation,
 )
@@ -661,6 +665,92 @@ def display_mcp_identity_security_evaluation(
 
 
 # -------------------------------------------------
+# DISPLAY ENTERPRISE IDENTITY AUTHORITY
+# -------------------------------------------------
+
+
+def display_enterprise_identity_security_evaluation(
+    result,
+) -> None:
+
+    print()
+
+    print(
+        "ENTERPRISE IDENTITY AUTHORITY"
+    )
+
+    print("-" * 70)
+
+    print()
+
+    print(
+        "Total Cases:",
+        result.total_cases,
+    )
+
+    print(
+        "Allowed Cases:",
+        result.allowed_cases,
+    )
+
+    print(
+        "Blocked Cases:",
+        result.blocked_cases,
+    )
+
+    print(
+        "Authority Protection Cases:",
+        result.authority_protection_cases,
+    )
+
+    print()
+
+    print(
+        "Passed Cases:",
+        result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        result.failed_cases,
+    )
+
+    print()
+
+    print(
+        "Unexpected Allows:",
+        result.unexpected_allows,
+    )
+
+    print(
+        "Unexpected Blocks:",
+        result.unexpected_blocks,
+    )
+
+    print(
+        "Authority Failures:",
+        result.authority_failures,
+    )
+
+    print(
+        "Execution Errors:",
+        result.execution_errors,
+    )
+
+    print()
+
+    print(
+        "Enterprise Identity Authority "
+        "Result: "
+        + (
+            "PASS"
+            if result.passed
+            else "FAIL"
+        )
+    )
+
+
+# -------------------------------------------------
 # IDENTITY-AWARE RAG SECURITY DISPLAY
 # -------------------------------------------------
 
@@ -766,6 +856,7 @@ def display_security_evaluation(
     mcp_identity_result,
     attack_results,
     identity_rag_result=None,
+    enterprise_identity_result=None,
 ) -> None:
 
     print()
@@ -1231,6 +1322,12 @@ def display_security_evaluation(
         mcp_identity_result
     )
 
+    if enterprise_identity_result is not None:
+
+        display_enterprise_identity_security_evaluation(
+            enterprise_identity_result
+        )
+
     if identity_rag_result is not None:
 
         display_identity_aware_rag_security_evaluation(
@@ -1377,6 +1474,11 @@ def display_security_evaluation(
         and agency_result.passed
         and mcp_identity_result.passed
         and (
+            enterprise_identity_result
+            is None
+            or enterprise_identity_result.passed
+        )
+        and (
             identity_rag_result is None
             or identity_rag_result.passed
         )
@@ -1491,6 +1593,7 @@ def run_security_eval() -> int:
     - evaluates sensitive-data leakage controls
     - evaluates excessive-agency controls
     - evaluates MCP identity and session isolation
+    - evaluates enterprise identity authority boundaries
     - runs the standardized attack harness
     - reports false negatives
     - reports false positives
@@ -1531,6 +1634,10 @@ def run_security_eval() -> int:
         run_mcp_identity_security_evaluation()
     )
 
+    enterprise_identity_result = (
+        run_enterprise_identity_security_evaluation()
+    )
+
     identity_rag_result = (
         run_identity_aware_rag_security_evaluation()
     )
@@ -1550,6 +1657,8 @@ def run_security_eval() -> int:
         attack_results,
         identity_rag_result=
             identity_rag_result,
+        enterprise_identity_result=
+            enterprise_identity_result,
     )
 
     attack_harness_passed = (
@@ -1570,6 +1679,7 @@ def run_security_eval() -> int:
         and leakage_result.passed
         and agency_result.passed
         and mcp_identity_result.passed
+        and enterprise_identity_result.passed
         and identity_rag_result.passed
         and attack_harness_passed
     ):

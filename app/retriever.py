@@ -52,12 +52,18 @@ class KnowledgeRetriever:
             str,
             tuple[str, ...],
         ] | None = None,
+        document_group_acl: dict[
+            str,
+            tuple[str, ...],
+        ] | None = None,
     ) -> "KnowledgeRetriever":
 
         chunks = build_knowledge_chunks(
             root,
             tenant_id=tenant_id,
             document_acl=document_acl,
+            document_group_acl=
+                document_group_acl,
         )
 
         index = build_vector_index(

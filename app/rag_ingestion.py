@@ -511,6 +511,9 @@ def chunk_document(
 
             allowed_principal_ids=
                 document.allowed_principal_ids,
+
+            allowed_group_ids=
+                document.allowed_group_ids,
         )
 
     # -------------------------------------------------
@@ -629,12 +632,17 @@ def build_knowledge_chunks(
         str,
         tuple[str, ...],
     ] | None = None,
+    document_group_acl: dict[
+        str,
+        tuple[str, ...],
+    ] | None = None,
 ) -> list[KnowledgeChunk]:
     """
     Build trusted knowledge chunks.
 
-    tenant_id and document_acl are trusted application
-    inputs. They are not derived from Markdown content.
+    tenant_id, document_acl, and document_group_acl are
+    trusted application inputs. They are not derived from
+    Markdown content.
 
     Legacy callers may omit tenant_id. Those chunks remain
     unscoped and are therefore ineligible for principal-aware
@@ -649,7 +657,10 @@ def build_knowledge_chunks(
     )
 
     if (
-        document_acl is not None
+        (
+            document_acl is not None
+            or document_group_acl is not None
+        )
         and tenant_id is None
     ):
         raise ValueError(
@@ -659,6 +670,11 @@ def build_knowledge_chunks(
 
     acl = (
         document_acl
+        or {}
+    )
+
+    group_acl = (
+        document_group_acl
         or {}
     )
 
@@ -681,6 +697,21 @@ def build_knowledge_chunks(
                 ]
             )
 
+        allowed_group_ids = (
+            None
+        )
+
+        if (
+            document.source_id
+            in group_acl
+        ):
+
+            allowed_group_ids = tuple(
+                group_acl[
+                    document.source_id
+                ]
+            )
+
         scoped_document = (
             document.model_copy(
                 update={
@@ -689,6 +720,9 @@ def build_knowledge_chunks(
 
                     "allowed_principal_ids":
                         allowed_principal_ids,
+
+                    "allowed_group_ids":
+                        allowed_group_ids,
                 }
             )
         )

@@ -1,0 +1,130 @@
+﻿[
+  {
+    "id": "ENT-ID-001",
+    "name": "Valid signed enterprise token establishes trusted identity",
+    "category": "legitimate_identity",
+    "attack": "valid_token",
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "ENT-ID-002",
+    "name": "Authoritative group member may access group-scoped knowledge",
+    "category": "legitimate_group_authority",
+    "attack": "valid_group_member",
+    "expected_behavior": "allow",
+    "severity": "low"
+  },
+  {
+    "id": "ENT-ID-003",
+    "name": "Forged token signature cannot establish enterprise identity",
+    "category": "forged_signature",
+    "attack": "forged_signature",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-004",
+    "name": "Expired enterprise token cannot establish identity",
+    "category": "stale_token",
+    "attack": "expired_token",
+    "expected_behavior": "block",
+    "severity": "high"
+  },
+  {
+    "id": "ENT-ID-005",
+    "name": "Wrong OIDC issuer cannot establish identity",
+    "category": "issuer_spoofing",
+    "attack": "wrong_issuer",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-006",
+    "name": "Wrong API audience cannot establish identity",
+    "category": "audience_confusion",
+    "attack": "wrong_audience",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-007",
+    "name": "Wrong Entra tenant cannot cross the identity boundary",
+    "category": "identity_provider_tenant_spoofing",
+    "attack": "wrong_idp_tenant",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-008",
+    "name": "Unknown signed subject cannot reuse application principal binding",
+    "category": "subject_binding_bypass",
+    "attack": "unknown_subject",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-009",
+    "name": "Token role claims cannot self-elevate application role",
+    "category": "role_self_elevation",
+    "attack": "token_role_self_elevation",
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-010",
+    "name": "External Entra tenant cannot select internal application tenant",
+    "category": "tenant_authority_injection",
+    "attack": "external_tenant_internal_tenant",
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-011",
+    "name": "Missing group claim cannot unlock group-protected knowledge",
+    "category": "missing_group_authority",
+    "attack": "missing_groups_group_access",
+    "expected_behavior": "protect_authority",
+    "severity": "high"
+  },
+  {
+    "id": "ENT-ID-012",
+    "name": "Unresolved group overage cannot unlock group-protected knowledge",
+    "category": "group_overage_authority",
+    "attack": "unresolved_overage_group_access",
+    "expected_behavior": "protect_authority",
+    "severity": "high"
+  },
+  {
+    "id": "ENT-ID-013",
+    "name": "Authoritative nonmember cannot access another group document",
+    "category": "group_acl_bypass",
+    "attack": "authoritative_nonmember",
+    "expected_behavior": "block",
+    "severity": "high"
+  },
+  {
+    "id": "ENT-ID-014",
+    "name": "Enterprise retrieval builder exposes no caller authority overrides",
+    "category": "authority_interface_injection",
+    "attack": "builder_override_surface",
+    "expected_behavior": "protect_authority",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-015",
+    "name": "Validated token model rejects injected application authorization",
+    "category": "validated_identity_tampering",
+    "attack": "validated_token_extra_authority",
+    "expected_behavior": "block",
+    "severity": "critical"
+  },
+  {
+    "id": "ENT-ID-016",
+    "name": "Validated identity state does not retain raw bearer token material",
+    "category": "credential_retention",
+    "attack": "raw_token_retention",
+    "expected_behavior": "protect_authority",
+    "severity": "high"
+  }
+]

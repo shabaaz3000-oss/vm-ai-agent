@@ -1,11 +1,14 @@
 from typing import Literal
 
+from uuid import UUID
+
 from fastapi import HTTPException
 from fastapi import status
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import field_validator
 
 from app.auth import Principal
 from app.models import KnowledgeChunk
@@ -67,6 +70,80 @@ class RetrievalPrincipal(BaseModel):
 
     retrieval_access: RetrievalAccess
 
+    # None:
+    #     complete authoritative group membership
+    #     is unavailable.
+    #
+    # tuple:
+    #     complete authoritative membership is
+    #     known, including () for zero groups.
+
+    group_ids: tuple[str, ...] | None = None
+
+    @field_validator(
+        "group_ids",
+        mode="before",
+    )
+    @classmethod
+    def normalize_group_ids(
+        cls,
+        value,
+    ) -> tuple[str, ...] | None:
+
+        if value is None:
+            return None
+
+        if not isinstance(
+            value,
+            (
+                list,
+                tuple,
+            ),
+        ):
+            raise ValueError(
+                "Retrieval principal group IDs must "
+                "be a sequence."
+            )
+
+        normalized: set[str] = set()
+
+        for item in value:
+
+            if (
+                not isinstance(
+                    item,
+                    str,
+                )
+                or not item.strip()
+            ):
+                raise ValueError(
+                    "Retrieval principal group IDs must "
+                    "contain GUID strings."
+                )
+
+            try:
+
+                normalized.add(
+                    str(
+                        UUID(
+                            item.strip()
+                        )
+                    )
+                )
+
+            except ValueError as exc:
+
+                raise ValueError(
+                    "Retrieval principal group IDs must "
+                    "contain valid GUIDs."
+                ) from exc
+
+        return tuple(
+            sorted(
+                normalized
+            )
+        )
+
 
 # -------------------------------------------------
 # BUILD AUTHORITATIVE RETRIEVAL PRINCIPAL
@@ -106,10 +183,66 @@ RetrievalAuthorizationReason = Literal[
     "missing_tenant_scope",
     "tenant_mismatch",
     "principal_acl_denied",
+    "group_acl_denied",
+    "group_membership_unavailable",
+    "invalid_group_authority",
     "invalid_retrieval_access",
     "classification_denied",
     "invalid_authorization_metadata",
 ]
+
+
+
+def _canonicalize_group_ids(
+    values,
+) -> tuple[str, ...]:
+    """
+    Revalidate group IDs directly at the authorization
+    policy boundary so malformed or tampered state fails
+    closed even if ordinary model validation was bypassed.
+    """
+
+    if not isinstance(
+        values,
+        (
+            list,
+            tuple,
+        ),
+    ):
+        raise ValueError(
+            "Group authorization metadata must "
+            "be a sequence."
+        )
+
+    normalized: set[str] = set()
+
+    for item in values:
+
+        if (
+            not isinstance(
+                item,
+                str,
+            )
+            or not item.strip()
+        ):
+            raise ValueError(
+                "Group authorization metadata must "
+                "contain GUID strings."
+            )
+
+        normalized.add(
+            str(
+                UUID(
+                    item.strip()
+                )
+            )
+        )
+
+    return tuple(
+        sorted(
+            normalized
+        )
+    )
 
 
 class RetrievalAuthorizationDecision(BaseModel):
@@ -143,7 +276,7 @@ def evaluate_knowledge_chunk_authorization(
     Principal-aware authorization evaluates:
 
     1. authoritative tenant membership
-    2. document-level principal ACL
+    2. document principal/group ACL
     3. standard/restricted knowledge classification
 
     The returned reason code is deterministic and safe for
@@ -182,20 +315,134 @@ def evaluate_knowledge_chunk_authorization(
         # ---------------------------------------------
         # DOCUMENT ACL
         # ---------------------------------------------
+        #
+        # Neither ACL configured:
+        #     tenant-wide document
+        #
+        # One ACL configured:
+        #     that branch must authorize
+        #
+        # Both configured:
+        #     principal OR authoritative group match
+        # ---------------------------------------------
 
-        if (
+        principal_acl_configured = (
             chunk.allowed_principal_ids
             is not None
-            and
-            retrieval_principal.principal_id
-            not in chunk.allowed_principal_ids
+        )
+
+        group_acl_configured = (
+            chunk.allowed_group_ids
+            is not None
+        )
+
+        canonical_group_acl = None
+
+        if group_acl_configured:
+
+            try:
+
+                canonical_group_acl = (
+                    _canonicalize_group_ids(
+                        chunk.allowed_group_ids
+                    )
+                )
+
+            except (
+                ValueError,
+                TypeError,
+                AttributeError,
+            ):
+
+                return RetrievalAuthorizationDecision(
+                    allowed=False,
+                    reason=
+                        "invalid_authorization_metadata",
+                )
+
+        if (
+            principal_acl_configured
+            or group_acl_configured
         ):
 
-            return RetrievalAuthorizationDecision(
-                allowed=False,
-                reason=
-                    "principal_acl_denied",
+            principal_match = (
+                principal_acl_configured
+                and
+                retrieval_principal.principal_id
+                in chunk.allowed_principal_ids
             )
+
+            if not principal_match:
+
+                if group_acl_configured:
+
+                    # An explicit empty group ACL grants
+                    # access to no group and requires no
+                    # membership lookup.
+
+                    if not canonical_group_acl:
+
+                        return RetrievalAuthorizationDecision(
+                            allowed=False,
+                            reason=
+                                "group_acl_denied",
+                        )
+
+                    if (
+                        retrieval_principal.group_ids
+                        is None
+                    ):
+
+                        return RetrievalAuthorizationDecision(
+                            allowed=False,
+                            reason=
+                                "group_membership_unavailable",
+                        )
+
+                    try:
+
+                        authoritative_groups = (
+                            _canonicalize_group_ids(
+                                retrieval_principal
+                                .group_ids
+                            )
+                        )
+
+                    except (
+                        ValueError,
+                        TypeError,
+                        AttributeError,
+                    ):
+
+                        return RetrievalAuthorizationDecision(
+                            allowed=False,
+                            reason=
+                                "invalid_group_authority",
+                        )
+
+                    group_match = bool(
+                        set(
+                            authoritative_groups
+                        ).intersection(
+                            canonical_group_acl
+                        )
+                    )
+
+                    if not group_match:
+
+                        return RetrievalAuthorizationDecision(
+                            allowed=False,
+                            reason=
+                                "group_acl_denied",
+                        )
+
+                else:
+
+                    return RetrievalAuthorizationDecision(
+                        allowed=False,
+                        reason=
+                            "principal_acl_denied",
+                    )
 
         effective_access = (
             retrieval_principal
