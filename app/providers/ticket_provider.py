@@ -10,6 +10,46 @@ from app.ticket_execution_context import (
 )
 
 
+class TicketProviderAmbiguousOutcomeError(
+    RuntimeError
+):
+    """
+    External provider failure where the caller cannot safely
+    determine whether the side effect completed.
+
+    Automatic retry is forbidden until reconciliation confirms
+    the external state.
+    """
+
+    def __init__(
+        self,
+        *,
+        correlation_id: str,
+    ) -> None:
+
+        if (
+            not isinstance(
+                correlation_id,
+                str,
+            )
+            or not correlation_id.strip()
+        ):
+
+            raise ValueError(
+                "A non-blank correlation_id is required."
+            )
+
+        self.correlation_id = (
+            correlation_id.strip()
+        )
+
+        super().__init__(
+            "External ticket creation outcome is ambiguous. "
+            "Reconcile the external system using correlation_id "
+            "before any retry."
+        )
+
+
 @runtime_checkable
 class TicketProvider(Protocol):
     """

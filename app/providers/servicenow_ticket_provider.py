@@ -7,11 +7,20 @@ from app.models import TicketDraft
 
 from app.providers.servicenow_client import (
     ServiceNowClient,
+    ServiceNowTransportError,
+)
+
+from app.providers.servicenow_correlation import (
+    build_servicenow_correlation_id,
 )
 
 from app.providers.servicenow_routing import (
     ServiceNowRoutingPolicy,
     normalize_assignment_group_sys_id,
+)
+
+from app.providers.ticket_provider import (
+    TicketProviderAmbiguousOutcomeError,
 )
 
 from app.ticket_execution_context import (
@@ -223,12 +232,18 @@ class ServiceNowTicketProvider:
             )
         )
 
+        correlation_id = (
+            build_servicenow_correlation_id(
+                execution_context
+            )
+        )
+
         payload = self.build_payload(
             ticket=ticket,
             assignment_group_sys_id=
                 assignment_group_sys_id,
             correlation_id=
-                approval_id,
+                correlation_id,
         )
 
         # Consume the exact-ticket approval immediately before
@@ -245,9 +260,20 @@ class ServiceNowTicketProvider:
                 "ticket creation."
             )
 
-        result = self._client.create_record(
-            payload
-        )
+        try:
+
+            result = self._client.create_record(
+                payload
+            )
+
+        except ServiceNowTransportError as error:
+
+            raise (
+                TicketProviderAmbiguousOutcomeError(
+                    correlation_id=
+                        correlation_id,
+                )
+            ) from error
 
         return {
             **ticket.model_dump(),
