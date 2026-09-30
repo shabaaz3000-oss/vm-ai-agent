@@ -23,6 +23,19 @@ from app.workflow_store import (
     update_workflow,
 )
 
+from app.api_security_context import (
+    APIContextConfigurationError,
+    APITenantBindingError,
+    build_api_security_context,
+)
+from app.audit import log_event
+from app.providers.servicenow_client import (
+    ServiceNowClientError,
+)
+from app.servicenow_reconciliation import (
+    resolve_servicenow_workflow,
+)
+
 
 # -------------------------------------------------
 # APPLICATION
@@ -259,3 +272,262 @@ def reconcile_workflow(
         )
 
     return result
+
+# -------------------------------------------------
+# SERVICENOW HUMAN RECONCILIATION CONTROL PLANE
+# -------------------------------------------------
+
+
+def _servicenow_resolution_audit_fields(
+    workflow_id: str,
+    principal: Principal,
+    *,
+    security_context: SecurityContext | None = None,
+) -> dict[str, str]:
+    """
+    Return non-secret identity fields for operator audit events.
+
+    Raw API session identifiers are deliberately excluded.
+    """
+
+    details = {
+        "workflow_id":
+            workflow_id,
+
+        "principal_id":
+            principal.username,
+
+        "role":
+            principal.role,
+    }
+
+    if security_context is not None:
+
+        details.update(
+            {
+                "tenant_id":
+                    security_context.tenant_id,
+
+                "session_correlation_id":
+                    security_context
+                    .session_correlation_id,
+            }
+        )
+
+    return details
+
+
+@app.post(
+    "/workflows/{workflow_id}/servicenow-resolution",
+    response_model=WorkflowResult,
+)
+def resolve_servicenow_workflow_endpoint(
+    workflow_id: str,
+
+    principal: Principal = Depends(
+        require_approver
+    ),
+):
+    """
+    Human-operator-only ServiceNow reconciliation resolution.
+
+    The request supplies no reconciliation truth. The server
+    derives tenant/session authority, performs a fresh read-only
+    ServiceNow lookup, and applies the allowed atomic transition.
+    """
+
+    try:
+
+        trusted_context = (
+            build_api_security_context(
+                principal
+            )
+        )
+
+    except APITenantBindingError:
+
+        log_event(
+            "SERVICENOW_RECONCILIATION_DENIED",
+            {
+                **_servicenow_resolution_audit_fields(
+                    workflow_id,
+                    principal,
+                ),
+
+                "reason":
+                    "principal_not_tenant_bound",
+            },
+        )
+
+        raise HTTPException(
+            status_code=
+                status.HTTP_403_FORBIDDEN,
+
+            detail=(
+                "Authenticated principal has no "
+                "trusted API tenant binding."
+            ),
+        )
+
+    except APIContextConfigurationError:
+
+        log_event(
+            "SERVICENOW_RECONCILIATION_FAILED",
+            {
+                **_servicenow_resolution_audit_fields(
+                    workflow_id,
+                    principal,
+                ),
+
+                "reason":
+                    "api_tenant_authority_unavailable",
+            },
+        )
+
+        raise HTTPException(
+            status_code=
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+
+            detail=(
+                "Trusted API tenant authority "
+                "is unavailable."
+            ),
+        )
+
+    audit_identity = (
+        _servicenow_resolution_audit_fields(
+            workflow_id,
+            principal,
+            security_context=
+                trusted_context,
+        )
+    )
+
+    log_event(
+        "SERVICENOW_RECONCILIATION_REQUESTED",
+        audit_identity,
+    )
+
+    try:
+
+        resolved = (
+            resolve_servicenow_workflow(
+                workflow_id,
+                security_context=
+                    trusted_context,
+            )
+        )
+
+    except KeyError:
+
+        log_event(
+            "SERVICENOW_RECONCILIATION_FAILED",
+            {
+                **audit_identity,
+                "reason":
+                    "workflow_not_found",
+            },
+        )
+
+        raise HTTPException(
+            status_code=
+                status.HTTP_404_NOT_FOUND,
+
+            detail=
+                "Workflow not found.",
+        )
+
+    except PermissionError as error:
+
+        log_event(
+            "SERVICENOW_RECONCILIATION_DENIED",
+            {
+                **audit_identity,
+
+                "reason":
+                    error.__class__.__name__,
+            },
+        )
+
+        raise HTTPException(
+            status_code=
+                status.HTTP_409_CONFLICT,
+
+            detail=
+                str(error),
+        )
+
+    except ServiceNowClientError:
+
+        log_event(
+            "SERVICENOW_RECONCILIATION_FAILED",
+            {
+                **audit_identity,
+
+                "reason":
+                    "servicenow_lookup_failed",
+            },
+        )
+
+        raise HTTPException(
+            status_code=
+                status.HTTP_502_BAD_GATEWAY,
+
+            detail=(
+                "ServiceNow reconciliation "
+                "lookup failed."
+            ),
+        )
+
+    except ValueError as error:
+
+        log_event(
+            "SERVICENOW_RECONCILIATION_FAILED",
+            {
+                **audit_identity,
+
+                "reason":
+                    error.__class__.__name__,
+            },
+        )
+
+        raise HTTPException(
+            status_code=
+                status.HTTP_400_BAD_REQUEST,
+
+            detail=
+                str(error),
+        )
+
+    resolution = (
+        "CONFIRMED"
+        if resolved.status
+        == "TICKET_CREATED"
+
+        else "RETRY_AUTHORIZED"
+        if resolved.status
+        == "AWAITING_APPROVAL"
+
+        else "UNKNOWN"
+    )
+
+    log_event(
+        "SERVICENOW_RECONCILIATION_RESOLVED",
+        {
+            **audit_identity,
+
+            "resolution":
+                resolution,
+
+            "workflow_status":
+                resolved.status,
+
+            "execution_attempt_id":
+                (
+                    resolved.execution_attempt_id
+                    or ""
+                ),
+        },
+    )
+
+    return resolved

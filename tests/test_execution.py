@@ -434,7 +434,7 @@ def test_execution_authorization_failure_is_logged_and_blocked(
 
     monkeypatch.setattr(
         execution,
-        "create_mock_ticket",
+        "_create_ticket_with_selected_provider",
         blocked_ticket_creation
     )
 
@@ -563,7 +563,7 @@ def test_claim_and_execute_uses_atomic_workflow_claim(
 
     monkeypatch.setattr(
         execution,
-        "create_mock_ticket",
+        "_create_ticket_with_selected_provider",
         fake_ticket_creation
     )
 
@@ -654,7 +654,7 @@ def test_failed_atomic_claim_prevents_ticket_execution(
 
     monkeypatch.setattr(
         execution,
-        "create_mock_ticket",
+        "_create_ticket_with_selected_provider",
         fake_ticket_creation
     )
 
@@ -772,7 +772,7 @@ def test_successful_atomic_execution_preserves_attempt_metadata(
 
     monkeypatch.setattr(
         execution,
-        "create_mock_ticket",
+        "_create_ticket_with_selected_provider",
         fake_ticket_creation,
     )
 
@@ -846,7 +846,7 @@ def test_execution_failure_moves_workflow_to_needs_review(
 
     monkeypatch.setattr(
         execution,
-        "create_mock_ticket",
+        "_create_ticket_with_selected_provider",
         failed_ticket_creation,
     )
 
@@ -979,7 +979,7 @@ def test_stale_reconciliation_never_executes_ticket(
 
     monkeypatch.setattr(
         execution,
-        "create_mock_ticket",
+        "_create_ticket_with_selected_provider",
         fake_ticket_creation,
     )
 

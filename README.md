@@ -797,7 +797,7 @@ caller_access
 The current project authentication mechanism uses environment-provided
 bearer tokens for demonstration and development purposes.
 
-Production identity federation such as OIDC is a future enhancement.
+Enterprise identity-provider integration is implemented for validated enterprise identity flows; the environment-provided bearer-token path remains available for development and demonstration.
 
 ---
 
@@ -1597,7 +1597,7 @@ context rather than from model-supplied tool arguments.
 The current bearer-token implementation is intended for development and
 portfolio demonstration.
 
-Enterprise identity federation such as OIDC is a future enhancement.
+Enterprise identity-provider integration is implemented for the enterprise authority path, while the bearer-token implementation remains the development and portfolio-demonstration path.
 
 ---
 
@@ -1844,17 +1844,17 @@ This is a portfolio and engineering demonstration, not a production vulnerabilit
 
 Current limitations include:
 
-- ServiceNow integration is represented by controlled mock ticket creation rather than a production ServiceNow instance.
+- A hardened ServiceNow REST boundary is implemented and tested without requiring a live enterprise ServiceNow instance; live deployment validation remains environment-specific.
 - Demo API authentication uses environment-provided bearer tokens rather than enterprise OIDC.
 - The credential-free demo uses a deterministic local advisory analyzer rather than a live LLM.
 - Live Tenable API functionality requires authorized Tenable credentials.
 - Prompt-injection and RAG-poisoning detection are currently pattern-based and should be treated as one layer within a broader defense-in-depth strategy.
 - The current RAG implementation uses a lightweight local vector index intended for demonstration rather than a production vector database.
 - Retrieval access control currently filters evidence before model context is built, but stronger production designs should partition or authorize restricted knowledge before embedding and semantic search as well.
-- The standard/restricted retrieval-access decision is now derived from the authenticated development/demo Principal, but it is not yet derived from enterprise OIDC claims, document ACLs, tenant ownership, or an external policy engine.
+- Retrieval authorization supports trusted enterprise identity-aware authority as well as the development/demo Principal path; production document-ACL, tenant-ownership, and external policy-engine integration remain future hardening work.
 - The RAG evaluation corpus is intentionally synthetic and small; it does not represent a comprehensive production AI red-team program.
 - The current adversarial evaluator validates known security properties but does not yet produce longitudinal scoring, trend data, or coverage metrics.
-- The current server-controlled ticket assignment uses a conservative fallback rather than production CMDB or ServiceNow routing.
+- The production ServiceNow provider uses server-controlled tenant-to-assignment-group routing; production CMDB-derived ownership and assignment enrichment are not yet implemented.
 - Production secret management, distributed execution coordination, enterprise observability, and high-availability infrastructure are not yet implemented.
 
 These limitations are kept explicit so the project does not imply production capabilities that have not been implemented.
@@ -1866,9 +1866,9 @@ These limitations are kept explicit so the project does not imply production cap
 Potential next steps include:
 
 ```text
-Production ServiceNow REST integration
-OIDC / enterprise identity integration
-Enterprise identity, document-ACL, and policy-engine-derived retrieval authorization
+Live enterprise ServiceNow deployment validation, monitoring, and operational runbooks
+Production identity-provider deployment hardening, metadata/key rotation, and operational monitoring
+Document-ACL, tenant-ownership, and external policy-engine-derived retrieval authorization
 Pre-embedding / pre-search authorization partitioning
 Production vector database integration
 Additional RAG poisoning and indirect prompt-injection cases
@@ -1897,3 +1897,89 @@ The central design principle of this project is:
 > **AI may recommend. Deterministic policy decides. Humans authorize. Controlled code executes.**
 
 That separation of authority is the core security boundary of the VM AI Agent.
+---
+
+## Production ServiceNow Ticketing Boundary
+
+The VM AI Agent supports a server-selected ticket-provider boundary:
+
+- `mock` remains the safe local-development and demonstration default.
+- `servicenow` enables the hardened ServiceNow REST integration.
+
+`TICKET_PROVIDER` is server-owned configuration. The model, MCP clients, workflow requests, ticket drafts, approvals, and API callers cannot choose the production provider.
+
+### Production Configuration
+
+When `TICKET_PROVIDER=servicenow`, configure:
+
+| Variable | Purpose |
+| --- | --- |
+| `TICKET_PROVIDER` | Selects `mock` or `servicenow`; defaults to `mock`. |
+| `SERVICENOW_INSTANCE_URL` | Trusted HTTPS ServiceNow instance root. |
+| `SERVICENOW_USERNAME` | ServiceNow integration-account username. |
+| `SERVICENOW_PASSWORD` | ServiceNow integration-account secret; supply through runtime secret management and never commit it. |
+| `SERVICENOW_TABLE` | Hardened Table API target; the implemented profile permits `incident`. |
+| `SERVICENOW_TIMEOUT_SECONDS` | Bounded outbound HTTP timeout; defaults to `10`. |
+| `SERVICENOW_TENANT_ASSIGNMENT_GROUPS` | JSON map of trusted tenant IDs to exact ServiceNow assignment-group `sys_id` values. |
+| `VM_AI_API_TENANT_BINDINGS` | JSON map of authenticated API principal IDs to trusted tenant IDs for human reconciliation. |
+
+Example non-secret mappings:
+
+```text
+SERVICENOW_TENANT_ASSIGNMENT_GROUPS={"tenant-alpha":"00000000000000000000000000000000"}
+VM_AI_API_TENANT_BINDINGS={"api-approver":"tenant-alpha"}
+```
+
+Assignment-group routing is server authority. Model output, ticket fields, MCP arguments, approval data, and API request bodies cannot choose the ServiceNow assignment group.
+
+### Controlled Write and Reconciliation
+
+The production write path is:
+
+```text
+validated identity
+  -> trusted SecurityContext
+  -> tenant-bound workflow
+  -> human approval
+  -> atomic execution claim
+  -> execution_attempt_id
+  -> deterministic correlation_id
+  -> server-owned tenant routing
+  -> one ServiceNow POST
+```
+
+The client does **not** blindly retry an ambiguous external write. If the outcome is uncertain, the workflow moves to `NEEDS_REVIEW` and a fresh read-only ServiceNow lookup is performed using the server-derived correlation ID.
+
+Reconciliation outcomes:
+
+- **CONFIRMED** — exactly one record exists; atomically transition `NEEDS_REVIEW -> TICKET_CREATED`.
+- **NOT_FOUND** — no record is visible; do not auto-replay the old POST. A trusted human may authorize `NEEDS_REVIEW -> AWAITING_APPROVAL`; the next claim creates a new `execution_attempt_id`.
+- **CONFLICT** — multiple records exist; remain `NEEDS_REVIEW` and keep retry blocked.
+
+A `NOT_FOUND` result is not automatic retry authority because downstream visibility or replication delay can create a temporary false negative.
+
+### Human Operator Resolution
+
+```text
+POST /workflows/{workflow_id}/servicenow-resolution
+```
+
+This endpoint requires authentication and the `APPROVER` role, has no reconciliation request body, derives tenant authority from `VM_AI_API_TENANT_BINDINGS`, generates the API session server-side, and accepts no caller-controlled outcome, tenant, correlation ID, ticket number, `sys_id`, table, assignment group, or raw ServiceNow query.
+
+It is distinct from `POST /workflows/{workflow_id}/reconcile`, which handles stale local `PROCESSING` recovery.
+
+### AI and MCP Non-Exposure
+
+The ServiceNow resolution capability is not registered as an LLM-visible tool, not emitted as an OpenAI function tool, not exposed through MCP, and not reachable through the read-only LLM dispatcher.
+
+AI output may propose an action, but it cannot authorize, execute, retry, or reconcile an enterprise side effect on its own.
+
+### Operational Security Notes
+
+- Keep real ServiceNow credentials in deployment secret management.
+- Do not commit credential-bearing `.env` files.
+- Use a dedicated least-privileged ServiceNow integration account.
+- Configure explicit tenant-to-assignment-group mappings.
+- Configure explicit API-principal-to-tenant bindings for human approvers.
+- Treat `NEEDS_REVIEW` as a manual reconciliation state, not automatic retry permission.
+- Production deployment still requires environment-specific monitoring, identity, networking, retention, and operational controls.

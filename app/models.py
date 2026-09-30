@@ -336,6 +336,16 @@ class WorkflowSecurity(BaseModel):
 class WorkflowResult(BaseModel):
     workflow_id: str
 
+    # Internal application tenant bound from
+    # trusted SecurityContext authority.
+    #
+    # None represents a legacy/local workflow
+    # that has not yet crossed a tenant-aware
+    # authorization boundary. Production
+    # tenant-sensitive actions must reject
+    # unbound workflows.
+    tenant_id: str | None = None
+
     status: Literal[
         "AWAITING_APPROVAL",
         "PROCESSING",

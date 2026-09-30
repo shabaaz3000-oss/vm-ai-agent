@@ -340,4 +340,19 @@ def test_execution_tool_accepts_only_identity_and_workflow():
     ) == [
         "principal",
         "workflow_id",
+        "security_context",
     ]
+
+    assert (
+        signature.parameters[
+            "security_context"
+        ].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
+
+    assert (
+        signature.parameters[
+            "security_context"
+        ].default
+        is None
+    )

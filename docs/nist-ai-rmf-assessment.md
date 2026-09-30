@@ -160,7 +160,7 @@ The application may produce:
 - remediation recommendations;
 - proposed workflow actions;
 - workflow state transitions;
-- mock remediation tickets;
+- remediation tickets through the mock provider or the hardened ServiceNow provider;
 - audit events; and
 - reconstructed execution traces.
 
@@ -366,7 +366,7 @@ Some residual risk is accepted because this is a portfolio-scale demonstration s
 Examples include:
 
 - limited adversarial evaluation coverage;
-- reliance on mock downstream systems;
+- limited validation against a live enterprise ServiceNow deployment;
 - limited production telemetry; and
 - lack of large-scale AI performance benchmarking.
 
@@ -850,7 +850,7 @@ Relevant existing controls include:
 - secret scanning in Security CI; and
 - separation between AI recommendations and unrestricted system access.
 
-Because the current project uses demonstration data and mock integrations, production privacy requirements have not yet been fully implemented.
+Because the current project uses demonstration data and has not been deployed against a production enterprise ServiceNow environment, production privacy requirements have not yet been fully implemented.
 
 **Measurement Approach**
 

@@ -4,6 +4,7 @@ from app.auth import Principal
 from app.audit import log_event
 from app.execution import claim_and_execute_workflow
 from app.models import WorkflowResult
+from app.security_context import SecurityContext
 
 from app.tools.authorization import (
     require_tool_permission,
@@ -22,6 +23,8 @@ from app.workflow_store import (
 def execute_ticket_workflow(
     principal: Principal,
     workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
 
     log_event(
@@ -90,15 +93,36 @@ def execute_ticket_workflow(
 
     try:
 
-        result = (
-            claim_and_execute_workflow(
-                workflow_id=
-                    workflow_id,
+        if security_context is None:
 
-                approved_by=
-                    principal.username,
+            # Preserve the legacy/local execution path.
+            # Tenant-bound workflows still fail closed
+            # inside the workflow-store claim.
+
+            result = (
+                claim_and_execute_workflow(
+                    workflow_id=
+                        workflow_id,
+
+                    approved_by=
+                        principal.username,
+                )
             )
-        )
+
+        else:
+
+            result = (
+                claim_and_execute_workflow(
+                    workflow_id=
+                        workflow_id,
+
+                    approved_by=
+                        principal.username,
+
+                    security_context=
+                        security_context,
+                )
+            )
 
         # -------------------------------------------------
         # 4. PERSIST SUCCESSFUL FINAL STATE
