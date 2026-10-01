@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import runpy
 
+from datetime import timedelta
+
 from concurrent.futures import (
     ThreadPoolExecutor,
 )
@@ -584,4 +586,700 @@ def test_multi_instance_reconciliation_has_exactly_one_winner():
         authoritative
         .execution_attempt_id
         == review.execution_attempt_id
+    )
+
+
+# ============================================================
+# STEP 49.4 ? ADVERSARIAL DISTRIBUTED RECOVERY
+# ============================================================
+
+
+def test_multi_instance_stale_recovery_has_exactly_one_winner():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    result = workflow()
+
+    first.save_workflow(
+        result
+    )
+
+    claimed = (
+        first
+        .claim_workflow_for_execution(
+            result.workflow_id
+        )
+    )
+
+    assert (
+        claimed.processing_started_at
+        is not None
+    )
+
+    effective_now = (
+        claimed.processing_started_at
+        + timedelta(
+            seconds=301
+        )
+    )
+
+    barrier = Barrier(
+        2
+    )
+
+    def compete(
+        store: PostgreSQLWorkflowStore,
+    ) -> bool:
+
+        barrier.wait(
+            timeout=10
+        )
+
+        try:
+            store \
+                .mark_stale_processing_for_review(
+                    result.workflow_id,
+                    stale_after_seconds=300,
+                    now=effective_now,
+                )
+
+        except PermissionError:
+            return False
+
+        return True
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        first_future = executor.submit(
+            compete,
+            first,
+        )
+
+        second_future = executor.submit(
+            compete,
+            second,
+        )
+
+        outcomes = (
+            first_future.result(),
+            second_future.result(),
+        )
+
+    assert sorted(outcomes) == [
+        False,
+        True,
+    ]
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert (
+        authoritative.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        authoritative.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert (
+        authoritative.recovery_reason
+        is not None
+    )
+
+
+def test_multi_instance_retry_authorization_has_exactly_one_winner():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+    first.save_workflow(
+        result
+    )
+
+    claimed = (
+        first
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=approver,
+        )
+    )
+
+    review = (
+        first
+        .mark_workflow_needs_review(
+            result.workflow_id,
+            "External action outcome is ambiguous.",
+        )
+    )
+
+    barrier = Barrier(
+        2
+    )
+
+    def compete(
+        store: PostgreSQLWorkflowStore,
+    ) -> bool:
+
+        barrier.wait(
+            timeout=10
+        )
+
+        try:
+            store.authorize_reconciled_retry(
+                result.workflow_id,
+                expected_execution_attempt_id=
+                    review.execution_attempt_id,
+                security_context=approver,
+            )
+
+        except PermissionError:
+            return False
+
+        return True
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        first_future = executor.submit(
+            compete,
+            first,
+        )
+
+        second_future = executor.submit(
+            compete,
+            second,
+        )
+
+        outcomes = (
+            first_future.result(),
+            second_future.result(),
+        )
+
+    assert sorted(outcomes) == [
+        False,
+        True,
+    ]
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert (
+        authoritative.status
+        == "AWAITING_APPROVAL"
+    )
+
+    # The ambiguous attempt remains attached for audit provenance
+    # until the next fresh execution claim.
+    assert (
+        authoritative.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert authoritative.approval_id is None
+    assert authoritative.ticket_id is None
+
+
+def test_stale_reconciliation_attempt_is_rejected_after_fresh_claim():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    first_instance = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    restarted_instance = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+    first_instance.save_workflow(
+        result
+    )
+
+    first_claim = (
+        first_instance
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=approver,
+        )
+    )
+
+    first_instance \
+        .mark_workflow_needs_review(
+            result.workflow_id,
+            "First execution requires reconciliation.",
+        )
+
+    first_instance \
+        .authorize_reconciled_retry(
+            result.workflow_id,
+            expected_execution_attempt_id=
+                first_claim.execution_attempt_id,
+            security_context=approver,
+        )
+
+    second_claim = (
+        restarted_instance
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=approver,
+        )
+    )
+
+    assert (
+        second_claim.execution_attempt_id
+        != first_claim.execution_attempt_id
+    )
+
+    restarted_instance \
+        .mark_workflow_needs_review(
+            result.workflow_id,
+            "Second execution requires reconciliation.",
+        )
+
+    with pytest.raises(
+        PermissionError,
+        match="execution attempt changed",
+    ):
+        first_instance \
+            .confirm_reconciled_ticket_creation(
+                result.workflow_id,
+                expected_execution_attempt_id=
+                    first_claim.execution_attempt_id,
+                ticket_id="INC-STALE-ATTEMPT",
+                security_context=approver,
+            )
+
+    authoritative = (
+        restarted_instance
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert (
+        authoritative.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        authoritative.execution_attempt_id
+        == second_claim.execution_attempt_id
+    )
+
+    assert authoritative.ticket_id is None
+
+
+def test_restarted_instance_can_recover_stale_processing_state():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    original_instance = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    result = workflow()
+
+    original_instance.save_workflow(
+        result
+    )
+
+    claimed = (
+        original_instance
+        .claim_workflow_for_execution(
+            result.workflow_id
+        )
+    )
+
+    assert (
+        claimed.processing_started_at
+        is not None
+    )
+
+    # Simulate process loss by abandoning the original store
+    # instance and constructing a completely new runtime store.
+    del original_instance
+
+    restarted_instance = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    recovered = (
+        restarted_instance
+        .mark_stale_processing_for_review(
+            result.workflow_id,
+            stale_after_seconds=300,
+            now=(
+                claimed.processing_started_at
+                + timedelta(
+                    seconds=301
+                )
+            ),
+        )
+    )
+
+    assert (
+        recovered.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        recovered.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    authoritative = (
+        restarted_instance
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert authoritative == recovered
+
+
+def test_confirm_vs_retry_race_has_exactly_one_resolution():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    confirmation_instance = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    retry_instance = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+    confirmation_instance.save_workflow(
+        result
+    )
+
+    claimed = (
+        confirmation_instance
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=approver,
+        )
+    )
+
+    review = (
+        confirmation_instance
+        .mark_workflow_needs_review(
+            result.workflow_id,
+            "Human reconciliation required.",
+        )
+    )
+
+    assert (
+        review.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    barrier = Barrier(
+        2
+    )
+
+    def confirm() -> str:
+
+        barrier.wait(
+            timeout=10
+        )
+
+        try:
+            confirmation_instance \
+                .confirm_reconciled_ticket_creation(
+                    result.workflow_id,
+                    expected_execution_attempt_id=
+                        review.execution_attempt_id,
+                    ticket_id="INC-RACE-CONFIRMED",
+                    security_context=approver,
+                )
+
+        except PermissionError:
+            return "lost"
+
+        return "confirmed"
+
+    def retry() -> str:
+
+        barrier.wait(
+            timeout=10
+        )
+
+        try:
+            retry_instance \
+                .authorize_reconciled_retry(
+                    result.workflow_id,
+                    expected_execution_attempt_id=
+                        review.execution_attempt_id,
+                    security_context=approver,
+                )
+
+        except PermissionError:
+            return "lost"
+
+        return "retry"
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        confirm_future = executor.submit(
+            confirm
+        )
+
+        retry_future = executor.submit(
+            retry
+        )
+
+        outcomes = {
+            confirm_future.result(),
+            retry_future.result(),
+        }
+
+    assert "lost" in outcomes
+
+    assert (
+        "confirmed" in outcomes
+        or "retry" in outcomes
+    )
+
+    assert len(outcomes) == 2
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert authoritative.status in {
+        "TICKET_CREATED",
+        "AWAITING_APPROVAL",
+    }
+
+    if (
+        authoritative.status
+        == "TICKET_CREATED"
+    ):
+        assert (
+            authoritative.ticket_id
+            == "INC-RACE-CONFIRMED"
+        )
+
+    else:
+        assert authoritative.ticket_id is None
+
+
+def test_retry_then_competing_claims_create_one_fresh_attempt():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+    first.save_workflow(
+        result
+    )
+
+    ambiguous_claim = (
+        first
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=approver,
+        )
+    )
+
+    review = (
+        first
+        .mark_workflow_needs_review(
+            result.workflow_id,
+            "Ambiguous external write.",
+        )
+    )
+
+    first.authorize_reconciled_retry(
+        result.workflow_id,
+        expected_execution_attempt_id=
+            review.execution_attempt_id,
+        security_context=approver,
+    )
+
+    barrier = Barrier(
+        2
+    )
+
+    def compete(
+        store: PostgreSQLWorkflowStore,
+    ) -> str | None:
+
+        barrier.wait(
+            timeout=10
+        )
+
+        try:
+            claimed = (
+                store
+                .claim_workflow_for_execution(
+                    result.workflow_id,
+                    security_context=approver,
+                )
+            )
+
+        except PermissionError:
+            return None
+
+        return claimed.execution_attempt_id
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        first_future = executor.submit(
+            compete,
+            first,
+        )
+
+        second_future = executor.submit(
+            compete,
+            second,
+        )
+
+        attempt_ids = [
+            value
+            for value in (
+                first_future.result(),
+                second_future.result(),
+            )
+            if value is not None
+        ]
+
+    assert len(attempt_ids) == 1
+
+    fresh_attempt_id = attempt_ids[0]
+
+    assert (
+        fresh_attempt_id
+        != ambiguous_claim.execution_attempt_id
+    )
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+    assert (
+        authoritative.execution_attempt_id
+        == fresh_attempt_id
     )
