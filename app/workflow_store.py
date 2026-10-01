@@ -1071,6 +1071,10 @@ WORKFLOW_STORE_BACKEND_ENV = (
     "VM_AI_WORKFLOW_STORE_BACKEND"
 )
 
+WORKFLOW_STORE_DATABASE_URL_ENV = (
+    "VM_AI_WORKFLOW_DATABASE_URL"
+)
+
 
 class SQLiteWorkflowStore:
     """
@@ -1191,8 +1195,8 @@ def get_workflow_store_backend_name() -> str:
     Resolve the configured workflow persistence backend.
 
     SQLite remains the backward-compatible local/test default.
-    Production deployments will explicitly select PostgreSQL
-    after the PostgreSQL implementation is installed.
+    Production deployments may explicitly select PostgreSQL
+    using a separately configured database URL.
     """
 
     configured = (
@@ -1211,6 +1215,94 @@ def get_workflow_store_backend_name() -> str:
         )
 
     return backend
+
+
+
+def _get_postgresql_workflow_database_url() -> str:
+    """
+    Resolve and validate the PostgreSQL workflow database URL.
+
+    The value is never included in configuration error messages
+    so database credentials cannot leak through exception text.
+    """
+
+    from urllib.parse import parse_qs
+    from urllib.parse import urlsplit
+
+    configured = (
+        _workflow_store_os.getenv(
+            WORKFLOW_STORE_DATABASE_URL_ENV
+        )
+    )
+
+    if (
+        configured is None
+        or not configured.strip()
+    ):
+        raise RuntimeError(
+            "PostgreSQL workflow store requires "
+            "VM_AI_WORKFLOW_DATABASE_URL."
+        )
+
+    if configured != configured.strip():
+        raise RuntimeError(
+            "VM_AI_WORKFLOW_DATABASE_URL must be "
+            "a normalized PostgreSQL URL."
+        )
+
+    parsed = urlsplit(
+        configured
+    )
+
+    if (
+        parsed.scheme
+        not in {
+            "postgres",
+            "postgresql",
+        }
+        or not parsed.netloc
+    ):
+        raise RuntimeError(
+            "VM_AI_WORKFLOW_DATABASE_URL must use "
+            "a PostgreSQL URL."
+        )
+
+    environment = (
+        _workflow_store_os.getenv(
+            "VM_AI_ENV",
+            "local",
+        )
+        .strip()
+        .lower()
+    )
+
+    if environment == "production":
+
+        sslmode_values = (
+            parse_qs(
+                parsed.query
+            )
+            .get(
+                "sslmode",
+                [],
+            )
+        )
+
+        if (
+            len(sslmode_values) != 1
+            or sslmode_values[0].lower()
+            not in {
+                "require",
+                "verify-ca",
+                "verify-full",
+            }
+        ):
+            raise RuntimeError(
+                "Production PostgreSQL workflow "
+                "authority requires TLS."
+            )
+
+    return configured
 
 
 def get_workflow_store() -> WorkflowStore:
@@ -1232,10 +1324,13 @@ def get_workflow_store() -> WorkflowStore:
         "postgres",
         "postgresql",
     }:
-        raise RuntimeError(
-            "PostgreSQL workflow store selected, "
-            "but the production PostgreSQL workflow "
-            "authority has not been installed yet."
+        from app.workflow_postgresql_store import (
+            PostgreSQLWorkflowStore,
+        )
+
+        return PostgreSQLWorkflowStore(
+            database_url=
+                _get_postgresql_workflow_database_url()
         )
 
     raise RuntimeError(
