@@ -14,6 +14,7 @@ from app.workflow_store import (
     claim_workflow_for_execution,
     mark_stale_processing_for_review,
     mark_workflow_needs_review,
+    complete_workflow_execution,
 )
 
 
@@ -443,14 +444,13 @@ def claim_and_execute_workflow(
     security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
 
-    # Validate the immutable identity before the
-    # atomic workflow claim begins.
+    # Validate immutable caller identity before any
+    # authoritative workflow state transition.
 
     _validate_execution_security_identity(
         approved_by=approved_by,
         security_context=security_context,
     )
-
 
     try:
 
@@ -458,8 +458,8 @@ def claim_and_execute_workflow(
 
             # Legacy/local compatibility.
             #
-            # A tenant-bound workflow still fails closed
-            # in workflow_store before PROCESSING.
+            # Tenant-bound workflows still fail closed
+            # inside the authoritative claim.
 
             claimed_result = (
                 claim_workflow_for_execution(
@@ -495,6 +495,7 @@ def claim_and_execute_workflow(
 
         raise
 
+
     log_event(
         "WORKFLOW_EXECUTION_CLAIMED",
         {
@@ -505,7 +506,8 @@ def claim_and_execute_workflow(
                 claimed_result.status,
 
             "execution_attempt_id":
-                claimed_result.execution_attempt_id,
+                claimed_result
+                .execution_attempt_id,
 
             "processing_started_at":
                 (
@@ -522,20 +524,145 @@ def claim_and_execute_workflow(
         }
     )
 
+
     try:
+
+        # -------------------------------------------------
+        # EXTERNAL SIDE EFFECT
+        # -------------------------------------------------
+        #
+        # This returns candidate completion metadata only.
+        # It is not authoritative workflow persistence.
 
         if security_context is None:
 
-            return _execute_ticket_bound_workflow(
-                result=claimed_result,
-                approved_by=approved_by,
+            execution_result = (
+                _execute_ticket_bound_workflow(
+                    result=
+                        claimed_result,
+
+                    approved_by=
+                        approved_by,
+                )
             )
 
-        return _execute_ticket_bound_workflow(
-            result=claimed_result,
-            approved_by=approved_by,
-            security_context=security_context,
+        else:
+
+            execution_result = (
+                _execute_ticket_bound_workflow(
+                    result=
+                        claimed_result,
+
+                    approved_by=
+                        approved_by,
+
+                    security_context=
+                        security_context,
+                )
+            )
+
+
+        # -------------------------------------------------
+        # SIDE-EFFECT PROVENANCE CHECK
+        # -------------------------------------------------
+
+        if (
+            execution_result.workflow_id
+            != claimed_result.workflow_id
+        ):
+
+            raise RuntimeError(
+                "Ticket execution result changed "
+                "workflow identity."
+            )
+
+        if (
+            execution_result.execution_attempt_id
+            != claimed_result.execution_attempt_id
+        ):
+
+            raise RuntimeError(
+                "Ticket execution result changed "
+                "execution-attempt identity."
+            )
+
+        if (
+            execution_result.status
+            != "TICKET_CREATED"
+        ):
+
+            raise RuntimeError(
+                "Ticket execution did not produce "
+                "a completion candidate."
+            )
+
+        if (
+            claimed_result.execution_attempt_id
+            is None
+        ):
+
+            raise RuntimeError(
+                "Claimed workflow is missing "
+                "execution-attempt authority."
+            )
+
+
+        # -------------------------------------------------
+        # AUTHORITATIVE COMPLETION
+        # -------------------------------------------------
+        #
+        # The store re-reads and locks authoritative
+        # PROCESSING state, validates the exact execution
+        # attempt and tenant authority, and applies only
+        # the approved completion fields.
+        #
+        # Any failure here occurs AFTER the external
+        # side effect, therefore the existing recovery
+        # boundary below must treat it as ambiguous.
+
+        if security_context is None:
+
+            return (
+                complete_workflow_execution(
+                    workflow_id=
+                        workflow_id,
+
+                    expected_execution_attempt_id=
+                        claimed_result
+                        .execution_attempt_id,
+
+                    approval_id=
+                        execution_result
+                        .approval_id,
+
+                    ticket_id=
+                        execution_result
+                        .ticket_id,
+                )
+            )
+
+        return (
+            complete_workflow_execution(
+                workflow_id=
+                    workflow_id,
+
+                expected_execution_attempt_id=
+                    claimed_result
+                    .execution_attempt_id,
+
+                approval_id=
+                    execution_result
+                    .approval_id,
+
+                ticket_id=
+                    execution_result
+                    .ticket_id,
+
+                security_context=
+                    security_context,
+            )
         )
+
 
     except Exception as error:
 

@@ -82,13 +82,16 @@ def test_approver_identity_is_used_for_execution(
 
     received = {}
 
+
     class FakeResult:
 
         workflow_id = "WF-TEST1234"
         status = "TICKET_CREATED"
         ticket_id = "VM-12345678"
 
+
     result = FakeResult()
+
 
     def fake_execute(
         workflow_id,
@@ -105,6 +108,7 @@ def test_approver_identity_is_used_for_execution(
 
         return result
 
+
     monkeypatch.setattr(
         ticketing,
         "claim_and_execute_workflow",
@@ -113,20 +117,19 @@ def test_approver_identity_is_used_for_execution(
 
     monkeypatch.setattr(
         ticketing,
-        "update_workflow",
-        lambda result: result,
-    )
-
-    monkeypatch.setattr(
-        ticketing,
         "log_event",
         lambda *args, **kwargs: None,
     )
 
-    ticketing.execute_ticket_workflow(
-        principal=principal,
-        workflow_id="WF-TEST1234",
+
+    returned = (
+        ticketing
+        .execute_ticket_workflow(
+            principal=principal,
+            workflow_id="WF-TEST1234",
+        )
     )
+
 
     assert (
         received["workflow_id"]
@@ -137,6 +140,8 @@ def test_approver_identity_is_used_for_execution(
         received["approved_by"]
         == "test-approver"
     )
+
+    assert returned is result
 
 
 # -------------------------------------------------
@@ -153,7 +158,6 @@ def test_successful_execution_is_persisted(
         role="APPROVER",
     )
 
-    persisted = []
 
     class FakeResult:
 
@@ -161,28 +165,27 @@ def test_successful_execution_is_persisted(
         status = "TICKET_CREATED"
         ticket_id = "VM-12345678"
 
-    result = FakeResult()
+
+    authoritative_result = FakeResult()
+
+    calls = []
+
+
+    def fake_execute(
+        **kwargs
+    ):
+
+        calls.append(
+            kwargs
+        )
+
+        return authoritative_result
+
 
     monkeypatch.setattr(
         ticketing,
         "claim_and_execute_workflow",
-        lambda **kwargs: result,
-    )
-
-    def fake_update_workflow(
-        workflow_result,
-    ):
-
-        persisted.append(
-            workflow_result
-        )
-
-        return workflow_result
-
-    monkeypatch.setattr(
-        ticketing,
-        "update_workflow",
-        fake_update_workflow,
+        fake_execute,
     )
 
     monkeypatch.setattr(
@@ -190,6 +193,7 @@ def test_successful_execution_is_persisted(
         "log_event",
         lambda *args, **kwargs: None,
     )
+
 
     returned = (
         ticketing
@@ -199,11 +203,27 @@ def test_successful_execution_is_persisted(
         )
     )
 
-    assert persisted == [
-        result
-    ]
 
-    assert returned is result
+    assert len(
+        calls
+    ) == 1
+
+    assert (
+        calls[0]["workflow_id"]
+        == "WF-TEST1234"
+    )
+
+    assert (
+        calls[0]["approved_by"]
+        == "test-approver"
+    )
+
+    assert returned is authoritative_result
+
+    assert not hasattr(
+        ticketing,
+        "update_workflow",
+    )
 
 
 # -------------------------------------------------

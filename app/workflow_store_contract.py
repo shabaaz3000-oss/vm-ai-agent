@@ -26,13 +26,27 @@ class WorkflowStore(Protocol):
     ) -> WorkflowResult:
         ...
 
-    def update_workflow(
+
+    def claim_workflow_for_execution(
         self,
-        result: WorkflowResult,
+        workflow_id: str,
+        *,
+        security_context: SecurityContext | None = None,
     ) -> WorkflowResult:
         ...
 
-    def claim_workflow_for_execution(
+    def complete_workflow_execution(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        approval_id: str,
+        ticket_id: str,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        ...
+
+    def reject_workflow_authoritatively(
         self,
         workflow_id: str,
         *,

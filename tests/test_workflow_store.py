@@ -212,29 +212,21 @@ def test_unknown_workflow_is_rejected():
 # -------------------------------------------------
 
 
-def test_update_existing_workflow():
+def test_generic_update_workflow_is_not_public_authority():
 
-    workflow_store.save_workflow(
-        make_result()
+    assert not hasattr(
+        workflow_store,
+        "update_workflow",
     )
 
-    updated = make_result(
-        status="REJECTED"
+    assert not hasattr(
+        workflow_store,
+        "_sqlite_update_workflow",
     )
 
-    workflow_store.update_workflow(
-        updated
-    )
-
-    retrieved = (
-        workflow_store.get_workflow(
-            "WF-TEST0001"
-        )
-    )
-
-    assert (
-        retrieved.status
-        == "REJECTED"
+    assert not hasattr(
+        workflow_store.SQLiteWorkflowStore,
+        "update_workflow",
     )
 
 
@@ -243,15 +235,26 @@ def test_update_existing_workflow():
 # -------------------------------------------------
 
 
-def test_update_unknown_workflow_is_rejected():
+def test_store_contracts_expose_no_generic_update_authority():
 
-    with pytest.raises(
-        KeyError
-    ):
+    from app.workflow_postgresql_store import (
+        PostgreSQLWorkflowStore,
+    )
 
-        workflow_store.update_workflow(
-            make_result()
-        )
+    from app.workflow_store_contract import (
+        WorkflowStore,
+    )
+
+
+    assert not hasattr(
+        WorkflowStore,
+        "update_workflow",
+    )
+
+    assert not hasattr(
+        PostgreSQLWorkflowStore,
+        "update_workflow",
+    )
 
 
 # -------------------------------------------------
@@ -671,3 +674,240 @@ def test_stale_processing_moves_to_needs_review():
         .recovery_reason
         .lower()
     )
+
+
+def test_save_workflow_cannot_overwrite_existing_authoritative_state(
+    tmp_path,
+    monkeypatch,
+):
+
+    monkeypatch.setenv(
+        "VM_AI_DB_PATH",
+        str(
+            tmp_path
+            / "creation-authority.db"
+        ),
+    )
+
+    original = make_result()
+
+    workflow_store.save_workflow(
+        original
+    )
+
+    hostile_data = (
+        original.model_dump()
+    )
+
+    hostile_data.update(
+        {
+            "status":
+                "TICKET_CREATED",
+
+            "ticket_id":
+                "VM-UNTRUSTED-OVERWRITE",
+        }
+    )
+
+    hostile = (
+        type(original)
+        .model_validate(
+            hostile_data
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match=(
+            "cannot overwrite "
+            "authoritative state"
+        ),
+    ):
+
+        workflow_store.save_workflow(
+            hostile
+        )
+
+    authoritative = (
+        workflow_store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == original
+
+
+def test_complete_workflow_execution_persists_authoritative_state(
+    tmp_path,
+    monkeypatch,
+):
+
+    monkeypatch.setenv(
+        "VM_AI_DB_PATH",
+        str(
+            tmp_path
+            / "completion-authority.db"
+        ),
+    )
+
+    original = make_result()
+
+    workflow_store.save_workflow(
+        original
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            original.workflow_id
+        )
+    )
+
+    completed = (
+        workflow_store
+        .complete_workflow_execution(
+            original.workflow_id,
+            expected_execution_attempt_id=
+                claimed.execution_attempt_id,
+            approval_id=
+                "APR-AUTH0001",
+            ticket_id=
+                "VM-AUTH0001",
+        )
+    )
+
+    assert (
+        completed.status
+        == "TICKET_CREATED"
+    )
+
+    assert (
+        completed.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert (
+        completed.approval_id
+        == "APR-AUTH0001"
+    )
+
+    assert (
+        completed.ticket_id
+        == "VM-AUTH0001"
+    )
+
+    assert (
+        workflow_store.get_workflow(
+            original.workflow_id
+        )
+        == completed
+    )
+
+
+def test_complete_workflow_execution_rejects_stale_attempt(
+    tmp_path,
+    monkeypatch,
+):
+
+    monkeypatch.setenv(
+        "VM_AI_DB_PATH",
+        str(
+            tmp_path
+            / "stale-completion-authority.db"
+        ),
+    )
+
+    original = make_result()
+
+    workflow_store.save_workflow(
+        original
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            original.workflow_id
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="execution attempt changed",
+    ):
+
+        workflow_store \
+            .complete_workflow_execution(
+                original.workflow_id,
+                expected_execution_attempt_id=
+                    "EXEC-STALE-AUTHORITY",
+                approval_id=
+                    "APR-STALE0001",
+                ticket_id=
+                    "VM-STALE0001",
+            )
+
+    authoritative = (
+        workflow_store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+
+def test_reject_workflow_authoritatively_persists_rejected_state(
+    tmp_path,
+    monkeypatch,
+):
+
+    monkeypatch.setenv(
+        "VM_AI_DB_PATH",
+        str(
+            tmp_path
+            / "rejection-authority.db"
+        ),
+    )
+
+    original = make_result()
+
+    workflow_store.save_workflow(
+        original
+    )
+
+    rejected = (
+        workflow_store
+        .reject_workflow_authoritatively(
+            original.workflow_id
+        )
+    )
+
+    assert (
+        rejected.status
+        == "REJECTED"
+    )
+
+    assert rejected.approval_id is None
+
+    assert rejected.ticket_id is None
+
+    assert (
+        workflow_store.get_workflow(
+            original.workflow_id
+        )
+        == rejected
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="awaiting approval",
+    ):
+
+        workflow_store \
+            .claim_workflow_for_execution(
+                original.workflow_id
+            )

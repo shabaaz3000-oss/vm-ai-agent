@@ -98,6 +98,12 @@ def connect_database():
 def _sqlite_save_workflow(
     result: WorkflowResult
 ) -> WorkflowResult:
+    """
+    Create a new authoritative workflow row.
+
+    Creation authority is insert-only. An existing workflow_id
+    must never be overwritten through save_workflow().
+    """
 
     payload = (
         result.model_dump_json()
@@ -105,7 +111,7 @@ def _sqlite_save_workflow(
 
     with connect_database() as connection:
 
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT INTO workflows (
                 workflow_id,
@@ -115,10 +121,7 @@ def _sqlite_save_workflow(
             VALUES (?, ?, ?)
 
             ON CONFLICT(workflow_id)
-            DO UPDATE SET
-                status = excluded.status,
-                payload = excluded.payload,
-                updated_at = CURRENT_TIMESTAMP
+            DO NOTHING
             """,
             (
                 result.workflow_id,
@@ -126,6 +129,14 @@ def _sqlite_save_workflow(
                 payload,
             )
         )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow already exists; creation "
+                "authority cannot overwrite "
+                "authoritative state."
+            )
 
     return result
 
@@ -171,42 +182,6 @@ def _sqlite_get_workflow(
 # -------------------------------------------------
 
 
-def _sqlite_update_workflow(
-    result: WorkflowResult
-) -> WorkflowResult:
-
-    payload = (
-        result.model_dump_json()
-    )
-
-    with connect_database() as connection:
-
-        cursor = connection.execute(
-            """
-            UPDATE workflows
-
-            SET
-                status = ?,
-                payload = ?,
-                updated_at = CURRENT_TIMESTAMP
-
-            WHERE workflow_id = ?
-            """,
-            (
-                result.status,
-                payload,
-                result.workflow_id,
-            )
-        )
-
-        if cursor.rowcount == 0:
-
-            raise KeyError(
-                "Cannot update a workflow "
-                "that does not exist."
-            )
-
-    return result
 
 
 # -------------------------------------------------
@@ -364,6 +339,304 @@ def _sqlite_claim_workflow_for_execution(
 # MARK EXECUTION FOR HUMAN REVIEW
 # -------------------------------------------------
 
+
+def _sqlite_complete_workflow_execution(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    approval_id: str,
+    ticket_id: str,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    """
+    Atomically complete the exact PROCESSING execution attempt.
+
+    Caller-supplied workflow payloads are never authoritative here.
+    The current row is read under the SQLite write lock and only the
+    approved completion fields are applied.
+    """
+
+    for field_name, value in (
+        (
+            "expected_execution_attempt_id",
+            expected_execution_attempt_id,
+        ),
+        (
+            "approval_id",
+            approval_id,
+        ),
+        (
+            "ticket_id",
+            ticket_id,
+        ),
+    ):
+
+        if (
+            not isinstance(
+                value,
+                str,
+            )
+            or not value.strip()
+            or value != value.strip()
+        ):
+
+            raise ValueError(
+                f"{field_name} must be a non-blank "
+                "normalized string."
+            )
+
+    with connect_database() as connection:
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+
+            FROM workflows
+
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            )
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: "
+                f"{workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "PROCESSING"
+        ):
+
+            raise PermissionError(
+                "Only a PROCESSING workflow can "
+                "be completed."
+            )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                row["payload"]
+            )
+        )
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow completion "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        if (
+            current.execution_attempt_id
+            != expected_execution_attempt_id
+        ):
+
+            raise PermissionError(
+                "Workflow execution attempt changed."
+            )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "TICKET_CREATED",
+
+                "approval_id":
+                    approval_id,
+
+                "ticket_id":
+                    ticket_id,
+
+                "recovery_reason":
+                    None,
+            }
+        )
+
+        completed = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'PROCESSING'
+                AND payload = ?
+            """,
+            (
+                completed.status,
+                completed.model_dump_json(),
+                workflow_id,
+                row["payload"],
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow completion authority changed."
+            )
+
+    return completed
+
+
+def _sqlite_reject_workflow_authoritatively(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    """
+    Atomically reject an AWAITING_APPROVAL workflow.
+
+    Rejection derives the new state from the authoritative row and
+    cannot accept arbitrary caller-supplied workflow state.
+    """
+
+    with connect_database() as connection:
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+
+            FROM workflows
+
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            )
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: "
+                f"{workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "AWAITING_APPROVAL"
+        ):
+
+            raise PermissionError(
+                "Workflow must be awaiting approval "
+                "before it can be rejected."
+            )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                row["payload"]
+            )
+        )
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow rejection "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "REJECTED",
+
+                "approval_id":
+                    None,
+
+                "ticket_id":
+                    None,
+            }
+        )
+
+        rejected = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'AWAITING_APPROVAL'
+                AND payload = ?
+            """,
+            (
+                rejected.status,
+                rejected.model_dump_json(),
+                workflow_id,
+                row["payload"],
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow rejection authority changed."
+            )
+
+    return rejected
 
 def _sqlite_mark_workflow_needs_review(
     workflow_id: str,
@@ -1098,13 +1371,6 @@ class SQLiteWorkflowStore:
             workflow_id
         )
 
-    def update_workflow(
-        self,
-        result: WorkflowResult,
-    ) -> WorkflowResult:
-        return _sqlite_update_workflow(
-            result
-        )
 
     def claim_workflow_for_execution(
         self,
@@ -1118,6 +1384,39 @@ class SQLiteWorkflowStore:
                 security_context=
                     security_context,
             )
+        )
+
+    def complete_workflow_execution(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        approval_id: str,
+        ticket_id: str,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        return _sqlite_complete_workflow_execution(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            approval_id=
+                approval_id,
+            ticket_id=
+                ticket_id,
+            security_context=
+                security_context,
+        )
+
+    def reject_workflow_authoritatively(
+        self,
+        workflow_id: str,
+        *,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        return _sqlite_reject_workflow_authoritatively(
+            workflow_id,
+            security_context=
+                security_context,
         )
 
     def mark_workflow_needs_review(
@@ -1408,15 +1707,6 @@ def get_workflow(
     )
 
 
-def update_workflow(
-    result: WorkflowResult
-) -> WorkflowResult:
-    return (
-        get_workflow_store()
-        .update_workflow(
-            result
-        )
-    )
 
 
 def claim_workflow_for_execution(
@@ -1433,6 +1723,44 @@ def claim_workflow_for_execution(
         )
     )
 
+
+def complete_workflow_execution(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    approval_id: str,
+    ticket_id: str,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .complete_workflow_execution(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            approval_id=
+                approval_id,
+            ticket_id=
+                ticket_id,
+            security_context=
+                security_context,
+        )
+    )
+
+
+def reject_workflow_authoritatively(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .reject_workflow_authoritatively(
+            workflow_id,
+            security_context=
+                security_context,
+        )
+    )
 
 def mark_workflow_needs_review(
     workflow_id: str,

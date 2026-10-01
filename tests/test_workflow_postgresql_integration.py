@@ -1437,3 +1437,236 @@ def test_retry_then_competing_claims_create_one_fresh_attempt():
         authoritative.execution_attempt_id
         == fresh_attempt_id
     )
+
+
+def test_save_workflow_cannot_overwrite_existing_postgresql_authority():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    original = workflow()
+
+    store.save_workflow(
+        original
+    )
+
+    hostile_data = (
+        original.model_dump()
+    )
+
+    hostile_data.update(
+        {
+            "status":
+                "TICKET_CREATED",
+
+            "ticket_id":
+                "VM-UNTRUSTED-OVERWRITE",
+        }
+    )
+
+    hostile = (
+        type(original)
+        .model_validate(
+            hostile_data
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match=(
+            "cannot overwrite "
+            "authoritative state"
+        ),
+    ):
+
+        store.save_workflow(
+            hostile
+        )
+
+    authoritative = (
+        store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == original
+
+
+def test_complete_workflow_execution_persists_postgresql_authority():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    original = workflow()
+
+    store.save_workflow(
+        original
+    )
+
+    claimed = (
+        store
+        .claim_workflow_for_execution(
+            original.workflow_id
+        )
+    )
+
+    completed = (
+        store
+        .complete_workflow_execution(
+            original.workflow_id,
+            expected_execution_attempt_id=
+                claimed.execution_attempt_id,
+            approval_id=
+                "APR-PG-AUTH0001",
+            ticket_id=
+                "VM-PG-AUTH0001",
+        )
+    )
+
+    assert (
+        completed.status
+        == "TICKET_CREATED"
+    )
+
+    assert (
+        completed.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert (
+        completed.approval_id
+        == "APR-PG-AUTH0001"
+    )
+
+    assert (
+        completed.ticket_id
+        == "VM-PG-AUTH0001"
+    )
+
+    assert (
+        store.get_workflow(
+            original.workflow_id
+        )
+        == completed
+    )
+
+
+def test_complete_workflow_execution_rejects_stale_postgresql_attempt():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    original = workflow()
+
+    store.save_workflow(
+        original
+    )
+
+    claimed = (
+        store
+        .claim_workflow_for_execution(
+            original.workflow_id
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="execution attempt changed",
+    ):
+
+        store \
+            .complete_workflow_execution(
+                original.workflow_id,
+                expected_execution_attempt_id=
+                    "EXEC-STALE-PG-AUTHORITY",
+                approval_id=
+                    "APR-PG-STALE0001",
+                ticket_id=
+                    "VM-PG-STALE0001",
+            )
+
+    authoritative = (
+        store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+
+def test_reject_workflow_authoritatively_persists_postgresql_state():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+    original = workflow()
+
+    store.save_workflow(
+        original
+    )
+
+    rejected = (
+        store
+        .reject_workflow_authoritatively(
+            original.workflow_id
+        )
+    )
+
+    assert (
+        rejected.status
+        == "REJECTED"
+    )
+
+    assert rejected.approval_id is None
+
+    assert rejected.ticket_id is None
+
+    assert (
+        store.get_workflow(
+            original.workflow_id
+        )
+        == rejected
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="awaiting approval",
+    ):
+
+        store \
+            .claim_workflow_for_execution(
+                original.workflow_id
+            )

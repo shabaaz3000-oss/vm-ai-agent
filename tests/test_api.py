@@ -633,16 +633,30 @@ def test_approver_can_reject_workflow(
     monkeypatch
 ):
 
+    original = make_result()
+
     save_workflow(
-        make_result()
+        original
     )
 
-    def fake_reject(
-        result
+    calls = []
+
+    def fake_authoritative_reject(
+        workflow_id
     ):
 
+        calls.append(
+            workflow_id
+        )
+
+        authoritative = (
+            get_workflow(
+                workflow_id
+            )
+        )
+
         updated = (
-            result.model_dump()
+            authoritative.model_dump()
         )
 
         updated.update(
@@ -665,34 +679,35 @@ def test_approver_can_reject_workflow(
             )
         )
 
+
     monkeypatch.setattr(
         api_module,
-        "reject_workflow",
-        fake_reject,
+        "reject_workflow_authoritatively",
+        fake_authoritative_reject,
     )
+
 
     response = client.post(
         "/workflows/WF-TEST0001/reject",
 
-        headers=approver_headers(),
+        headers=
+            approver_headers(),
     )
+
 
     assert (
         response.status_code
         == 200
     )
 
-    assert (
-        response.json()["status"]
-        == "REJECTED"
-    )
-
-    stored = get_workflow(
+    assert calls == [
         "WF-TEST0001"
-    )
+    ]
 
     assert (
-        stored.status
+        response.json()[
+            "status"
+        ]
         == "REJECTED"
     )
 

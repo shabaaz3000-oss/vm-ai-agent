@@ -237,6 +237,12 @@ class PostgreSQLWorkflowStore:
         self,
         result: WorkflowResult,
     ) -> WorkflowResult:
+        """
+        Create a new authoritative workflow row.
+
+        Creation authority is insert-only. An existing workflow_id
+        must never be overwritten through save_workflow().
+        """
 
         payload = (
             result.model_dump_json()
@@ -244,7 +250,7 @@ class PostgreSQLWorkflowStore:
 
         with self._connect() as connection:
 
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT INTO workflows (
                     workflow_id,
@@ -254,13 +260,7 @@ class PostgreSQLWorkflowStore:
                 VALUES (%s, %s, %s)
 
                 ON CONFLICT(workflow_id)
-                DO UPDATE SET
-                    status =
-                        EXCLUDED.status,
-                    payload =
-                        EXCLUDED.payload,
-                    updated_at =
-                        CURRENT_TIMESTAMP
+                DO NOTHING
                 """,
                 (
                     result.workflow_id,
@@ -268,6 +268,14 @@ class PostgreSQLWorkflowStore:
                     payload,
                 ),
             )
+
+            if cursor.rowcount != 1:
+
+                raise PermissionError(
+                    "Workflow already exists; creation "
+                    "authority cannot overwrite "
+                    "authoritative state."
+                )
 
         return result
 
@@ -299,43 +307,6 @@ class PostgreSQLWorkflowStore:
             row[0]
         )
 
-    def update_workflow(
-        self,
-        result: WorkflowResult,
-    ) -> WorkflowResult:
-
-        payload = (
-            result.model_dump_json()
-        )
-
-        with self._connect() as connection:
-
-            cursor = connection.execute(
-                """
-                UPDATE workflows
-
-                SET
-                    status = %s,
-                    payload = %s,
-                    updated_at =
-                        CURRENT_TIMESTAMP
-
-                WHERE workflow_id = %s
-                """,
-                (
-                    result.status,
-                    payload,
-                    result.workflow_id,
-                ),
-            )
-
-            if cursor.rowcount != 1:
-                raise KeyError(
-                    "Cannot update a workflow "
-                    "that does not exist."
-                )
-
-        return result
 
     # --------------------------------------------------------
     # DISTRIBUTED EXECUTION CLAIM
@@ -458,6 +429,258 @@ class PostgreSQLWorkflowStore:
     # --------------------------------------------------------
     # FAILURE / AMBIGUOUS-WRITE RECOVERY
     # --------------------------------------------------------
+
+    def complete_workflow_execution(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        approval_id: str,
+        ticket_id: str,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        """
+        Atomically complete the exact PROCESSING execution attempt.
+
+        The authoritative row is locked before state, tenant, and
+        execution-attempt authority are validated.
+        """
+
+        for field_name, value in (
+            (
+                "expected_execution_attempt_id",
+                expected_execution_attempt_id,
+            ),
+            (
+                "approval_id",
+                approval_id,
+            ),
+            (
+                "ticket_id",
+                ticket_id,
+            ),
+        ):
+
+            if (
+                not isinstance(
+                    value,
+                    str,
+                )
+                or not value.strip()
+                or value != value.strip()
+            ):
+
+                raise ValueError(
+                    f"{field_name} must be a non-blank "
+                    "normalized string."
+                )
+
+        with self._connect() as connection:
+
+            status, original_payload = (
+                self._select_for_update(
+                    connection,
+                    workflow_id,
+                )
+            )
+
+            if status != "PROCESSING":
+
+                raise PermissionError(
+                    "Only a PROCESSING workflow can "
+                    "be completed."
+                )
+
+            current = (
+                self._parse_workflow(
+                    original_payload
+                )
+            )
+
+            if current.tenant_id is not None:
+
+                if security_context is None:
+
+                    raise PermissionError(
+                        "Tenant-bound workflow completion "
+                        "requires trusted security context."
+                    )
+
+                require_workflow_tenant(
+                    current,
+                    security_context=
+                        security_context,
+                )
+
+            if (
+                current.execution_attempt_id
+                != expected_execution_attempt_id
+            ):
+
+                raise PermissionError(
+                    "Workflow execution attempt changed."
+                )
+
+            updated_data = (
+                current.model_dump()
+            )
+
+            updated_data.update(
+                {
+                    "status":
+                        "TICKET_CREATED",
+
+                    "approval_id":
+                        approval_id,
+
+                    "ticket_id":
+                        ticket_id,
+
+                    "recovery_reason":
+                        None,
+                }
+            )
+
+            completed = (
+                WorkflowResult
+                .model_validate(
+                    updated_data
+                )
+            )
+
+            cursor = connection.execute(
+                """
+                UPDATE workflows
+
+                SET
+                    status = %s,
+                    payload = %s,
+                    updated_at =
+                        CURRENT_TIMESTAMP
+
+                WHERE
+                    workflow_id = %s
+                    AND status = 'PROCESSING'
+                    AND payload = %s
+                """,
+                (
+                    completed.status,
+                    completed.model_dump_json(),
+                    workflow_id,
+                    original_payload,
+                ),
+            )
+
+            if cursor.rowcount != 1:
+
+                raise PermissionError(
+                    "Workflow completion authority changed."
+                )
+
+        return completed
+
+    def reject_workflow_authoritatively(
+        self,
+        workflow_id: str,
+        *,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        """
+        Atomically reject an AWAITING_APPROVAL workflow.
+        """
+
+        with self._connect() as connection:
+
+            status, original_payload = (
+                self._select_for_update(
+                    connection,
+                    workflow_id,
+                )
+            )
+
+            if status != "AWAITING_APPROVAL":
+
+                raise PermissionError(
+                    "Workflow must be awaiting approval "
+                    "before it can be rejected."
+                )
+
+            current = (
+                self._parse_workflow(
+                    original_payload
+                )
+            )
+
+            if current.tenant_id is not None:
+
+                if security_context is None:
+
+                    raise PermissionError(
+                        "Tenant-bound workflow rejection "
+                        "requires trusted security context."
+                    )
+
+                require_workflow_tenant(
+                    current,
+                    security_context=
+                        security_context,
+                )
+
+            updated_data = (
+                current.model_dump()
+            )
+
+            updated_data.update(
+                {
+                    "status":
+                        "REJECTED",
+
+                    "approval_id":
+                        None,
+
+                    "ticket_id":
+                        None,
+                }
+            )
+
+            rejected = (
+                WorkflowResult
+                .model_validate(
+                    updated_data
+                )
+            )
+
+            cursor = connection.execute(
+                """
+                UPDATE workflows
+
+                SET
+                    status = %s,
+                    payload = %s,
+                    updated_at =
+                        CURRENT_TIMESTAMP
+
+                WHERE
+                    workflow_id = %s
+                    AND status =
+                        'AWAITING_APPROVAL'
+                    AND payload = %s
+                """,
+                (
+                    rejected.status,
+                    rejected.model_dump_json(),
+                    workflow_id,
+                    original_payload,
+                ),
+            )
+
+            if cursor.rowcount != 1:
+
+                raise PermissionError(
+                    "Workflow rejection authority changed."
+                )
+
+        return rejected
 
     def mark_workflow_needs_review(
         self,

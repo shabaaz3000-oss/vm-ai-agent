@@ -578,11 +578,6 @@ def test_tool_forwards_trusted_context(
         fake_execute,
     )
 
-    monkeypatch.setattr(
-        ticketing_tool,
-        "update_workflow",
-        lambda result: result,
-    )
 
     monkeypatch.setattr(
         ticketing_tool,

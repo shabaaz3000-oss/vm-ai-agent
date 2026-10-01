@@ -12,7 +12,6 @@ from app.auth import require_authenticated_user
 from app.execution import (
     claim_and_execute_workflow,
     reconcile_stale_workflow,
-    reject_workflow,
 )
 
 from app.models import WorkflowResult
@@ -22,8 +21,8 @@ from app.workflow import prepare_workflow
 from app.workflow_store import (
     get_workflow,
     save_workflow,
-    update_workflow,
     validate_workflow_store_readiness,
+    reject_workflow_authoritatively,
 )
 
 from app.api_security_context import (
@@ -159,7 +158,8 @@ def approve_workflow(
 
         completed_result = (
             claim_and_execute_workflow(
-                workflow_id=workflow_id,
+                workflow_id=
+                    workflow_id,
 
                 approved_by=
                     principal.username,
@@ -169,20 +169,22 @@ def approve_workflow(
     except KeyError:
 
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found.",
+            status_code=
+                status.HTTP_404_NOT_FOUND,
+
+            detail=
+                "Workflow not found.",
         )
 
     except PermissionError as error:
 
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+            status_code=
+                status.HTTP_409_CONFLICT,
 
-    update_workflow(
-        completed_result
-    )
+            detail=
+                str(error),
+        )
 
     return completed_result
 
@@ -206,35 +208,31 @@ def reject_workflow_endpoint(
 
     try:
 
-        result = get_workflow(
-            workflow_id
+        rejected_result = (
+            reject_workflow_authoritatively(
+                workflow_id
+            )
         )
 
     except KeyError:
 
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found.",
-        )
+            status_code=
+                status.HTTP_404_NOT_FOUND,
 
-    try:
-
-        rejected_result = (
-            reject_workflow(
-                result=result
-            )
+            detail=
+                "Workflow not found.",
         )
 
     except PermissionError as error:
 
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+            status_code=
+                status.HTTP_409_CONFLICT,
 
-    update_workflow(
-        rejected_result
-    )
+            detail=
+                str(error),
+        )
 
     return rejected_result
 

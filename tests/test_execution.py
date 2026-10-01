@@ -497,20 +497,24 @@ def test_claim_and_execute_uses_atomic_workflow_claim(
     monkeypatch
 ):
 
-    events = capture_events(
-        monkeypatch
-    )
-
     claimed_data = (
-        make_result().model_dump()
+        make_result()
+        .model_dump()
     )
 
-    claimed_data[
-        "status"
-    ] = "PROCESSING"
+    claimed_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+        }
+    )
 
     claimed_result = (
-        WorkflowResult.model_validate(
+        WorkflowResult
+        .model_validate(
             claimed_data
         )
     )
@@ -530,92 +534,134 @@ def test_claim_and_execute_uses_atomic_workflow_claim(
     monkeypatch.setattr(
         execution,
         "claim_workflow_for_execution",
-        fake_claim
+        fake_claim,
     )
 
-    def fake_ticket_creation(
-        ticket,
-        approval
-    ):
 
-        return {
-            "ticket_id":
-                "VM-TEST0001",
+    completed_data = (
+        claimed_result
+        .model_dump()
+    )
+
+    completed_data.update(
+        {
+            "status":
+                "TICKET_CREATED",
 
             "approval_id":
-                approval["approval_id"],
+                "APR-TEST0001",
 
-            "approved_by":
-                approval["approved_by"],
-
-            "approved_at":
-                approval["approved_at"],
-
-            "status":
-                "OPEN",
-
-            "priority":
-                ticket.priority,
-
-            "risk_rating":
-                ticket.risk_rating
+            "ticket_id":
+                "VM-TEST0001",
         }
+    )
+
+    completion_candidate = (
+        WorkflowResult
+        .model_validate(
+            completed_data
+        )
+    )
 
     monkeypatch.setattr(
         execution,
-        "_create_ticket_with_selected_provider",
-        fake_ticket_creation
+        "_execute_ticket_bound_workflow",
+        lambda *,
+        result,
+        approved_by:
+            completion_candidate,
     )
+
+
+    completion_calls = []
+
+    def fake_complete(
+        workflow_id,
+        *,
+        expected_execution_attempt_id,
+        approval_id,
+        ticket_id,
+        security_context=None,
+    ):
+
+        completion_calls.append(
+            {
+                "workflow_id":
+                    workflow_id,
+
+                "execution_attempt_id":
+                    expected_execution_attempt_id,
+
+                "approval_id":
+                    approval_id,
+
+                "ticket_id":
+                    ticket_id,
+
+                "security_context":
+                    security_context,
+            }
+        )
+
+        return completion_candidate
+
+
+    monkeypatch.setattr(
+        execution,
+        "complete_workflow_execution",
+        fake_complete,
+    )
+
 
     result = (
         execution
         .claim_and_execute_workflow(
-            workflow_id="WF-TEST0001",
+            workflow_id=
+                "WF-TEST0001",
 
             approved_by=
-                "api-approver"
+                "api-approver",
         )
     )
 
+
+    assert claim_calls == [
+        "WF-TEST0001"
+    ]
+
+    assert len(
+        completion_calls
+    ) == 1
+
     assert (
-        claim_calls
-        == ["WF-TEST0001"]
+        completion_calls[0][
+            "execution_attempt_id"
+        ]
+        == "EXEC-TEST0001"
     )
 
     assert (
-        result.status
-        == "TICKET_CREATED"
+        completion_calls[0][
+            "approval_id"
+        ]
+        == "APR-TEST0001"
     )
 
     assert (
-        result.ticket_id
+        completion_calls[0][
+            "ticket_id"
+        ]
         == "VM-TEST0001"
     )
 
     assert (
-        result.approval_id
-        is not None
+        completion_calls[0][
+            "security_context"
+        ]
+        is None
     )
 
-    event_types = [
-        event["event_type"]
-        for event in events
-    ]
-
-    assert (
-        "WORKFLOW_EXECUTION_CLAIMED"
-        in event_types
-    )
-
-    assert (
-        "TICKET_APPROVED"
-        in event_types
-    )
-
-    assert (
-        "MOCK_TICKET_CREATED"
-        in event_types
-    )
+    assert result == completion_candidate
 
 
 def test_failed_atomic_claim_prevents_ticket_execution(
@@ -703,10 +749,6 @@ def test_successful_atomic_execution_preserves_attempt_metadata(
     monkeypatch
 ):
 
-    events = capture_events(
-        monkeypatch
-    )
-
     claimed_data = (
         make_result()
         .model_dump()
@@ -735,6 +777,7 @@ def test_successful_atomic_execution_preserves_attempt_metadata(
         lambda workflow_id:
             claimed_result,
     )
+
 
     def fake_ticket_creation(
         ticket,
@@ -770,11 +813,67 @@ def test_successful_atomic_execution_preserves_attempt_metadata(
                 ticket.risk_rating,
         }
 
+
     monkeypatch.setattr(
         execution,
         "_create_ticket_with_selected_provider",
         fake_ticket_creation,
     )
+
+
+    completion_calls = []
+
+    def fake_complete(
+        workflow_id,
+        *,
+        expected_execution_attempt_id,
+        approval_id,
+        ticket_id,
+        security_context=None,
+    ):
+
+        completion_calls.append(
+            (
+                workflow_id,
+                expected_execution_attempt_id,
+                approval_id,
+                ticket_id,
+                security_context,
+            )
+        )
+
+        completed_data = (
+            claimed_result
+            .model_dump()
+        )
+
+        completed_data.update(
+            {
+                "status":
+                    "TICKET_CREATED",
+
+                "approval_id":
+                    approval_id,
+
+                "ticket_id":
+                    ticket_id,
+            }
+        )
+
+        return (
+            WorkflowResult
+            .model_validate(
+                completed_data
+            )
+        )
+
+
+    monkeypatch.setattr(
+        execution,
+        "complete_workflow_execution",
+        fake_complete,
+    )
+
 
     result = (
         execution
@@ -787,6 +886,7 @@ def test_successful_atomic_execution_preserves_attempt_metadata(
         )
     )
 
+
     assert (
         result.status
         == "TICKET_CREATED"
@@ -795,6 +895,25 @@ def test_successful_atomic_execution_preserves_attempt_metadata(
     assert (
         result.execution_attempt_id
         == "EXEC-TEST0001"
+    )
+
+    assert len(
+        completion_calls
+    ) == 1
+
+    assert (
+        completion_calls[0][1]
+        == "EXEC-TEST0001"
+    )
+
+    assert (
+        completion_calls[0][3]
+        == "VM-TEST0001"
+    )
+
+    assert (
+        completion_calls[0][4]
+        is None
     )
 
 
@@ -1002,4 +1121,184 @@ def test_stale_reconciliation_never_executes_ticket(
     assert (
         ticket_creation_called
         is False
+    )
+
+def test_completion_persistence_failure_moves_workflow_to_needs_review(
+    monkeypatch
+):
+
+    events = capture_events(
+        monkeypatch
+    )
+
+    claimed_data = (
+        make_result()
+        .model_dump()
+    )
+
+    claimed_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-TEST0001",
+        }
+    )
+
+    claimed_result = (
+        WorkflowResult
+        .model_validate(
+            claimed_data
+        )
+    )
+
+    monkeypatch.setattr(
+        execution,
+        "claim_workflow_for_execution",
+        lambda workflow_id:
+            claimed_result,
+    )
+
+
+    completed_data = (
+        claimed_result
+        .model_dump()
+    )
+
+    completed_data.update(
+        {
+            "status":
+                "TICKET_CREATED",
+
+            "approval_id":
+                "APR-TEST0001",
+
+            "ticket_id":
+                "VM-TEST0001",
+        }
+    )
+
+    completion_candidate = (
+        WorkflowResult
+        .model_validate(
+            completed_data
+        )
+    )
+
+
+    monkeypatch.setattr(
+        execution,
+        "_execute_ticket_bound_workflow",
+        lambda *,
+        result,
+        approved_by:
+            completion_candidate,
+    )
+
+
+    def fail_completion(
+        *args,
+        **kwargs,
+    ):
+
+        raise RuntimeError(
+            "Simulated authoritative "
+            "completion persistence failure."
+        )
+
+
+    monkeypatch.setattr(
+        execution,
+        "complete_workflow_execution",
+        fail_completion,
+    )
+
+
+    review_calls = []
+
+    def fake_mark_review(
+        workflow_id,
+        reason,
+    ):
+
+        review_calls.append(
+            (
+                workflow_id,
+                reason,
+            )
+        )
+
+        review_data = (
+            claimed_result
+            .model_dump()
+        )
+
+        review_data.update(
+            {
+                "status":
+                    "NEEDS_REVIEW",
+
+                "recovery_reason":
+                    reason,
+            }
+        )
+
+        return (
+            WorkflowResult
+            .model_validate(
+                review_data
+            )
+        )
+
+
+    monkeypatch.setattr(
+        execution,
+        "mark_workflow_needs_review",
+        fake_mark_review,
+    )
+
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "completion persistence failure"
+        ),
+    ):
+
+        execution \
+            .claim_and_execute_workflow(
+                workflow_id=
+                    "WF-TEST0001",
+
+                approved_by=
+                    "api-approver",
+            )
+
+
+    assert len(
+        review_calls
+    ) == 1
+
+    assert (
+        review_calls[0][0]
+        == "WF-TEST0001"
+    )
+
+    assert (
+        "manual reconciliation"
+        in review_calls[0][1].lower()
+    )
+
+
+    event_types = [
+        event[
+            "event_type"
+        ]
+        for event in events
+    ]
+
+    assert (
+        "WORKFLOW_EXECUTION_NEEDS_REVIEW"
+        in event_types
     )
