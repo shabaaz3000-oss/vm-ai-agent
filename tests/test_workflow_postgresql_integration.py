@@ -314,12 +314,15 @@ def test_runtime_validation_rejects_incompatible_schema_version():
         ) as connection:
 
             connection.execute(
-                """
-                COMMENT ON TABLE workflows IS %s
-                """,
-                (
-                    WORKFLOW_SCHEMA_COMMENT,
-                ),
+                sql.SQL(
+                    """
+                    COMMENT ON TABLE workflows IS {}
+                    """
+                ).format(
+                    sql.Literal(
+                        WORKFLOW_SCHEMA_COMMENT
+                    )
+                )
             )
 
 
