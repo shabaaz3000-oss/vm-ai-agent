@@ -95,7 +95,7 @@ def connect_database():
 # -------------------------------------------------
 
 
-def save_workflow(
+def _sqlite_save_workflow(
     result: WorkflowResult
 ) -> WorkflowResult:
 
@@ -135,7 +135,7 @@ def save_workflow(
 # -------------------------------------------------
 
 
-def get_workflow(
+def _sqlite_get_workflow(
     workflow_id: str
 ) -> WorkflowResult:
 
@@ -171,7 +171,7 @@ def get_workflow(
 # -------------------------------------------------
 
 
-def update_workflow(
+def _sqlite_update_workflow(
     result: WorkflowResult
 ) -> WorkflowResult:
 
@@ -214,7 +214,7 @@ def update_workflow(
 # -------------------------------------------------
 
 
-def claim_workflow_for_execution(
+def _sqlite_claim_workflow_for_execution(
     workflow_id: str,
     *,
     security_context: SecurityContext | None = None,
@@ -365,7 +365,7 @@ def claim_workflow_for_execution(
 # -------------------------------------------------
 
 
-def mark_workflow_needs_review(
+def _sqlite_mark_workflow_needs_review(
     workflow_id: str,
     reason: str
 ) -> WorkflowResult:
@@ -476,7 +476,7 @@ def mark_workflow_needs_review(
 # -------------------------------------------------
 
 
-def mark_stale_processing_for_review(
+def _sqlite_mark_stale_processing_for_review(
     workflow_id: str,
     stale_after_seconds: int = 300,
     now: datetime | None = None
@@ -652,7 +652,7 @@ def mark_stale_processing_for_review(
 # -------------------------------------------------
 
 
-def clear_workflows() -> None:
+def _sqlite_clear_workflows() -> None:
 
     with connect_database() as connection:
 
@@ -733,7 +733,7 @@ def _validate_reconciliation_transition_target(
         )
 
 
-def confirm_reconciled_ticket_creation(
+def _sqlite_confirm_reconciled_ticket_creation(
     workflow_id: str,
     *,
     expected_execution_attempt_id: str,
@@ -902,7 +902,7 @@ def confirm_reconciled_ticket_creation(
     return resolved
 
 
-def authorize_reconciled_retry(
+def _sqlite_authorize_reconciled_retry(
     workflow_id: str,
     *,
     expected_execution_attempt_id: str,
@@ -1046,3 +1046,324 @@ def authorize_reconciled_retry(
             )
 
     return authorized
+# ============================================================
+# WORKFLOW STORE BACKEND ABSTRACTION
+# ============================================================
+#
+# The functions above implement the original SQLite authority
+# semantics. They are intentionally retained in this module so
+# existing local/test behavior and security-sensitive monkeypatch
+# points remain stable.
+#
+# Public callers below resolve a WorkflowStore backend and dispatch
+# through the common contract.
+#
+# PostgreSQL selection deliberately fails closed until the
+# production implementation is introduced.
+# ============================================================
+
+import os as _workflow_store_os
+
+from app.workflow_store_contract import WorkflowStore
+
+
+WORKFLOW_STORE_BACKEND_ENV = (
+    "VM_AI_WORKFLOW_STORE_BACKEND"
+)
+
+
+class SQLiteWorkflowStore:
+    """
+    Adapter exposing the existing SQLite workflow authority
+    through the shared WorkflowStore contract.
+    """
+
+    def save_workflow(
+        self,
+        result: WorkflowResult,
+    ) -> WorkflowResult:
+        return _sqlite_save_workflow(
+            result
+        )
+
+    def get_workflow(
+        self,
+        workflow_id: str,
+    ) -> WorkflowResult:
+        return _sqlite_get_workflow(
+            workflow_id
+        )
+
+    def update_workflow(
+        self,
+        result: WorkflowResult,
+    ) -> WorkflowResult:
+        return _sqlite_update_workflow(
+            result
+        )
+
+    def claim_workflow_for_execution(
+        self,
+        workflow_id: str,
+        *,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_claim_workflow_for_execution(
+                workflow_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+    def mark_workflow_needs_review(
+        self,
+        workflow_id: str,
+        reason: str,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_mark_workflow_needs_review(
+                workflow_id,
+                reason,
+            )
+        )
+
+    def mark_stale_processing_for_review(
+        self,
+        workflow_id: str,
+        stale_after_seconds: int = 300,
+        now: datetime | None = None,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_mark_stale_processing_for_review(
+                workflow_id,
+                stale_after_seconds=
+                    stale_after_seconds,
+                now=now,
+            )
+        )
+
+    def clear_workflows(
+        self,
+    ) -> None:
+        _sqlite_clear_workflows()
+
+    def confirm_reconciled_ticket_creation(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        ticket_id: str,
+        security_context: SecurityContext,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_confirm_reconciled_ticket_creation(
+                workflow_id,
+                expected_execution_attempt_id=
+                    expected_execution_attempt_id,
+                ticket_id=
+                    ticket_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+    def authorize_reconciled_retry(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        security_context: SecurityContext,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_authorize_reconciled_retry(
+                workflow_id,
+                expected_execution_attempt_id=
+                    expected_execution_attempt_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+
+def get_workflow_store_backend_name() -> str:
+    """
+    Resolve the configured workflow persistence backend.
+
+    SQLite remains the backward-compatible local/test default.
+    Production deployments will explicitly select PostgreSQL
+    after the PostgreSQL implementation is installed.
+    """
+
+    configured = (
+        _workflow_store_os.getenv(
+            WORKFLOW_STORE_BACKEND_ENV,
+            "sqlite",
+        )
+    )
+
+    backend = configured.strip().lower()
+
+    if not backend:
+        raise RuntimeError(
+            "VM_AI_WORKFLOW_STORE_BACKEND "
+            "cannot be blank."
+        )
+
+    return backend
+
+
+def get_workflow_store() -> WorkflowStore:
+    """
+    Return the authoritative workflow-store backend.
+
+    Unknown or not-yet-implemented production backends fail
+    closed. There is no implicit downgrade to SQLite.
+    """
+
+    backend = (
+        get_workflow_store_backend_name()
+    )
+
+    if backend == "sqlite":
+        return SQLiteWorkflowStore()
+
+    if backend in {
+        "postgres",
+        "postgresql",
+    }:
+        raise RuntimeError(
+            "PostgreSQL workflow store selected, "
+            "but the production PostgreSQL workflow "
+            "authority has not been installed yet."
+        )
+
+    raise RuntimeError(
+        "Unsupported workflow store backend: "
+        f"{backend}"
+    )
+
+
+# ============================================================
+# STABLE PUBLIC WORKFLOW STORE API
+# ============================================================
+
+
+def save_workflow(
+    result: WorkflowResult
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .save_workflow(
+            result
+        )
+    )
+
+
+def get_workflow(
+    workflow_id: str
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .get_workflow(
+            workflow_id
+        )
+    )
+
+
+def update_workflow(
+    result: WorkflowResult
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .update_workflow(
+            result
+        )
+    )
+
+
+def claim_workflow_for_execution(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .claim_workflow_for_execution(
+            workflow_id,
+            security_context=
+                security_context,
+        )
+    )
+
+
+def mark_workflow_needs_review(
+    workflow_id: str,
+    reason: str
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .mark_workflow_needs_review(
+            workflow_id,
+            reason,
+        )
+    )
+
+
+def mark_stale_processing_for_review(
+    workflow_id: str,
+    stale_after_seconds: int = 300,
+    now: datetime | None = None
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .mark_stale_processing_for_review(
+            workflow_id,
+            stale_after_seconds=
+                stale_after_seconds,
+            now=now,
+        )
+    )
+
+
+def clear_workflows() -> None:
+    get_workflow_store().clear_workflows()
+
+
+def confirm_reconciled_ticket_creation(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    ticket_id: str,
+    security_context: SecurityContext,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .confirm_reconciled_ticket_creation(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            ticket_id=
+                ticket_id,
+            security_context=
+                security_context,
+        )
+    )
+
+
+def authorize_reconciled_retry(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    security_context: SecurityContext,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .authorize_reconciled_retry(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            security_context=
+                security_context,
+        )
+    )
