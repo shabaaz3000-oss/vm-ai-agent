@@ -1305,6 +1305,48 @@ def _get_postgresql_workflow_database_url() -> str:
     return configured
 
 
+def validate_workflow_store_readiness() -> None:
+    """
+    Validate configured workflow persistence before serving API
+    requests.
+
+    SQLite remains the local/test backend and requires no external
+    startup validation.
+
+    PostgreSQL runtime authority performs only read-only schema
+    compatibility validation. Runtime startup never provisions,
+    migrates, alters, or repairs PostgreSQL schema objects.
+    """
+
+    backend = (
+        get_workflow_store_backend_name()
+    )
+
+    if backend == "sqlite":
+        return
+
+    if backend in {
+        "postgres",
+        "postgresql",
+    }:
+
+        from app.workflow_postgresql_schema import (
+            validate_postgresql_workflow_schema,
+        )
+
+        validate_postgresql_workflow_schema(
+            database_url=
+                _get_postgresql_workflow_database_url()
+        )
+
+        return
+
+    raise RuntimeError(
+        "Unsupported workflow store backend: "
+        f"{backend}"
+    )
+
+
 def get_workflow_store() -> WorkflowStore:
     """
     Return the authoritative workflow-store backend.

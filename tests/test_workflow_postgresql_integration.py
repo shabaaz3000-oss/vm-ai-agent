@@ -19,7 +19,10 @@ import pytest
 from psycopg import sql
 
 from app.workflow_postgresql_schema import (
+    WORKFLOW_SCHEMA_COMMENT,
+    WORKFLOW_SCHEMA_VERSION,
     provision_postgresql_workflow_schema,
+    validate_postgresql_workflow_schema,
 )
 
 from app.workflow_postgresql_store import (
@@ -239,6 +242,154 @@ def test_store_bulk_clear_is_denied():
         match="does not permit bulk workflow deletion",
     ):
         store.clear_workflows()
+
+
+
+# ------------------------------------------------------------
+# VERSIONED SCHEMA / DEPLOYMENT BOUNDARY
+# ------------------------------------------------------------
+
+
+def test_runtime_identity_can_validate_workflow_schema():
+    database_url = (
+        postgres_database_url()
+    )
+
+    version = (
+        validate_postgresql_workflow_schema(
+            database_url=database_url
+        )
+    )
+
+    assert (
+        version
+        == WORKFLOW_SCHEMA_VERSION
+    )
+
+
+def test_runtime_validation_rejects_incompatible_schema_version():
+    database_url = (
+        postgres_database_url()
+    )
+
+    admin_database_url = (
+        os.environ[
+            "TEST_POSTGRES_ADMIN_DATABASE_URL"
+        ]
+    )
+
+    try:
+
+        with psycopg.connect(
+            admin_database_url,
+            autocommit=True,
+        ) as connection:
+
+            connection.execute(
+                """
+                COMMENT ON TABLE workflows IS
+                'vm_ai_agent_workflow_schema:v999'
+                """
+            )
+
+        with pytest.raises(
+            RuntimeError,
+            match="version is incompatible",
+        ):
+
+            validate_postgresql_workflow_schema(
+                database_url=database_url
+            )
+
+    finally:
+
+        # Restore using deployment/admin authority directly.
+        #
+        # Do NOT call the provisioner here: by design it must
+        # reject an unknown/future version rather than silently
+        # rewrite it.
+        with psycopg.connect(
+            admin_database_url,
+            autocommit=True,
+        ) as connection:
+
+            connection.execute(
+                """
+                COMMENT ON TABLE workflows IS %s
+                """,
+                (
+                    WORKFLOW_SCHEMA_COMMENT,
+                ),
+            )
+
+
+def test_deployment_provisioner_adopts_compatible_unversioned_schema():
+    database_url = (
+        postgres_database_url()
+    )
+
+    admin_database_url = (
+        os.environ[
+            "TEST_POSTGRES_ADMIN_DATABASE_URL"
+        ]
+    )
+
+    with psycopg.connect(
+        admin_database_url,
+        autocommit=True,
+    ) as connection:
+
+        # Simulate the pre-versioning Step 49.3 schema:
+        # correct structure, no schema-version comment.
+        connection.execute(
+            """
+            COMMENT ON TABLE workflows IS NULL
+            """
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match="version is incompatible",
+    ):
+
+        validate_postgresql_workflow_schema(
+            database_url=database_url
+        )
+
+    provision_postgresql_workflow_schema(
+        database_url=
+            admin_database_url
+    )
+
+    version = (
+        validate_postgresql_workflow_schema(
+            database_url=database_url
+        )
+    )
+
+    assert (
+        version
+        == WORKFLOW_SCHEMA_VERSION
+    )
+
+    with psycopg.connect(
+        admin_database_url,
+        autocommit=True,
+    ) as connection:
+
+        comment = connection.execute(
+            """
+            SELECT obj_description(
+                'public.workflows'::regclass,
+                'pg_class'
+            )
+            """
+        ).fetchone()[0]
+
+    assert (
+        comment
+        == WORKFLOW_SCHEMA_COMMENT
+    )
 
 
 # ------------------------------------------------------------

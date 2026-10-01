@@ -2,6 +2,7 @@ import inspect
 
 import pytest
 
+from app import workflow_postgresql_schema
 from app import workflow_store
 
 
@@ -363,3 +364,98 @@ def test_reconciliation_public_signatures_preserve_authority_boundary():
             ].kind
             is inspect.Parameter.KEYWORD_ONLY
         )
+
+
+def test_sqlite_readiness_requires_no_external_schema(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "VM_AI_WORKFLOW_STORE_BACKEND",
+        "sqlite",
+    )
+
+    workflow_store \
+        .validate_workflow_store_readiness()
+
+
+def test_postgresql_readiness_uses_schema_validator(
+    monkeypatch,
+):
+    database_url = (
+        "postgresql://runtime@db.example.test/"
+        "vm_ai_workflows"
+    )
+
+    monkeypatch.setenv(
+        "VM_AI_WORKFLOW_STORE_BACKEND",
+        "postgresql",
+    )
+
+    monkeypatch.setenv(
+        "VM_AI_WORKFLOW_DATABASE_URL",
+        database_url,
+    )
+
+    monkeypatch.setenv(
+        "VM_AI_ENV",
+        "development",
+    )
+
+    observed = {}
+
+    def fake_validator(
+        *,
+        database_url: str,
+        connect_timeout_seconds: int = 10,
+    ) -> int:
+
+        observed["database_url"] = (
+            database_url
+        )
+
+        observed[
+            "connect_timeout_seconds"
+        ] = connect_timeout_seconds
+
+        return (
+            workflow_postgresql_schema
+            .WORKFLOW_SCHEMA_VERSION
+        )
+
+    monkeypatch.setattr(
+        workflow_postgresql_schema,
+        "validate_postgresql_workflow_schema",
+        fake_validator,
+    )
+
+    workflow_store \
+        .validate_workflow_store_readiness()
+
+    assert (
+        observed["database_url"]
+        == database_url
+    )
+
+    assert (
+        observed[
+            "connect_timeout_seconds"
+        ]
+        == 10
+    )
+
+
+def test_unknown_backend_readiness_fails_closed(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "VM_AI_WORKFLOW_STORE_BACKEND",
+        "untrusted-backend",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Unsupported workflow store backend",
+    ):
+
+        workflow_store \
+            .validate_workflow_store_readiness()

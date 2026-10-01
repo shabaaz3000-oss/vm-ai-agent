@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -21,6 +23,7 @@ from app.workflow_store import (
     get_workflow,
     save_workflow,
     update_workflow,
+    validate_workflow_store_readiness,
 )
 
 from app.api_security_context import (
@@ -42,9 +45,20 @@ from app.servicenow_reconciliation import (
 # -------------------------------------------------
 
 
+@asynccontextmanager
+async def _lifespan(
+    _app: FastAPI,
+):
+
+    validate_workflow_store_readiness()
+
+    yield
+
+
 app = FastAPI(
     title="VM AI Agent API",
     version="0.3.0",
+    lifespan=_lifespan,
     description=(
         "Secure AI-assisted vulnerability management "
         "workflow API with authentication, RBAC, "
