@@ -971,39 +971,11 @@ def test_execution_failure_moves_workflow_to_needs_review(
 
     review_calls = []
 
-    def fake_mark_review(
-        workflow_id,
-        reason
-    ):
-
-        review_calls.append(
-            (
-                workflow_id,
-                reason,
-            )
-        )
-
-        updated_data = (
-            claimed_result
-            .model_dump()
-        )
-
-        updated_data.update(
-            {
-                "status":
-                    "NEEDS_REVIEW",
-
-                "recovery_reason":
-                    reason,
-            }
-        )
-
-        return (
-            WorkflowResult
-            .model_validate(
-                updated_data
-            )
-        )
+    def fake_mark_review(workflow_id, reason, **kwargs):
+        review_calls.append((workflow_id, reason))
+        updated_data = claimed_result.model_dump()
+        updated_data.update({'status': 'NEEDS_REVIEW', 'recovery_reason': reason})
+        return WorkflowResult.model_validate(updated_data)
 
     monkeypatch.setattr(
         execution,
@@ -1217,39 +1189,11 @@ def test_completion_persistence_failure_moves_workflow_to_needs_review(
 
     review_calls = []
 
-    def fake_mark_review(
-        workflow_id,
-        reason,
-    ):
-
-        review_calls.append(
-            (
-                workflow_id,
-                reason,
-            )
-        )
-
-        review_data = (
-            claimed_result
-            .model_dump()
-        )
-
-        review_data.update(
-            {
-                "status":
-                    "NEEDS_REVIEW",
-
-                "recovery_reason":
-                    reason,
-            }
-        )
-
-        return (
-            WorkflowResult
-            .model_validate(
-                review_data
-            )
-        )
+    def fake_mark_review(workflow_id, reason, **kwargs):
+        review_calls.append((workflow_id, reason))
+        review_data = claimed_result.model_dump()
+        review_data.update({'status': 'NEEDS_REVIEW', 'recovery_reason': reason})
+        return WorkflowResult.model_validate(review_data)
 
 
     monkeypatch.setattr(
@@ -1301,4 +1245,140 @@ def test_completion_persistence_failure_moves_workflow_to_needs_review(
     assert (
         "WORKFLOW_EXECUTION_NEEDS_REVIEW"
         in event_types
+    )
+
+
+def test_execution_recovery_binds_exact_claimed_attempt(
+    monkeypatch,
+):
+
+    claimed_data = (
+        make_result()
+        .model_dump()
+    )
+
+    claimed_data.update(
+        {
+            "status":
+                "PROCESSING",
+
+            "execution_attempt_id":
+                "EXEC-RECOVERY-BIND0001",
+        }
+    )
+
+    claimed = (
+        WorkflowResult
+        .model_validate(
+            claimed_data
+        )
+    )
+
+    monkeypatch.setattr(
+        execution,
+        "claim_workflow_for_execution",
+        lambda workflow_id:
+            claimed,
+    )
+
+    def fail_execution(
+        *,
+        result,
+        approved_by,
+    ):
+
+        raise RuntimeError(
+            "Synthetic ambiguous provider outcome."
+        )
+
+    monkeypatch.setattr(
+        execution,
+        "_execute_ticket_bound_workflow",
+        fail_execution,
+    )
+
+    captured = {}
+
+    def fake_mark_review(
+        *,
+        workflow_id,
+        reason,
+        expected_execution_attempt_id,
+        security_context,
+    ):
+
+        captured[
+            "workflow_id"
+        ] = workflow_id
+
+        captured[
+            "expected_execution_attempt_id"
+        ] = (
+            expected_execution_attempt_id
+        )
+
+        captured[
+            "security_context"
+        ] = security_context
+
+        review_data = (
+            claimed.model_dump()
+        )
+
+        review_data.update(
+            {
+                "status":
+                    "NEEDS_REVIEW",
+
+                "recovery_reason":
+                    reason,
+            }
+        )
+
+        return (
+            WorkflowResult
+            .model_validate(
+                review_data
+            )
+        )
+
+    monkeypatch.setattr(
+        execution,
+        "mark_workflow_needs_review",
+        fake_mark_review,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="ambiguous provider outcome",
+    ):
+
+        execution \
+            .claim_and_execute_workflow(
+                workflow_id=
+                    claimed.workflow_id,
+
+                approved_by=
+                    "api-approver",
+            )
+
+    assert (
+        captured[
+            "workflow_id"
+        ]
+        == claimed.workflow_id
+    )
+
+    assert (
+        captured[
+            "expected_execution_attempt_id"
+        ]
+        == "EXEC-RECOVERY-BIND0001"
+    )
+
+    assert (
+        captured[
+            "security_context"
+        ]
+        is None
     )

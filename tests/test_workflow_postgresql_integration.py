@@ -632,14 +632,7 @@ def test_multi_instance_reconciliation_has_exactly_one_winner():
     )
 
     review = (
-        first
-        .mark_workflow_needs_review(
-            result.workflow_id,
-            (
-                "External ticket result "
-                "requires reconciliation."
-            ),
-        )
+        first.mark_workflow_needs_review(result.workflow_id, 'External ticket result requires reconciliation.', expected_execution_attempt_id=claimed.execution_attempt_id, security_context=approver_context)
     )
 
     assert (
@@ -904,11 +897,7 @@ def test_multi_instance_retry_authorization_has_exactly_one_winner():
     )
 
     review = (
-        first
-        .mark_workflow_needs_review(
-            result.workflow_id,
-            "External action outcome is ambiguous.",
-        )
+        first.mark_workflow_needs_review(result.workflow_id, 'External action outcome is ambiguous.', expected_execution_attempt_id=claimed.execution_attempt_id, security_context=approver)
     )
 
     barrier = Barrier(
@@ -1019,11 +1008,7 @@ def test_stale_reconciliation_attempt_is_rejected_after_fresh_claim():
         )
     )
 
-    first_instance \
-        .mark_workflow_needs_review(
-            result.workflow_id,
-            "First execution requires reconciliation.",
-        )
+    first_instance.mark_workflow_needs_review(result.workflow_id, 'First execution requires reconciliation.', expected_execution_attempt_id=first_claim.execution_attempt_id, security_context=approver)
 
     first_instance \
         .authorize_reconciled_retry(
@@ -1046,11 +1031,7 @@ def test_stale_reconciliation_attempt_is_rejected_after_fresh_claim():
         != first_claim.execution_attempt_id
     )
 
-    restarted_instance \
-        .mark_workflow_needs_review(
-            result.workflow_id,
-            "Second execution requires reconciliation.",
-        )
+    restarted_instance.mark_workflow_needs_review(result.workflow_id, 'Second execution requires reconciliation.', expected_execution_attempt_id=second_claim.execution_attempt_id, security_context=approver)
 
     with pytest.raises(
         PermissionError,
@@ -1202,11 +1183,7 @@ def test_confirm_vs_retry_race_has_exactly_one_resolution():
     )
 
     review = (
-        confirmation_instance
-        .mark_workflow_needs_review(
-            result.workflow_id,
-            "Human reconciliation required.",
-        )
+        confirmation_instance.mark_workflow_needs_review(result.workflow_id, 'Human reconciliation required.', expected_execution_attempt_id=claimed.execution_attempt_id, security_context=approver)
     )
 
     assert (
@@ -1349,11 +1326,7 @@ def test_retry_then_competing_claims_create_one_fresh_attempt():
     )
 
     review = (
-        first
-        .mark_workflow_needs_review(
-            result.workflow_id,
-            "Ambiguous external write.",
-        )
+        first.mark_workflow_needs_review(result.workflow_id, 'Ambiguous external write.', expected_execution_attempt_id=ambiguous_claim.execution_attempt_id, security_context=approver)
     )
 
     first.authorize_reconciled_retry(
@@ -1670,3 +1643,338 @@ def test_reject_workflow_authoritatively_persists_postgresql_state():
             .claim_workflow_for_execution(
                 original.workflow_id
             )
+
+
+def test_postgresql_needs_review_rejects_stale_execution_attempt():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=
+                database_url
+        )
+    )
+
+    original = workflow()
+
+    store.save_workflow(
+        original
+    )
+
+    claimed = (
+        store
+        .claim_workflow_for_execution(
+            original.workflow_id
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="execution attempt changed",
+    ):
+
+        store \
+            .mark_workflow_needs_review(
+                original.workflow_id,
+                "Synthetic ambiguous outcome.",
+                expected_execution_attempt_id=
+                    "EXEC-STALE-PG-REVIEW0001",
+            )
+
+    authoritative = (
+        store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+
+def test_postgresql_needs_review_rejects_cross_tenant_context():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=
+                database_url
+        )
+    )
+
+    alpha = context(
+        tenant_id=
+            "tenant-alpha",
+    )
+
+    bravo = context(
+        tenant_id=
+            "tenant-bravo",
+    )
+
+    original = bound(
+        tenant_id=
+            "tenant-alpha",
+    )
+
+    store.save_workflow(
+        original
+    )
+
+    claimed = (
+        store
+        .claim_workflow_for_execution(
+            original.workflow_id,
+            security_context=
+                alpha,
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="different tenant",
+    ):
+
+        store \
+            .mark_workflow_needs_review(
+                original.workflow_id,
+                "Synthetic ambiguous outcome.",
+                expected_execution_attempt_id=
+                    claimed.execution_attempt_id,
+                security_context=
+                    bravo,
+            )
+
+    authoritative = (
+        store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+    assert (
+        authoritative.tenant_id
+        == "tenant-alpha"
+    )
+
+
+def test_postgresql_needs_review_requires_context_for_tenant_bound_workflow():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    store = (
+        PostgreSQLWorkflowStore(
+            database_url=
+                database_url
+        )
+    )
+
+    approver_context = context(
+        tenant_id=
+            "tenant-alpha",
+    )
+
+    original = bound(
+        tenant_id=
+            "tenant-alpha",
+    )
+
+    store.save_workflow(
+        original
+    )
+
+    claimed = (
+        store
+        .claim_workflow_for_execution(
+            original.workflow_id,
+            security_context=
+                approver_context,
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="requires trusted security context",
+    ):
+
+        store \
+            .mark_workflow_needs_review(
+                original.workflow_id,
+                "Synthetic ambiguous outcome.",
+                expected_execution_attempt_id=
+                    claimed.execution_attempt_id,
+            )
+
+    authoritative = (
+        store.get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+
+def test_multi_instance_needs_review_has_exactly_one_winner():
+
+    database_url = (
+        postgres_database_url()
+    )
+
+    first = PostgreSQLWorkflowStore(
+        database_url=
+            database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=
+            database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=
+                database_url
+        )
+    )
+
+    original = workflow()
+
+    first.save_workflow(
+        original
+    )
+
+    claimed = (
+        first
+        .claim_workflow_for_execution(
+            original.workflow_id
+        )
+    )
+
+    barrier = Barrier(
+        2
+    )
+
+    def compete(
+        store: PostgreSQLWorkflowStore,
+    ) -> tuple[bool, str | None]:
+
+        barrier.wait(
+            timeout=10
+        )
+
+        try:
+
+            reviewed = (
+                store
+                .mark_workflow_needs_review(
+                    original.workflow_id,
+                    (
+                        "Distributed ambiguity "
+                        "requires reconciliation."
+                    ),
+                    expected_execution_attempt_id=
+                        claimed.execution_attempt_id,
+                )
+            )
+
+        except PermissionError:
+
+            return (
+                False,
+                None,
+            )
+
+        return (
+            True,
+            reviewed.execution_attempt_id,
+        )
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        first_future = (
+            executor.submit(
+                compete,
+                first,
+            )
+        )
+
+        second_future = (
+            executor.submit(
+                compete,
+                second,
+            )
+        )
+
+        outcomes = (
+            first_future.result(),
+            second_future.result(),
+        )
+
+    assert sorted(
+        won
+        for won, _attempt
+        in outcomes
+    ) == [
+        False,
+        True,
+    ]
+
+    winner_attempts = [
+        attempt
+        for won, attempt
+        in outcomes
+        if won
+    ]
+
+    assert winner_attempts == [
+        claimed.execution_attempt_id
+    ]
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            original.workflow_id
+        )
+    )
+
+    assert (
+        authoritative.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        authoritative.execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+    assert (
+        authoritative.recovery_reason
+        == (
+            "Distributed ambiguity "
+            "requires reconciliation."
+        )
+    )

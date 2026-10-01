@@ -417,22 +417,10 @@ def test_recovery_preserves_tenant_binding(
         bound
     )
 
-    workflow_store \
-        .claim_workflow_for_execution(
-            bound.workflow_id,
-            security_context=
-                make_context(),
-        )
+    claimed = workflow_store.claim_workflow_for_execution(bound.workflow_id, security_context=make_context())
 
     review = (
-        workflow_store
-        .mark_workflow_needs_review(
-            workflow_id=
-                bound.workflow_id,
-
-            reason=
-                "Manual reconciliation required.",
-        )
+        workflow_store.mark_workflow_needs_review(workflow_id=bound.workflow_id, reason='Manual reconciliation required.', expected_execution_attempt_id=claimed.execution_attempt_id, security_context=make_context())
     )
 
     assert (

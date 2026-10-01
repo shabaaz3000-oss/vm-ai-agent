@@ -1172,3 +1172,184 @@ def test_approver_can_reconcile_stale_processing_workflow():
         stored.execution_attempt_id
         == "EXEC-TEST0001"
     )
+
+
+def test_tenant_bound_api_approval_forwards_trusted_security_context(
+    monkeypatch,
+):
+
+    data = (
+        make_result()
+        .model_dump()
+    )
+
+    data[
+        "tenant_id"
+    ] = "tenant-alpha"
+
+    authoritative = (
+        WorkflowResult
+        .model_validate(
+            data
+        )
+    )
+
+    trusted_context = object()
+
+    monkeypatch.setattr(
+        api_module,
+        "get_workflow",
+        lambda workflow_id:
+            authoritative,
+    )
+
+    builder_calls = []
+
+    def fake_build_context(
+        principal,
+    ):
+
+        builder_calls.append(
+            principal.username
+        )
+
+        return trusted_context
+
+    monkeypatch.setattr(
+        api_module,
+        "build_api_security_context",
+        fake_build_context,
+    )
+
+    captured = {}
+
+    def fake_execute(
+        *,
+        workflow_id,
+        approved_by,
+        security_context,
+    ):
+
+        captured[
+            "workflow_id"
+        ] = workflow_id
+
+        captured[
+            "approved_by"
+        ] = approved_by
+
+        captured[
+            "security_context"
+        ] = security_context
+
+        return authoritative
+
+    monkeypatch.setattr(
+        api_module,
+        "claim_and_execute_workflow",
+        fake_execute,
+    )
+
+    response = client.post(
+        "/workflows/WF-TEST0001/approve",
+        headers=
+            approver_headers(),
+    )
+
+    assert response.status_code == 200
+    assert len(builder_calls) == 1
+
+    assert (
+        captured[
+            "security_context"
+        ]
+        is trusted_context
+    )
+
+
+def test_tenant_bound_api_rejection_forwards_trusted_security_context(
+    monkeypatch,
+):
+
+    data = (
+        make_result()
+        .model_dump()
+    )
+
+    data[
+        "tenant_id"
+    ] = "tenant-alpha"
+
+    authoritative = (
+        WorkflowResult
+        .model_validate(
+            data
+        )
+    )
+
+    trusted_context = object()
+
+    monkeypatch.setattr(
+        api_module,
+        "get_workflow",
+        lambda workflow_id:
+            authoritative,
+    )
+
+    builder_calls = []
+
+    def fake_build_context(
+        principal,
+    ):
+
+        builder_calls.append(
+            principal.username
+        )
+
+        return trusted_context
+
+    monkeypatch.setattr(
+        api_module,
+        "build_api_security_context",
+        fake_build_context,
+    )
+
+    captured = {}
+
+    def fake_reject(
+        workflow_id,
+        *,
+        security_context,
+    ):
+
+        captured[
+            "workflow_id"
+        ] = workflow_id
+
+        captured[
+            "security_context"
+        ] = security_context
+
+        return authoritative
+
+    monkeypatch.setattr(
+        api_module,
+        "reject_workflow_authoritatively",
+        fake_reject,
+    )
+
+    response = client.post(
+        "/workflows/WF-TEST0001/reject",
+        headers=
+            approver_headers(),
+    )
+
+    assert response.status_code == 200
+    assert len(builder_calls) == 1
+
+    assert (
+        captured[
+            "security_context"
+        ]
+        is trusted_context
+    )

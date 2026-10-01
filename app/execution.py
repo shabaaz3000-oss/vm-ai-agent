@@ -675,13 +675,7 @@ def claim_and_execute_workflow(
         try:
 
             review_result = (
-                mark_workflow_needs_review(
-                    workflow_id=
-                        workflow_id,
-
-                    reason=
-                        recovery_reason,
-                )
+                mark_workflow_needs_review(workflow_id=workflow_id, reason=recovery_reason, expected_execution_attempt_id=claimed_result.execution_attempt_id, security_context=security_context)
             )
 
         except Exception as recovery_error:

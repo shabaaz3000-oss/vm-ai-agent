@@ -540,14 +540,7 @@ def test_processing_workflow_can_be_marked_needs_review():
     )
 
     reviewed = (
-        workflow_store
-        .mark_workflow_needs_review(
-            workflow_id=
-                "WF-TEST0001",
-
-            reason=
-                "Execution result is uncertain."
-        )
+        workflow_store.mark_workflow_needs_review(workflow_id='WF-TEST0001', reason='Execution result is uncertain.', expected_execution_attempt_id=claimed.execution_attempt_id)
     )
 
     assert (

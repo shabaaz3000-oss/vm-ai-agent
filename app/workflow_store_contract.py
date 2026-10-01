@@ -54,11 +54,7 @@ class WorkflowStore(Protocol):
     ) -> WorkflowResult:
         ...
 
-    def mark_workflow_needs_review(
-        self,
-        workflow_id: str,
-        reason: str,
-    ) -> WorkflowResult:
+    def mark_workflow_needs_review(self, workflow_id: str, reason: str, *, expected_execution_attempt_id: str, security_context: SecurityContext | None=None) -> WorkflowResult:
         ...
 
     def mark_stale_processing_for_review(

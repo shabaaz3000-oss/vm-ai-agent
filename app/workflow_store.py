@@ -640,13 +640,37 @@ def _sqlite_reject_workflow_authoritatively(
 
 def _sqlite_mark_workflow_needs_review(
     workflow_id: str,
-    reason: str
+    reason: str,
+    *,
+    expected_execution_attempt_id: str,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
 
-    if not reason.strip():
+    if (
+        not isinstance(
+            reason,
+            str,
+        )
+        or not reason.strip()
+    ):
 
         raise ValueError(
             "Recovery reason cannot be blank."
+        )
+
+    if (
+        not isinstance(
+            expected_execution_attempt_id,
+            str,
+        )
+        or not expected_execution_attempt_id.strip()
+        or expected_execution_attempt_id
+        != expected_execution_attempt_id.strip()
+    ):
+
+        raise ValueError(
+            "expected_execution_attempt_id "
+            "must be a non-blank normalized string."
         )
 
     with connect_database() as connection:
@@ -660,20 +684,19 @@ def _sqlite_mark_workflow_needs_review(
             SELECT
                 status,
                 payload
-
             FROM workflows
-
             WHERE workflow_id = ?
             """,
             (
                 workflow_id,
-            )
+            ),
         ).fetchone()
 
         if row is None:
 
             raise KeyError(
-                f"Workflow not found: {workflow_id}"
+                f"Workflow not found: "
+                f"{workflow_id}"
             )
 
         if (
@@ -692,6 +715,30 @@ def _sqlite_mark_workflow_needs_review(
                 row["payload"]
             )
         )
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow recovery "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        if (
+            current.execution_attempt_id
+            != expected_execution_attempt_id
+        ):
+
+            raise PermissionError(
+                "Workflow execution attempt changed."
+            )
 
         updated_data = (
             current.model_dump()
@@ -717,28 +764,27 @@ def _sqlite_mark_workflow_needs_review(
         cursor = connection.execute(
             """
             UPDATE workflows
-
             SET
                 status = ?,
                 payload = ?,
                 updated_at = CURRENT_TIMESTAMP
-
             WHERE
                 workflow_id = ?
                 AND status = 'PROCESSING'
+                AND payload = ?
             """,
             (
                 review_result.status,
                 review_result.model_dump_json(),
                 workflow_id,
-            )
+                row["payload"],
+            ),
         )
 
         if cursor.rowcount != 1:
 
             raise PermissionError(
-                "Workflow state changed before "
-                "recovery could be recorded."
+                "Workflow recovery authority changed."
             )
 
     return review_result
@@ -1419,17 +1465,8 @@ class SQLiteWorkflowStore:
                 security_context,
         )
 
-    def mark_workflow_needs_review(
-        self,
-        workflow_id: str,
-        reason: str,
-    ) -> WorkflowResult:
-        return (
-            _sqlite_mark_workflow_needs_review(
-                workflow_id,
-                reason,
-            )
-        )
+    def mark_workflow_needs_review(self, workflow_id: str, reason: str, *, expected_execution_attempt_id: str, security_context: SecurityContext | None=None) -> WorkflowResult:
+        return _sqlite_mark_workflow_needs_review(workflow_id, reason, expected_execution_attempt_id=expected_execution_attempt_id, security_context=security_context)
 
     def mark_stale_processing_for_review(
         self,
@@ -1762,17 +1799,8 @@ def reject_workflow_authoritatively(
         )
     )
 
-def mark_workflow_needs_review(
-    workflow_id: str,
-    reason: str
-) -> WorkflowResult:
-    return (
-        get_workflow_store()
-        .mark_workflow_needs_review(
-            workflow_id,
-            reason,
-        )
-    )
+def mark_workflow_needs_review(workflow_id: str, reason: str, *, expected_execution_attempt_id: str, security_context: SecurityContext | None=None) -> WorkflowResult:
+    return get_workflow_store().mark_workflow_needs_review(workflow_id, reason, expected_execution_attempt_id=expected_execution_attempt_id, security_context=security_context)
 
 
 def mark_stale_processing_for_review(

@@ -156,15 +156,80 @@ def approve_workflow(
 
     try:
 
-        completed_result = (
-            claim_and_execute_workflow(
-                workflow_id=
-                    workflow_id,
-
-                approved_by=
-                    principal.username,
+        authoritative = (
+            get_workflow(
+                workflow_id
             )
         )
+
+        if authoritative is None:
+
+            raise KeyError(
+                workflow_id
+            )
+
+        trusted_context = None
+
+        if authoritative.tenant_id is not None:
+
+            try:
+
+                trusted_context = (
+                    build_api_security_context(
+                        principal
+                    )
+                )
+
+            except APITenantBindingError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_403_FORBIDDEN,
+
+                    detail=(
+                        "Authenticated principal has no "
+                        "trusted API tenant binding."
+                    ),
+                )
+
+            except APIContextConfigurationError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+
+                    detail=(
+                        "Trusted API tenant authority "
+                        "is unavailable."
+                    ),
+                )
+
+        if trusted_context is None:
+
+            completed_result = (
+                claim_and_execute_workflow(
+                    workflow_id=
+                        workflow_id,
+
+                    approved_by=
+                        principal.username,
+                )
+            )
+
+        else:
+
+            completed_result = (
+                claim_and_execute_workflow(
+                    workflow_id=
+                        workflow_id,
+
+                    approved_by=
+                        principal.username,
+
+                    security_context=
+                        trusted_context,
+                )
+            )
 
     except KeyError:
 
@@ -208,11 +273,71 @@ def reject_workflow_endpoint(
 
     try:
 
-        rejected_result = (
-            reject_workflow_authoritatively(
+        authoritative = (
+            get_workflow(
                 workflow_id
             )
         )
+
+        if authoritative is None:
+
+            raise KeyError(
+                workflow_id
+            )
+
+        trusted_context = None
+
+        if authoritative.tenant_id is not None:
+
+            try:
+
+                trusted_context = (
+                    build_api_security_context(
+                        principal
+                    )
+                )
+
+            except APITenantBindingError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_403_FORBIDDEN,
+
+                    detail=(
+                        "Authenticated principal has no "
+                        "trusted API tenant binding."
+                    ),
+                )
+
+            except APIContextConfigurationError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+
+                    detail=(
+                        "Trusted API tenant authority "
+                        "is unavailable."
+                    ),
+                )
+
+        if trusted_context is None:
+
+            rejected_result = (
+                reject_workflow_authoritatively(
+                    workflow_id
+                )
+            )
+
+        else:
+
+            rejected_result = (
+                reject_workflow_authoritatively(
+                    workflow_id,
+                    security_context=
+                        trusted_context,
+                )
+            )
 
     except KeyError:
 

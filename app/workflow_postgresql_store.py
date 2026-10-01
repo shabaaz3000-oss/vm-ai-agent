@@ -686,11 +686,36 @@ class PostgreSQLWorkflowStore:
         self,
         workflow_id: str,
         reason: str,
+        *,
+        expected_execution_attempt_id: str,
+        security_context: SecurityContext | None = None,
     ) -> WorkflowResult:
 
-        if not reason.strip():
+        if (
+            not isinstance(
+                reason,
+                str,
+            )
+            or not reason.strip()
+        ):
+
             raise ValueError(
                 "Recovery reason cannot be blank."
+            )
+
+        if (
+            not isinstance(
+                expected_execution_attempt_id,
+                str,
+            )
+            or not expected_execution_attempt_id.strip()
+            or expected_execution_attempt_id
+            != expected_execution_attempt_id.strip()
+        ):
+
+            raise ValueError(
+                "expected_execution_attempt_id "
+                "must be a non-blank normalized string."
             )
 
         with self._connect() as connection:
@@ -703,6 +728,7 @@ class PostgreSQLWorkflowStore:
             )
 
             if status != "PROCESSING":
+
                 raise PermissionError(
                     "Only a PROCESSING workflow can "
                     "be moved to NEEDS_REVIEW."
@@ -713,6 +739,30 @@ class PostgreSQLWorkflowStore:
                     original_payload
                 )
             )
+
+            if current.tenant_id is not None:
+
+                if security_context is None:
+
+                    raise PermissionError(
+                        "Tenant-bound workflow recovery "
+                        "requires trusted security context."
+                    )
+
+                require_workflow_tenant(
+                    current,
+                    security_context=
+                        security_context,
+                )
+
+            if (
+                current.execution_attempt_id
+                != expected_execution_attempt_id
+            ):
+
+                raise PermissionError(
+                    "Workflow execution attempt changed."
+                )
 
             updated_data = (
                 current.model_dump()
@@ -738,17 +788,14 @@ class PostgreSQLWorkflowStore:
             cursor = connection.execute(
                 """
                 UPDATE workflows
-
                 SET
                     status = %s,
                     payload = %s,
                     updated_at =
                         CURRENT_TIMESTAMP
-
                 WHERE
                     workflow_id = %s
-                    AND status =
-                        'PROCESSING'
+                    AND status = 'PROCESSING'
                     AND payload = %s
                 """,
                 (
@@ -760,9 +807,9 @@ class PostgreSQLWorkflowStore:
             )
 
             if cursor.rowcount != 1:
+
                 raise PermissionError(
-                    "Workflow state changed before "
-                    "recovery could be recorded."
+                    "Workflow recovery authority changed."
                 )
 
         return review_result

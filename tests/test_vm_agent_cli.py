@@ -398,6 +398,53 @@ def make_attack_security_eval_results(
     ]
 
 
+def make_workflow_authority_security_eval_result(
+    *,
+    passed: bool = True,
+):
+
+    return type(
+        "WorkflowAuthoritySecurityEvaluationStub",
+        (),
+        {
+            "total_cases":
+                10,
+
+            "authority_protection_cases":
+                7,
+
+            "transition_cases":
+                3,
+
+            "passed_cases":
+                (
+                    10
+                    if passed
+                    else 9
+                ),
+
+            "failed_cases":
+                (
+                    0
+                    if passed
+                    else 1
+                ),
+
+            "authority_failures":
+                (
+                    0
+                    if passed
+                    else 1
+                ),
+
+            "execution_errors":
+                0,
+
+            "passed":
+                passed,
+        },
+    )()
+
 def patch_security_eval_suites(
     monkeypatch,
     *,
@@ -407,6 +454,7 @@ def patch_security_eval_suites(
     authorization_passed: bool = True,
     leakage_passed: bool = True,
     agency_passed: bool = True,
+    workflow_authority_passed: bool = True,
     attack_results=None,
 ) -> None:
 
@@ -458,6 +506,15 @@ def patch_security_eval_suites(
         ),
     )
 
+    monkeypatch.setattr(
+        vm_agent,
+        "run_workflow_authority_security_evaluation",
+        lambda: make_workflow_authority_security_eval_result(
+            passed=
+                workflow_authority_passed
+        ),
+    )
+
     if attack_results is None:
         attack_results = (
             make_attack_security_eval_results(
@@ -501,6 +558,7 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
         "AUTHORIZATION SECURITY",
         "DATA LEAKAGE SECURITY",
         "EXCESSIVE AGENCY",
+        "WORKFLOW EXECUTION AUTHORITY",
         "STANDARDIZED ATTACK HARNESS",
     ]:
         assert heading in output
@@ -541,6 +599,25 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
         "Excessive Agency Result: PASS"
         in output
     )
+
+    assert (
+        "Workflow Execution Authority "
+        "Result: PASS"
+        in output
+    )
+
+    assert (
+        "Authority Protection Cases: 7"
+        in output
+    )
+
+    assert (
+        "State Transition / Recovery Cases: 3"
+        in output
+    )
+
+    assert "Authority Failures: 0" in output
+    assert "Execution Errors: 0" in output
 
     assert "Direct Prompt Injection" in output
     assert "System Prompt Leakage" in output
@@ -746,6 +823,56 @@ def test_security_eval_command_fails_when_attack_harness_fails(
     assert "Data Leakage Security Result: PASS" in output
     assert "Excessive Agency Result: PASS" in output
     assert "OVERALL SECURITY EVALUATION: FAIL" in output
+
+
+def test_security_eval_command_fails_when_workflow_authority_suite_fails(
+    monkeypatch,
+    capsys,
+) -> None:
+
+    patch_security_eval_suites(
+        monkeypatch,
+        workflow_authority_passed=False,
+    )
+
+    exit_code = vm_agent.main(
+        [
+            "security-eval"
+        ]
+    )
+
+    output = (
+        capsys.readouterr().out
+    )
+
+    assert exit_code == 1
+
+    assert (
+        "WORKFLOW EXECUTION AUTHORITY"
+        in output
+    )
+
+    assert (
+        "Workflow Execution Authority "
+        "Result: FAIL"
+        in output
+    )
+
+    assert (
+        "Authority Failures: 1"
+        in output
+    )
+
+    assert (
+        "OVERALL SECURITY EVALUATION: FAIL"
+        in output
+    )
+
+    assert (
+        "no approval, ticket creation, "
+        "or external execution"
+        in output
+    )
 
 
 # -------------------------------------------------
