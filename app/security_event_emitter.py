@@ -386,20 +386,25 @@ class SecurityEventEmitter:
                 "a SecurityEvent instance."
             )
 
+        sink_failed = False
+
         try:
             self._sink.emit(event)
 
         except SecurityEventValidationError:
             raise
 
-        except Exception as exc:
+        except Exception:
             # Do not include raw sink exception text because downstream
             # sink failures may themselves contain sensitive provider
             # or transport details.
+            sink_failed = True
+
+        if sink_failed:
             raise SecurityEventEmissionError(
                 "Security event emission failed via "
                 f"{type(self._sink).__name__}."
-            ) from exc
+            ) from None
 
 
 def emit_security_event(

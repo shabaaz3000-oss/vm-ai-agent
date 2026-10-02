@@ -391,3 +391,130 @@ def test_adapter_does_not_modify_security_event():
     sink.emit(event)
 
     assert event.to_dict() == before
+
+
+def test_sink_failure_does_not_retain_secret_exception_context():
+    import traceback
+
+    import pytest
+
+    from app.security_event_emitter import (
+        SecurityEventEmissionError,
+        SecurityEventEmitter,
+    )
+    from app.security_observability import (
+        SecurityEvent,
+        SecurityEventType,
+        SecurityOutcome,
+        SecuritySeverity,
+        SecuritySourceComponent,
+    )
+
+
+    secret = (
+        "SUPER-SECRET-SINK-CREDENTIAL"
+    )
+
+
+    class SecretBearingSink:
+
+        def emit(
+            self,
+            event,
+        ) -> None:
+
+            raise RuntimeError(
+                "Authorization: Bearer "
+                + secret
+            )
+
+
+    event = SecurityEvent(
+        event_type=(
+            SecurityEventType
+            .AUTHORIZATION_DENIED
+        ),
+        severity=(
+            SecuritySeverity.HIGH
+        ),
+        outcome=(
+            SecurityOutcome.DENIED
+        ),
+        source_component=(
+            SecuritySourceComponent.AUTH
+        ),
+    )
+
+
+    with pytest.raises(
+        SecurityEventEmissionError
+    ) as captured:
+
+        SecurityEventEmitter(
+            SecretBearingSink()
+        ).emit(
+            event
+        )
+
+
+    error = (
+        captured.value
+    )
+
+
+    assert (
+        secret
+        not in str(
+            error
+        )
+    )
+
+    assert (
+        "Authorization: Bearer"
+        not in str(
+            error
+        )
+    )
+
+
+    assert (
+        error.__cause__
+        is None
+    )
+
+    assert (
+        error.__context__
+        is None
+    )
+
+    assert (
+        error.__suppress_context__
+        is True
+    )
+
+
+    rendered = "".join(
+        traceback.format_exception(
+            type(
+                error
+            ),
+            error,
+            error.__traceback__,
+        )
+    )
+
+
+    assert (
+        secret
+        not in rendered
+    )
+
+    assert (
+        "Authorization: Bearer"
+        not in rendered
+    )
+
+    assert (
+        "RuntimeError"
+        not in rendered
+    )

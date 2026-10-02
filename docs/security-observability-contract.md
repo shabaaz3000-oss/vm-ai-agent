@@ -1473,3 +1473,44 @@ Metrics observe authority. Metrics are never authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Security event sink exception confidentiality
+
+A canonical security-event sink may fail with an exception whose message
+contains provider, transport, credential, token, or other sensitive
+material.
+
+`SecurityEventEmitter` preserves canonical
+`SecurityEventValidationError` propagation, but generic sink failures are
+converted to a bounded `SecurityEventEmissionError` only after the generic
+sink exception scope has ended.
+
+The generic sink exception is not retained in a local exception binding
+when the sanitized emission error is raised.
+
+The sanitized emission error uses explicit `from None` chaining
+suppression.
+
+For a generic sink failure:
+
+- the outward `SecurityEventEmissionError` contains no raw sink exception
+  text;
+- `__cause__` is `None`;
+- `__context__` is `None`;
+- formatted traceback output does not expose the underlying generic sink
+  exception type or message;
+- the original generic sink exception cannot become an observability
+  payload;
+- `_emit_best_effort` continues to treat the failure as best-effort
+  telemetry failure;
+- the underlying security decision remains unchanged.
+
+Canonical `SecurityEventValidationError` continues to propagate directly
+and is not converted to a sink-emission error.
+
+This confidentiality control does not make audit delivery authoritative.
+
+Audit observes authority. Audit is not authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
