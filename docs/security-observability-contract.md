@@ -1301,3 +1301,92 @@ Metrics observe authority. Metrics are never authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Deterministic single-event security detections
+
+The first Step 50.5 detection boundary is framework-independent and
+evaluates one already-normalized canonical `SecurityEvent` at a time.
+
+The deterministic rule boundary does not reconstruct, replace, or modify
+security authority.
+
+A rule may match only bounded canonical dimensions:
+
+- `event_type`
+- `outcome`
+- `reason_code`
+
+The v1 rule vocabulary is explicit and immutable. Arbitrary predicates,
+callbacks, free-form rule IDs, and free-form alert types are not accepted.
+
+The initial high-confidence rules detect:
+
+- cross-tenant activity;
+- security-binding mismatch;
+- ServiceNow/provider correlation mismatch;
+- provider ambiguity;
+- workflow execution-attempt mismatch;
+- stale workflow processing;
+- blocked direct prompt injection;
+- suspected tool-output prompt injection;
+- unauthorized MCP tool invocation;
+- workflow `NEEDS_REVIEW`.
+
+Authority-boundary violations take precedence over lower-severity
+operational signals when more than one conceptual category could apply to
+the same source event.
+
+Each source event produces at most one v1 `SecurityAlert`.
+
+A `SecurityAlert` is immutable responder-facing observability data. It
+contains a server-generated alert ID, detection timestamp, bounded rule
+ID, bounded alert type, alert severity, the source event identity/type,
+source outcome/component, canonical reason code when present, and selected
+canonical correlation context.
+
+Canonical correlation fields may be copied from the already-validated
+source event for investigation:
+
+- `request_id`
+- `principal_ref`
+- `tenant_id`
+- `session_ref`
+- `workflow_id`
+- `execution_attempt_ref`
+- `provider_correlation_id`
+
+Those values are alert context only. They are not detection authority and
+must not become aggregate metric labels merely because they are present
+on an alert.
+
+Alerts do not include raw access tokens, refresh tokens, ID tokens,
+passwords, client secrets, raw prompts, raw RAG content, raw tool output,
+provider response bodies, raw execution secrets, arbitrary exception
+messages, ServiceNow `sys_id` values, or other uncontrolled sensitive
+payloads.
+
+The first detection tranche intentionally contains no sliding-window,
+threshold, rate, grouping, or expiration state.
+
+Aggregate/rate detections require a separate explicit contract defining:
+
+- observation window;
+- threshold;
+- grouping dimension;
+- state lifetime;
+- expiration/reset behavior;
+- false-positive expectations.
+
+A detection result does not authenticate a principal, select a tenant,
+authorize retrieval, validate an MCP session, authorize a tool invocation,
+approve workflow execution, establish exact execution-attempt authority,
+change workflow state, or resolve provider reconciliation.
+
+An alert record is not authorization state.
+
+Detection observes authority. Detection is never authority.
+
+Metrics observe authority. Metrics are never authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
