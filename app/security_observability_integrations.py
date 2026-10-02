@@ -15,6 +15,8 @@ underlying security decision.
 
 from __future__ import annotations
 
+from app.security_observability_correlation import build_execution_attempt_ref
+
 import logging
 
 from app.security_event_emitter import (
@@ -542,6 +544,212 @@ def emit_mcp_tool_invocation_denied_security_event(
             ),
             action=SecurityAction.INVOKE_TOOL,
             reason_code=reason_code,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def _trusted_execution_attempt_ref(
+    *,
+    tenant_id: str | None,
+    workflow_id: str,
+    execution_attempt_id: str | None,
+) -> str | None:
+    """
+    Derive pseudonymous execution-attempt correlation only when
+    the authoritative workflow state contains a tenant and exact
+    execution-attempt identifier.
+
+    Legacy tenant-unbound workflows retain authoritative workflow
+    correlation but deliberately omit execution_attempt_ref.
+    """
+
+    if tenant_id is None:
+        return None
+
+    if execution_attempt_id is None:
+        return None
+
+    return build_execution_attempt_ref(
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=execution_attempt_id,
+    )
+
+
+def emit_workflow_execution_claimed_security_event(
+    *,
+    tenant_id: str | None,
+    workflow_id: str,
+    execution_attempt_id: str | None,
+) -> bool:
+    """
+    Observe a successful authoritative workflow execution claim.
+
+    Inputs must come from the WorkflowResult returned by the
+    authoritative claim operation, never directly from request
+    parameters.
+    """
+
+    try:
+        execution_attempt_ref = (
+            _trusted_execution_attempt_ref(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+            )
+        )
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .WORKFLOW_EXECUTION_CLAIMED
+            ),
+            severity=SecuritySeverity.INFO,
+            outcome=SecurityOutcome.ALLOWED,
+            source_component=(
+                SecuritySourceComponent.EXECUTION
+            ),
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_ref=
+                execution_attempt_ref,
+            resource_type=(
+                SecurityResourceType
+                .EXECUTION_ATTEMPT
+            ),
+            action=SecurityAction.CLAIM_EXECUTION,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_workflow_needs_review_security_event(
+    *,
+    tenant_id: str | None,
+    workflow_id: str,
+    execution_attempt_id: str | None,
+) -> bool:
+    """
+    Observe an authoritative successful transition into
+    NEEDS_REVIEW.
+
+    The raw execution_attempt_id is used only to derive the
+    pseudonymous correlation reference and is never emitted.
+    """
+
+    try:
+        execution_attempt_ref = (
+            _trusted_execution_attempt_ref(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+            )
+        )
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .WORKFLOW_NEEDS_REVIEW
+            ),
+            severity=SecuritySeverity.HIGH,
+            outcome=(
+                SecurityOutcome.REVIEW_REQUIRED
+            ),
+            source_component=(
+                SecuritySourceComponent.EXECUTION
+            ),
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_ref=
+                execution_attempt_ref,
+            resource_type=(
+                SecurityResourceType
+                .EXECUTION_ATTEMPT
+            ),
+            action=(
+                SecurityAction.TRANSITION_WORKFLOW
+            ),
+            reason_code=(
+                SecurityReasonCode.NEEDS_REVIEW
+            ),
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_workflow_stale_processing_detected_security_event(
+    *,
+    tenant_id: str | None,
+    workflow_id: str,
+    execution_attempt_id: str | None,
+) -> bool:
+    """
+    Observe authoritative stale execution state after the stale
+    recovery operation has established the condition and committed
+    its transition.
+
+    This event does not perform recovery or authorize a retry.
+    """
+
+    try:
+        execution_attempt_ref = (
+            _trusted_execution_attempt_ref(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+            )
+        )
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .WORKFLOW_STALE_PROCESSING_DETECTED
+            ),
+            severity=SecuritySeverity.HIGH,
+            outcome=(
+                SecurityOutcome.REVIEW_REQUIRED
+            ),
+            source_component=(
+                SecuritySourceComponent.EXECUTION
+            ),
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_ref=
+                execution_attempt_ref,
+            resource_type=(
+                SecurityResourceType
+                .EXECUTION_ATTEMPT
+            ),
+            action=SecurityAction.RECONCILE,
+            reason_code=(
+                SecurityReasonCode
+                .STALE_EXECUTION_ATTEMPT
+            ),
         )
 
         return _emit_best_effort(

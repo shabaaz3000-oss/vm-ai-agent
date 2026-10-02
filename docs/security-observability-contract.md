@@ -885,3 +885,41 @@ No metric label may contain `workflow_id`, `execution_attempt_ref`, or
 the raw `execution_attempt_id`.
 
 Correlation observes authority. Correlation is never authority.
+
+### Authoritative workflow execution event correlation
+
+Canonical workflow execution events MUST be emitted only after the
+corresponding authoritative workflow decision or state transition has
+occurred.
+
+For `security.workflow.execution_claimed`, correlation is taken from the
+`WorkflowResult` returned by the authoritative claim operation.
+
+For `security.workflow.needs_review`, correlation is taken from the
+authoritative `WorkflowResult` returned after the NEEDS_REVIEW transition
+has succeeded.
+
+For stale PROCESSING recovery, the successful recovery result establishes
+both that stale processing was detected and that the workflow was moved to
+NEEDS_REVIEW. The runtime MAY therefore emit both
+`security.workflow.stale_processing_detected` and
+`security.workflow.needs_review` after that operation returns.
+
+Legacy tenant-unbound workflows MAY emit authoritative `workflow_id` but
+MUST omit `execution_attempt_ref`, because the v1 attempt-reference
+derivation requires an authoritative tenant binding.
+
+The generic execution-layer claim-denial handler does not possess an
+authoritative returned workflow object. It MUST NOT copy its incoming
+`workflow_id` argument into canonical `workflow_id` or derive
+`execution_attempt_ref` from that caller-facing value.
+
+Canonical claim-denial correlation should instead be emitted at a deeper
+workflow-store authority point where the persisted workflow state and
+specific denial reason are known.
+
+Existing raw `execution_attempt_id` values in legacy audit records remain
+a migration concern for the sensitive-data-control phase. New canonical
+security events MUST NOT copy that raw authority value.
+
+Correlation observes authority. Correlation is never authority.

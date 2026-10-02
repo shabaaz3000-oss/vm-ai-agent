@@ -1,5 +1,10 @@
 from app.approval import create_approval
 from app.audit import log_event
+from app.security_observability_integrations import (
+    emit_workflow_execution_claimed_security_event,
+    emit_workflow_needs_review_security_event,
+    emit_workflow_stale_processing_detected_security_event,
+)
 
 from app.models import WorkflowResult
 from app.ticket_execution_context import (
@@ -524,6 +529,14 @@ def claim_and_execute_workflow(
         }
     )
 
+    emit_workflow_execution_claimed_security_event(
+        tenant_id=claimed_result.tenant_id,
+        workflow_id=claimed_result.workflow_id,
+        execution_attempt_id=
+            claimed_result
+            .execution_attempt_id,
+    )
+
 
     try:
 
@@ -724,6 +737,14 @@ def claim_and_execute_workflow(
                 }
             )
 
+            emit_workflow_needs_review_security_event(
+                tenant_id=review_result.tenant_id,
+                workflow_id=review_result.workflow_id,
+                execution_attempt_id=
+                    review_result
+                    .execution_attempt_id,
+            )
+
         raise
 
 
@@ -769,6 +790,20 @@ def reconcile_stale_workflow(
             "recovery_reason":
                 result.recovery_reason,
         }
+    )
+
+    emit_workflow_stale_processing_detected_security_event(
+        tenant_id=result.tenant_id,
+        workflow_id=result.workflow_id,
+        execution_attempt_id=
+            result.execution_attempt_id,
+    )
+
+    emit_workflow_needs_review_security_event(
+        tenant_id=result.tenant_id,
+        workflow_id=result.workflow_id,
+        execution_attempt_id=
+            result.execution_attempt_id,
     )
 
     return result

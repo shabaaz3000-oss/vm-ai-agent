@@ -964,3 +964,203 @@ def test_mcp_tool_events_include_trusted_session_ref(
         assert "session_id" not in payload
         assert "username" not in payload
         assert "principal_id" not in payload
+
+
+def test_workflow_execution_claimed_event_uses_authoritative_correlation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_workflow_execution_claimed_security_event(
+            tenant_id="tenant-alpha",
+            workflow_id="WF-12345678",
+            execution_attempt_id="EXEC-DEADBEEF",
+        )
+        is True
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .WORKFLOW_EXECUTION_CLAIMED
+    )
+
+    assert (
+        event.outcome
+        is SecurityOutcome.ALLOWED
+    )
+
+    payload = event.to_dict()
+
+    assert (
+        payload["tenant_id"]
+        == "tenant-alpha"
+    )
+
+    assert (
+        payload["workflow_id"]
+        == "WF-12345678"
+    )
+
+    assert (
+        payload["execution_attempt_ref"]
+        .startswith(
+            "EA1-"
+        )
+    )
+
+    assert (
+        "EXEC-DEADBEEF"
+        not in payload["execution_attempt_ref"]
+    )
+
+    assert "execution_attempt_id" not in payload
+
+
+def test_legacy_unbound_claim_omits_execution_attempt_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_workflow_execution_claimed_security_event(
+            tenant_id=None,
+            workflow_id="WF-12345678",
+            execution_attempt_id="EXEC-DEADBEEF",
+        )
+        is True
+    )
+
+    payload = events[0].to_dict()
+
+    assert (
+        payload["workflow_id"]
+        == "WF-12345678"
+    )
+
+    assert "tenant_id" not in payload
+    assert "execution_attempt_ref" not in payload
+    assert "execution_attempt_id" not in payload
+
+
+def test_workflow_needs_review_event_uses_derived_attempt_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_workflow_needs_review_security_event(
+            tenant_id="tenant-alpha",
+            workflow_id="WF-12345678",
+            execution_attempt_id="EXEC-DEADBEEF",
+        )
+        is True
+    )
+
+    payload = events[0].to_dict()
+
+    assert (
+        payload["event_type"]
+        == "security.workflow.needs_review"
+    )
+
+    assert (
+        payload["outcome"]
+        == "review_required"
+    )
+
+    assert (
+        payload["reason_code"]
+        == "needs_review"
+    )
+
+    assert (
+        payload["execution_attempt_ref"]
+        .startswith(
+            "EA1-"
+        )
+    )
+
+    assert "execution_attempt_id" not in payload
+
+
+def test_stale_processing_event_uses_derived_attempt_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_workflow_stale_processing_detected_security_event(
+            tenant_id="tenant-alpha",
+            workflow_id="WF-12345678",
+            execution_attempt_id="EXEC-DEADBEEF",
+        )
+        is True
+    )
+
+    payload = events[0].to_dict()
+
+    assert (
+        payload["event_type"]
+        == "security.workflow.stale_processing_detected"
+    )
+
+    assert (
+        payload["outcome"]
+        == "review_required"
+    )
+
+    assert (
+        payload["reason_code"]
+        == "stale_execution_attempt"
+    )
+
+    assert (
+        payload["execution_attempt_ref"]
+        .startswith(
+            "EA1-"
+        )
+    )
+
+    assert "execution_attempt_id" not in payload
+
+
+def test_workflow_execution_correlation_failure_is_observability_only(
+    caplog: pytest.LogCaptureFixture,
+):
+    caplog.set_level(
+        logging.ERROR
+    )
+
+    result = (
+        integrations
+        .emit_workflow_execution_claimed_security_event(
+            tenant_id="tenant-alpha",
+            workflow_id=" WF-INVALID",
+            execution_attempt_id="EXEC-DEADBEEF",
+        )
+    )
+
+    assert result is False
+
+    assert (
+        "existing security decision preserved"
+        in caplog.text
+    )
