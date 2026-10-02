@@ -1610,3 +1610,68 @@ EA1 is observational only.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Legacy audit identity purpose limitation
+
+Raw identity is treated differently from credentials, bearer tokens,
+provider response bodies, free-form exception text, and exact execution
+authority.
+
+For the current legacy audit boundary, trusted identity may be retained
+when it is materially necessary for actor accountability, administrative
+action reconstruction, access-control review, or security investigation.
+
+Current examples include:
+
+- MCP session validation and revocation audit;
+- privileged actor/target principal revocation audit;
+- agent activity attribution;
+- tool request, denial, execution, and failure audit;
+- authorized retrieval activity.
+
+This retention is purpose-limited. Raw identity is legacy audit context,
+not canonical security telemetry authority.
+
+Canonical `SecurityEvent` records do not add ad hoc `username`,
+`principal_id`, `actor_principal_id`, or `target_principal_id` fields.
+
+The canonical schema supports `principal_ref`, but this version does not
+define or invent a principal pseudonymization algorithm or stable
+principal-reference lifecycle. Raw identity must not be mechanically
+hashed merely to populate `principal_ref`.
+
+Until such a lifecycle is explicitly designed, raw legacy audit identity
+may be retained where removing it would materially reduce attribution or
+incident-response usefulness.
+
+Identity retained for legacy audit must come from the applicable trusted
+principal, authenticated session context, or the explicitly recorded
+target of a security-relevant administrative action.
+
+For actor/target administrative records, the target identity describes
+the object of the attempted or completed action. It does not establish
+the target's authority.
+
+Raw identity must not be used as a security-metric label. High-cardinality
+audit correlation and bounded metric dimensions remain separate
+concerns.
+
+This policy does not make identity a credential secret, and it does not
+permit unrestricted identity collection. Identity remains subject to
+data minimization and purpose limitation.
+
+A future migration from raw identity to `principal_ref` requires an
+approved derivation and lifecycle that defines stability, collision
+properties, tenant scoping, rotation/versioning where applicable, and
+multi-instance consistency.
+
+Audit observes authority. Audit is not authority.
+
+Identity retained for accountability does not establish authorization.
+
+Canonical security telemetry must not gain ad hoc raw identity fields.
+
+Do not invent `principal_ref`.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
