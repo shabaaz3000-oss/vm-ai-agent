@@ -15,6 +15,8 @@ from app.workflow_tenant import (
 from app.security_observability_integrations import emit_postgresql_workflow_execution_claim_denied_security_event
 from app.workflow_tenant import WorkflowTenantBindingError
 
+from app.security_observability_integrations import emit_workflow_store_reconciliation_denied_security_event
+
 
 
 class PostgreSQLWorkflowStore:
@@ -123,6 +125,15 @@ class PostgreSQLWorkflowStore:
             security_context,
             SecurityContext,
         ):
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_postgresql_store",
+                reason_code="security_binding_mismatch",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
+
             raise PermissionError(
                 "Trusted SecurityContext is required "
                 "for reconciliation resolution."
@@ -132,16 +143,80 @@ class PostgreSQLWorkflowStore:
             security_context.role
             != "APPROVER"
         ):
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_postgresql_store",
+                reason_code="reconciliation_denied",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
+
             raise PermissionError(
                 "Reconciliation resolution requires "
                 "APPROVER security context."
             )
 
-        require_workflow_tenant(
-            current,
-            security_context=
-                security_context,
-        )
+        try:
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        except WorkflowTenantBindingError:
+
+            trusted_current_tenant = (
+                current.tenant_id
+                if (
+                    isinstance(
+                        current.tenant_id,
+                        str,
+                    )
+                    and current.tenant_id.strip()
+                    and current.tenant_id
+                    == current.tenant_id.strip()
+                )
+                else None
+            )
+
+            trusted_context_tenant = (
+                security_context.tenant_id
+                if (
+                    isinstance(
+                        security_context.tenant_id,
+                        str,
+                    )
+                    and security_context.tenant_id.strip()
+                    and security_context.tenant_id
+                    == security_context.tenant_id.strip()
+                )
+                else None
+            )
+
+            tenant_reason = (
+                "cross_tenant"
+                if (
+                    trusted_current_tenant
+                    is not None
+                    and trusted_context_tenant
+                    is not None
+                    and trusted_current_tenant
+                    != trusted_context_tenant
+                )
+                else "security_binding_mismatch"
+            )
+
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_postgresql_store",
+                reason_code=tenant_reason,
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
+
+            raise
 
         if (
             not isinstance(
@@ -153,6 +228,13 @@ class PostgreSQLWorkflowStore:
             or expected_execution_attempt_id
             != expected_execution_attempt_id.strip()
         ):
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_postgresql_store",
+                reason_code="reconciliation_denied",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+            )
+
             raise ValueError(
                 "expected_execution_attempt_id must be "
                 "a non-blank normalized string."
@@ -162,6 +244,15 @@ class PostgreSQLWorkflowStore:
             current.execution_attempt_id
             != expected_execution_attempt_id
         ):
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_postgresql_store",
+                reason_code="execution_attempt_mismatch",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
+
             raise PermissionError(
                 "Workflow execution attempt changed "
                 "after reconciliation."
@@ -1067,6 +1158,11 @@ class PostgreSQLWorkflowStore:
             )
 
             if status != "NEEDS_REVIEW":
+                emit_workflow_store_reconciliation_denied_security_event(
+                    source_component="workflow_postgresql_store",
+                    reason_code="workflow_transition_not_allowed",
+                )
+
                 raise PermissionError(
                     "Only a NEEDS_REVIEW workflow can "
                     "be confirmed after reconciliation."
@@ -1088,6 +1184,15 @@ class PostgreSQLWorkflowStore:
                 )
 
             if current.ticket_id is not None:
+                emit_workflow_store_reconciliation_denied_security_event(
+                    source_component="workflow_postgresql_store",
+                    reason_code="reconciliation_denied",
+                    workflow_id=current.workflow_id,
+                    tenant_id=current.tenant_id,
+                    execution_attempt_id=
+                        current.execution_attempt_id,
+                )
+
                 raise PermissionError(
                     "NEEDS_REVIEW workflow already "
                     "contains a ticket identifier."
@@ -1139,6 +1244,15 @@ class PostgreSQLWorkflowStore:
             )
 
             if cursor.rowcount != 1:
+                emit_workflow_store_reconciliation_denied_security_event(
+                    source_component="workflow_postgresql_store",
+                    reason_code="reconciliation_denied",
+                    workflow_id=current.workflow_id,
+                    tenant_id=current.tenant_id,
+                    execution_attempt_id=
+                        current.execution_attempt_id,
+                )
+
                 raise PermissionError(
                     "Workflow state changed before "
                     "confirmed reconciliation could "
@@ -1173,6 +1287,11 @@ class PostgreSQLWorkflowStore:
             )
 
             if status != "NEEDS_REVIEW":
+                emit_workflow_store_reconciliation_denied_security_event(
+                    source_component="workflow_postgresql_store",
+                    reason_code="workflow_transition_not_allowed",
+                )
+
                 raise PermissionError(
                     "Only a NEEDS_REVIEW workflow can "
                     "be authorized for reconciled retry."
@@ -1242,6 +1361,15 @@ class PostgreSQLWorkflowStore:
             )
 
             if cursor.rowcount != 1:
+                emit_workflow_store_reconciliation_denied_security_event(
+                    source_component="workflow_postgresql_store",
+                    reason_code="reconciliation_denied",
+                    workflow_id=current.workflow_id,
+                    tenant_id=current.tenant_id,
+                    execution_attempt_id=
+                        current.execution_attempt_id,
+                )
+
                 raise PermissionError(
                     "Workflow state changed before "
                     "retry authorization could "

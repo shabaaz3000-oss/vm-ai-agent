@@ -1390,3 +1390,146 @@ def emit_servicenow_provider_conflict_denied_security_event(
                 provider_correlation_id,
         )
     )
+
+
+def emit_workflow_store_reconciliation_denied_security_event(
+    *,
+    source_component: str,
+    reason_code: str,
+    workflow_id: str | None = None,
+    tenant_id: str | None = None,
+    execution_attempt_id: str | None = None,
+) -> bool:
+    """
+    Observe one workflow-store-owned reconciliation denial.
+
+    Correlation fields are populated only from already-authoritative
+    persisted workflow state. Generic workflow stores never construct,
+    accept, or serialize provider correlation here.
+    """
+
+    try:
+        source = (
+            SecuritySourceComponent(
+                source_component
+            )
+        )
+
+        if source not in {
+            SecuritySourceComponent.WORKFLOW_STORE,
+            SecuritySourceComponent.WORKFLOW_POSTGRESQL_STORE,
+        }:
+            raise ValueError(
+                "Unsupported workflow-store observability source."
+            )
+
+        reason = (
+            SecurityReasonCode(
+                reason_code
+            )
+        )
+
+        def trusted_optional(
+            value: str | None,
+        ) -> str | None:
+
+            if not isinstance(
+                value,
+                str,
+            ):
+                return None
+
+            if (
+                not value.strip()
+                or value
+                != value.strip()
+            ):
+                return None
+
+            if len(
+                value
+            ) > 512:
+                return None
+
+            if any(
+                ord(character) < 32
+                or ord(character) == 127
+                for character in value
+            ):
+                return None
+
+            return value
+
+
+        trusted_workflow_id = (
+            trusted_optional(
+                workflow_id
+            )
+        )
+
+        trusted_tenant_id = (
+            trusted_optional(
+                tenant_id
+            )
+        )
+
+        trusted_execution_attempt_id = (
+            trusted_optional(
+                execution_attempt_id
+            )
+        )
+
+
+        execution_attempt_ref = None
+
+
+        if (
+            trusted_workflow_id
+            is not None
+            and trusted_tenant_id
+            is not None
+            and trusted_execution_attempt_id
+            is not None
+        ):
+            execution_attempt_ref = (
+                _trusted_execution_attempt_ref(
+                    tenant_id=
+                        trusted_tenant_id,
+                    workflow_id=
+                        trusted_workflow_id,
+                    execution_attempt_id=
+                        trusted_execution_attempt_id,
+                )
+            )
+
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .PROVIDER_RECONCILIATION_DENIED
+            ),
+            severity=SecuritySeverity.HIGH,
+            outcome=SecurityOutcome.DENIED,
+            source_component=source,
+            tenant_id=trusted_tenant_id,
+            workflow_id=trusted_workflow_id,
+            execution_attempt_ref=
+                execution_attempt_ref,
+            resource_type=(
+                SecurityResourceType.RECONCILIATION
+            ),
+            action=SecurityAction.RECONCILE,
+            reason_code=reason,
+        )
+
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(
+            exc
+        )
+
+        return False

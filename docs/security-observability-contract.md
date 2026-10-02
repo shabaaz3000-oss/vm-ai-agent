@@ -1104,3 +1104,71 @@ authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Workflow-store reconciliation denial telemetry
+
+SQLite and PostgreSQL workflow stores emit
+`security.provider.reconciliation_denied` only as observations of
+existing store-owned authorization, state, locking, and CAS decisions.
+
+Store telemetry does not construct or accept ServiceNow provider
+correlation. `provider_correlation_id` remains absent from this generic
+workflow-store boundary.
+
+Invalid workflow identifiers, invalid ticket identifiers, and unknown
+workflow lookups remain outside correlated canonical store-denial
+telemetry.
+
+Both backends test persisted workflow status before parsing the
+authoritative `WorkflowResult`. A wrong-state denial therefore emits an
+uncorrelated canonical event with reason
+`workflow_transition_not_allowed`; it MUST NOT copy the caller lookup
+`workflow_id` into canonical correlation fields.
+
+After an authoritative `WorkflowResult` has been parsed, persisted
+`workflow_id`, normalized persisted tenant identity, and the persisted
+current execution attempt may be used as observability correlation.
+
+Missing or invalid trusted `SecurityContext` emits reason
+`security_binding_mismatch`.
+
+Wrong reconciliation role emits reason `reconciliation_denied`.
+
+`require_workflow_tenant()` remains tenant authority. A
+`WorkflowTenantBindingError` is classified as `cross_tenant` only when a
+normalized persisted tenant and normalized trusted context tenant both
+exist and differ. Otherwise it is observed as
+`security_binding_mismatch`. The original tenant exception is re-raised.
+
+Malformed expected execution-attempt evidence emits
+`reconciliation_denied` without deriving EA1 from the malformed expected
+value.
+
+An exact mismatch between authoritative
+`current.execution_attempt_id` and the expected reconciliation attempt
+emits `execution_attempt_mismatch`. Any EA1 correlation is derived only
+from the persisted current attempt, never from the stale or mismatching
+expected attempt.
+
+A `NEEDS_REVIEW` workflow that already contains a ticket emits
+`reconciliation_denied`.
+
+SQLite acquires `BEGIN IMMEDIATE` before authoritative reconciliation
+state is read. PostgreSQL performs `SELECT ... FOR UPDATE`. In both
+backends the authoritative persisted snapshot remains protected through
+tenant validation, exact-attempt validation, UPDATE, and rowcount/CAS
+verification.
+
+Therefore reconciliation CAS denial may correlate with the already
+parsed persisted `workflow_id`, tenant, and EA1 derived from
+`current.execution_attempt_id`. Candidate or newly constructed
+execution-attempt identifiers MUST NOT be emitted.
+
+The telemetry path does not change or replace the exact attempt
+comparison, tenant helper, database locking, workflow-state predicates,
+or rowcount/CAS decision.
+
+Correlation observes authority. Correlation is never authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
