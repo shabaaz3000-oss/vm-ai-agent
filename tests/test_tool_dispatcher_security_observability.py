@@ -23,6 +23,7 @@ class StubContext:
             if tenant_id is None
             else SimpleNamespace(
                 tenant_id=tenant_id,
+                session_correlation_id="session-ref-alpha",
             )
         )
 
@@ -178,6 +179,9 @@ def test_trusted_mcp_dispatch_emits_allowed_event(
         {
             "tenant_id":
                 "tenant-alpha",
+
+            "session_ref":
+                "session-ref-alpha",
         }
     ]
 
@@ -268,6 +272,9 @@ def test_trusted_mcp_policy_denials_emit_canonical_denial(
 
             "reason":
                 "tool_not_authorized",
+
+            "session_ref":
+                "session-ref-alpha",
         }
     ]
 
@@ -311,6 +318,9 @@ def test_mcp_binding_mismatch_emits_denial_and_preserves_exception(
 
             "reason":
                 "security_binding_mismatch",
+
+            "session_ref":
+                "session-ref-alpha",
         }
     ]
 

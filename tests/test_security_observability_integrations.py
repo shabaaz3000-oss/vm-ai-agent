@@ -840,3 +840,127 @@ def test_mcp_tool_invocation_unknown_reason_is_observability_only(
         "existing security decision preserved"
         in caplog.text
     )
+
+
+def test_mcp_session_validation_event_includes_trusted_session_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_mcp_session_validation_failed_security_event(
+            reason="session_revoked",
+            tenant_id="tenant-alpha",
+            session_ref="a1b2c3d4e5f60708",
+        )
+        is True
+    )
+
+    assert len(events) == 1
+
+    payload = events[0].to_dict()
+
+    assert (
+        payload["session_ref"]
+        == "a1b2c3d4e5f60708"
+    )
+
+    assert (
+        payload["tenant_id"]
+        == "tenant-alpha"
+    )
+
+    assert "session_id" not in payload
+
+
+def test_mcp_session_missing_event_can_omit_session_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_mcp_session_validation_failed_security_event(
+            reason="session_not_found",
+            tenant_id=None,
+            session_ref=None,
+        )
+        is True
+    )
+
+    payload = events[0].to_dict()
+
+    assert "session_ref" not in payload
+    assert "tenant_id" not in payload
+
+
+def test_mcp_session_revocation_event_includes_trusted_session_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_mcp_session_revoked_security_event(
+            tenant_id="tenant-alpha",
+            session_ref="a1b2c3d4e5f60708",
+        )
+        is True
+    )
+
+    payload = events[0].to_dict()
+
+    assert (
+        payload["session_ref"]
+        == "a1b2c3d4e5f60708"
+    )
+
+    assert "session_id" not in payload
+
+
+def test_mcp_tool_events_include_trusted_session_ref(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_mcp_tool_invocation_allowed_security_event(
+            tenant_id="tenant-alpha",
+            session_ref="a1b2c3d4e5f60708",
+        )
+        is True
+    )
+
+    assert (
+        integrations
+        .emit_mcp_tool_invocation_denied_security_event(
+            tenant_id="tenant-alpha",
+            reason="tool_not_authorized",
+            session_ref="a1b2c3d4e5f60708",
+        )
+        is True
+    )
+
+    assert len(events) == 2
+
+    for event in events:
+        payload = event.to_dict()
+
+        assert (
+            payload["session_ref"]
+            == "a1b2c3d4e5f60708"
+        )
+
+        assert "session_id" not in payload
+        assert "username" not in payload
+        assert "principal_id" not in payload

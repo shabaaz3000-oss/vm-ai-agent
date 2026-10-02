@@ -801,3 +801,32 @@ trusted security context.
 Raw tool names, raw MCP session identifiers, credentials, tokens, and
 caller-supplied provenance values MUST NOT be copied into canonical MCP
 tool-invocation events.
+
+### Canonical session correlation
+
+Canonical `session_ref` is a non-secret observability reference derived
+only from an authoritative server-side session identifier.
+
+For the current v1 runtime, the canonical derivation is:
+
+`sha256(session_id).hexdigest()[:16]`
+
+This is the same stable correlation derivation already used by
+`SecurityContext.session_correlation_id` and the MCP session manager.
+
+`session_ref` MUST NOT contain a raw session identifier.
+
+`session_ref` MUST NOT be derived from an attempted session identifier
+when no authoritative session record exists. Therefore a
+`session_not_found` event omits `session_ref`.
+
+For an existing authoritative MCP session, validation failures and
+successful revocation MAY include the derived `session_ref`.
+
+For MCP tool dispatch, `session_ref` MAY be populated from the immutable
+trusted `SecurityContext.session_correlation_id`.
+
+`session_ref` is observability metadata only. It MUST NOT establish,
+validate, restore, revoke, or otherwise influence session authority.
+Exact session authority continues to depend on the underlying
+server-controlled session state and validation logic.

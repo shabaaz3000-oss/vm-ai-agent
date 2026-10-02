@@ -324,8 +324,10 @@ def emit_mcp_session_validation_failed_security_event(
     *,
     reason: str,
     tenant_id: str | None,
+    session_ref: str | None = None,
 ) -> bool:
     """
+    # canonical trusted session correlation is supplied by the authoritative caller
     Observe an authoritative MCP session validation denial.
 
     For session_not_found there is no authoritative session tenant,
@@ -377,6 +379,7 @@ def emit_mcp_session_validation_failed_security_event(
                 SecuritySourceComponent.MCP_SESSION
             ),
             tenant_id=canonical_tenant_id,
+            session_ref=session_ref,
             resource_type=(
                 SecurityResourceType.MCP_SESSION
             ),
@@ -397,8 +400,10 @@ def emit_mcp_session_validation_failed_security_event(
 def emit_mcp_session_revoked_security_event(
     *,
     tenant_id: str,
+    session_ref: str | None = None,
 ) -> bool:
     """
+    # canonical trusted session correlation is supplied by the authoritative caller
     Observe a completed authoritative MCP session revocation.
 
     This helper must be called only after the session store has
@@ -419,6 +424,7 @@ def emit_mcp_session_revoked_security_event(
                 SecuritySourceComponent.MCP_SESSION
             ),
             tenant_id=tenant_id,
+            session_ref=session_ref,
             resource_type=(
                 SecurityResourceType.MCP_SESSION
             ),
@@ -446,8 +452,10 @@ _MCP_TOOL_INVOCATION_DENIAL_REASON_CODES = {
 def emit_mcp_tool_invocation_allowed_security_event(
     *,
     tenant_id: str,
+    session_ref: str | None = None,
 ) -> bool:
     """
+    # canonical trusted session correlation is supplied by the authoritative caller
     Observe an MCP tool invocation authorization that has already
     passed the dispatcher's existing policy checks.
 
@@ -468,6 +476,7 @@ def emit_mcp_tool_invocation_allowed_security_event(
                 .TOOL_DISPATCHER
             ),
             tenant_id=tenant_id,
+            session_ref=session_ref,
             resource_type=(
                 SecurityResourceType.MCP_TOOL
             ),
@@ -488,8 +497,10 @@ def emit_mcp_tool_invocation_denied_security_event(
     *,
     tenant_id: str,
     reason: str,
+    session_ref: str | None = None,
 ) -> bool:
     """
+    # canonical trusted session correlation is supplied by the authoritative caller
     Observe an MCP tool invocation denial produced by an existing
     dispatcher enforcement point.
 
@@ -525,6 +536,7 @@ def emit_mcp_tool_invocation_denied_security_event(
                 .TOOL_DISPATCHER
             ),
             tenant_id=tenant_id,
+            session_ref=session_ref,
             resource_type=(
                 SecurityResourceType.MCP_TOOL
             ),

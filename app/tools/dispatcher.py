@@ -175,12 +175,12 @@ class ToolExecutionContext:
 
 
 
-def _trusted_mcp_telemetry_tenant_id(
+def _trusted_mcp_telemetry_context_refs(
     context: ToolExecutionContext,
-) -> str | None:
+) -> tuple[str, str] | None:
     """
-    Return trusted tenant correlation only for an explicitly
-    server-marked MCP telemetry context.
+    Return trusted tenant and non-secret session correlation only
+    for an explicitly server-marked MCP telemetry context.
 
     This function is observability-only and is never consulted by
     authorization.
@@ -199,24 +199,33 @@ def _trusted_mcp_telemetry_tenant_id(
     if security_context is None:
         return None
 
-    return security_context.tenant_id
+    return (
+        security_context.tenant_id,
+        security_context.session_correlation_id,
+    )
 
 
 def _emit_mcp_tool_allowed_if_trusted(
     context: ToolExecutionContext,
 ) -> None:
 
-    tenant_id = (
-        _trusted_mcp_telemetry_tenant_id(
+    correlation = (
+        _trusted_mcp_telemetry_context_refs(
             context
         )
     )
 
-    if tenant_id is None:
+    if correlation is None:
         return
+
+    (
+        tenant_id,
+        session_ref,
+    ) = correlation
 
     emit_mcp_tool_invocation_allowed_security_event(
         tenant_id=tenant_id,
+        session_ref=session_ref,
     )
 
 
@@ -226,18 +235,24 @@ def _emit_mcp_tool_denied_if_trusted(
     reason: str,
 ) -> None:
 
-    tenant_id = (
-        _trusted_mcp_telemetry_tenant_id(
+    correlation = (
+        _trusted_mcp_telemetry_context_refs(
             context
         )
     )
 
-    if tenant_id is None:
+    if correlation is None:
         return
+
+    (
+        tenant_id,
+        session_ref,
+    ) = correlation
 
     emit_mcp_tool_invocation_denied_security_event(
         tenant_id=tenant_id,
         reason=reason,
+        session_ref=session_ref,
     )
 
 
