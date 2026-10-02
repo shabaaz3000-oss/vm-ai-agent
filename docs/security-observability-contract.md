@@ -1815,3 +1815,65 @@ Detection metadata must not preserve the dangerous content it detected.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Adversarial observability evaluation
+
+The observability boundary is evaluated adversarially rather than relying
+only on nominal telemetry tests.
+
+The adversarial evaluation injects unique canary values through sensitive
+or forbidden field names, raw authority identifiers, observer exception
+messages, malicious prompt-like content, and large sets of unique
+correlation identifiers.
+
+Canonical security telemetry must reject sensitive or unknown fields
+without reflecting their values into validation errors.
+
+Raw `session_id` and `execution_attempt_id` values must not enter the
+canonical event schema. Server-generated observational references remain
+separate from raw authority identifiers.
+
+Canonical serialization remains an explicit allowlist.
+
+Metric-cardinality evaluation submits many distinct principal, tenant,
+session, workflow, execution-attempt, and provider-correlation values.
+Those values must not become metric-label keys or values. Metric series
+remain bounded by the registered enum-like label dimensions.
+
+Detection is evaluated from canonical structured events only. A generated
+`SecurityAlert` may carry approved canonical correlation fields for
+investigation, but must not grow raw prompt, RAG content, request or
+response bodies, credentials, or raw authority identifiers.
+
+Prompt-injection adversarial canaries may cause bounded detector
+categories and structural field paths to be retained. The original
+malicious value must not be reflected in that detector metadata.
+
+Audit, metrics, detection, and alert delivery remain independent
+observers. Adversarial failure of one observer must not grant authority,
+change the existing security decision, or suppress later independent
+observers except where the failed detection itself means there is no
+alert object to deliver.
+
+Observer failure reporting must not copy the raw exception message.
+Bounded exception type is sufficient for operational diagnosis.
+
+The return contract of `_emit_best_effort` remains intentionally narrow:
+its boolean reports audit-delivery success only. Metrics, detection, and
+alert-delivery outcomes do not redefine that result.
+
+The adversarial evaluation does not make audit, metrics, detection,
+alerts, or correlation authoritative.
+
+Audit observes authority. Audit is not authority.
+
+Metrics observe authority. Metrics are not authority.
+
+Detection observes authority. Detection is never authority.
+
+Alerts describe observed conditions. Alerts are never authority.
+
+Correlation observes authority. Correlation is never authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
