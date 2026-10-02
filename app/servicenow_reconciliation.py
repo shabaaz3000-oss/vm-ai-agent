@@ -34,6 +34,15 @@ from app.workflow_store import (
 from app.workflow_tenant import (
     require_workflow_tenant,
 )
+from app.security_observability_integrations import (
+    emit_servicenow_provider_request_completed_security_event,
+    emit_servicenow_provider_request_started_security_event,
+    emit_servicenow_provider_result_ambiguous_security_event,
+    emit_servicenow_provider_result_correlated_security_event,
+    emit_servicenow_reconciliation_resolved_security_event,
+    emit_servicenow_reconciliation_started_security_event,
+)
+
 
 
 class ServiceNowReconciliationError(
@@ -198,17 +207,44 @@ def reconcile_servicenow_workflow(
         )
     )
 
+    emit_servicenow_reconciliation_started_security_event(
+        tenant_id=workflow.tenant_id,
+        workflow_id=workflow.workflow_id,
+        execution_attempt_id=
+            workflow.execution_attempt_id,
+        provider_correlation_id=
+            correlation_id,
+    )
+
     client = (
         _build_servicenow_reconciliation_client()
     )
 
     try:
 
+        emit_servicenow_provider_request_started_security_event(
+            tenant_id=workflow.tenant_id,
+            workflow_id=workflow.workflow_id,
+            execution_attempt_id=
+                workflow.execution_attempt_id,
+            provider_correlation_id=
+                correlation_id,
+        )
+
         records = (
             client
             .find_records_by_correlation_id(
                 correlation_id
             )
+        )
+
+        emit_servicenow_provider_request_completed_security_event(
+            tenant_id=workflow.tenant_id,
+            workflow_id=workflow.workflow_id,
+            execution_attempt_id=
+                workflow.execution_attempt_id,
+            provider_correlation_id=
+                correlation_id,
         )
 
     finally:
@@ -240,6 +276,15 @@ def reconcile_servicenow_workflow(
 
     if match_count == 1:
 
+        emit_servicenow_provider_result_correlated_security_event(
+            tenant_id=workflow.tenant_id,
+            workflow_id=workflow.workflow_id,
+            execution_attempt_id=
+                workflow.execution_attempt_id,
+            provider_correlation_id=
+                correlation_id,
+        )
+
         record = records[
             0
         ]
@@ -270,6 +315,15 @@ def reconcile_servicenow_workflow(
                     "sys_id"
                 ],
         )
+
+    emit_servicenow_provider_result_ambiguous_security_event(
+        tenant_id=workflow.tenant_id,
+        workflow_id=workflow.workflow_id,
+        execution_attempt_id=
+            workflow.execution_attempt_id,
+        provider_correlation_id=
+            correlation_id,
+    )
 
     return ServiceNowReconciliationResult(
         workflow_id=
@@ -363,7 +417,7 @@ def resolve_servicenow_workflow(
                 "is incomplete or inconsistent."
             )
 
-        return (
+        resolved = (
             confirm_reconciled_ticket_creation(
                 workflow_id,
                 expected_execution_attempt_id=
@@ -374,6 +428,17 @@ def resolve_servicenow_workflow(
                     security_context,
             )
         )
+
+        emit_servicenow_reconciliation_resolved_security_event(
+            tenant_id=resolved.tenant_id,
+            workflow_id=resolved.workflow_id,
+            execution_attempt_id=
+                resolved.execution_attempt_id,
+            provider_correlation_id=
+                evidence.correlation_id,
+        )
+
+        return resolved
 
     if (
         evidence.outcome
@@ -394,7 +459,7 @@ def resolve_servicenow_workflow(
                 "is inconsistent."
             )
 
-        return (
+        authorized = (
             authorize_reconciled_retry(
                 workflow_id,
                 expected_execution_attempt_id=
@@ -403,6 +468,17 @@ def resolve_servicenow_workflow(
                     security_context,
             )
         )
+
+        emit_servicenow_reconciliation_resolved_security_event(
+            tenant_id=authorized.tenant_id,
+            workflow_id=authorized.workflow_id,
+            execution_attempt_id=
+                authorized.execution_attempt_id,
+            provider_correlation_id=
+                evidence.correlation_id,
+        )
+
+        return authorized
 
     if (
         evidence.outcome

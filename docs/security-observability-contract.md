@@ -984,3 +984,66 @@ Existing execution-claim exceptions, authorization decisions, transaction
 semantics, and winner-selection behavior remain unchanged.
 
 Correlation observes authority. Correlation is never authority.
+
+### ServiceNow provider correlation telemetry
+
+ServiceNow observability uses the existing application-owned
+`VMAI-<sha256>` correlation scheme. No second provider correlation
+identifier is introduced.
+
+Canonical `provider_correlation_id` is accepted only when the
+observability adapter can independently rebuild the expected VMAI value
+from the same trusted tenant, workflow, and exact execution-attempt
+identity and the supplied value is equal to that server-derived result.
+
+`validate_servicenow_correlation_id()` establishes safe syntax only. A
+string does not become authoritative merely because it matches the VMAI
+format.
+
+The raw exact `execution_attempt_id` remains workflow and reconciliation
+authority. It may be used by observability only to derive the
+pseudonymous `EA1-...` reference and to bind the expected VMAI value. It
+MUST NOT be serialized into the canonical event.
+
+For read-only ServiceNow reconciliation, canonical ordering is:
+
+1. retrieve authoritative workflow state;
+2. establish `NEEDS_REVIEW`;
+3. establish tenant authority;
+4. construct trusted `TicketExecutionContext`;
+5. derive the server-owned VMAI correlation;
+6. emit `security.workflow.reconciliation_started`;
+7. emit `security.provider.request_started`;
+8. perform the fixed correlation lookup;
+9. after a successfully returned and validated lookup, emit
+   `security.provider.request_completed`;
+10. classify the normalized result.
+
+A zero-record `NOT_FOUND` lookup is not ambiguity and emits neither
+`security.provider.result_correlated` nor
+`security.provider.result_ambiguous`.
+
+Exactly one normalized matching record emits
+`security.provider.result_correlated`.
+
+Multiple normalized matching records emit
+`security.provider.result_ambiguous` with reason
+`provider_ambiguous`, while workflow authority remains unchanged.
+
+`security.workflow.reconciliation_resolved` is emitted only after the
+authoritative workflow-store reconciliation transition returns
+successfully. Telemetry does not authorize the transition and does not
+replace exact execution-attempt, tenant, state, locking, or CAS checks.
+
+Ticket numbers and ServiceNow `sys_id` values are reconciliation evidence;
+they are not canonical provider-correlation authority.
+
+Provider request or response bodies, ticket descriptions, comments,
+credentials, authorization headers, cookies, tokens, passwords, and
+arbitrary provider records MUST NOT be copied into canonical telemetry.
+
+Provider correlation observes authority. Provider correlation is never
+authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.

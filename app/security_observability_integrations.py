@@ -902,3 +902,319 @@ def emit_postgresql_workflow_execution_claim_denied_security_event(
             workflow_id=workflow_id,
         )
     )
+
+
+def _trusted_servicenow_provider_correlation_id(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> str:
+    """
+    Bind canonical ServiceNow provider correlation back to the
+    authoritative execution tuple.
+
+    Syntax validation alone is not authority. The expected VMAI value is
+    rebuilt from trusted tenant/workflow/exact-attempt state and must
+    equal the supplied provider correlation value.
+    """
+
+    from app.providers.servicenow_correlation import (
+        build_servicenow_correlation_id,
+        validate_servicenow_correlation_id,
+    )
+    from app.ticket_execution_context import (
+        TicketExecutionContext,
+    )
+
+    trusted_observed = (
+        validate_servicenow_correlation_id(
+            provider_correlation_id
+        )
+    )
+
+    expected = (
+        build_servicenow_correlation_id(
+            TicketExecutionContext(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+            )
+        )
+    )
+
+    if trusted_observed != expected:
+        raise ValueError(
+            "ServiceNow provider correlation does not match "
+            "the authoritative execution context."
+        )
+
+    return expected
+
+
+def _emit_servicenow_correlated_security_event(
+    *,
+    event_type: SecurityEventType,
+    severity: SecuritySeverity,
+    outcome: SecurityOutcome,
+    source_component: SecuritySourceComponent,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+    reason_code: SecurityReasonCode | None = None,
+) -> bool:
+    """
+    Emit one ServiceNow-correlated canonical security event.
+
+    Raw execution_attempt_id is used only to derive pseudonymous
+    observability correlation and to independently bind the VMAI value.
+    It is never serialized.
+    """
+
+    try:
+        execution_attempt_ref = (
+            _trusted_execution_attempt_ref(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+            )
+        )
+
+        trusted_provider_correlation_id = (
+            _trusted_servicenow_provider_correlation_id(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+                provider_correlation_id=
+                    provider_correlation_id,
+            )
+        )
+
+        event = SecurityEvent(
+            event_type=event_type,
+            severity=severity,
+            outcome=outcome,
+            source_component=source_component,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_ref=
+                execution_attempt_ref,
+            provider_correlation_id=
+                trusted_provider_correlation_id,
+            resource_type=(
+                SecurityResourceType
+                .EXECUTION_ATTEMPT
+            ),
+            action=SecurityAction.RECONCILE,
+            reason_code=reason_code,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_servicenow_reconciliation_started_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe entry into an already-authorized ServiceNow
+    reconciliation operation.
+    """
+
+    return _emit_servicenow_correlated_security_event(
+        event_type=(
+            SecurityEventType
+            .WORKFLOW_RECONCILIATION_STARTED
+        ),
+        severity=SecuritySeverity.INFO,
+        outcome=SecurityOutcome.ALLOWED,
+        source_component=(
+            SecuritySourceComponent
+            .SERVICENOW_RECONCILIATION
+        ),
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=
+            execution_attempt_id,
+        provider_correlation_id=
+            provider_correlation_id,
+    )
+
+
+def emit_servicenow_provider_request_started_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe the beginning of the bounded read-only ServiceNow lookup.
+    """
+
+    return _emit_servicenow_correlated_security_event(
+        event_type=(
+            SecurityEventType
+            .PROVIDER_REQUEST_STARTED
+        ),
+        severity=SecuritySeverity.INFO,
+        outcome=SecurityOutcome.ALLOWED,
+        source_component=(
+            SecuritySourceComponent
+            .SERVICENOW_PROVIDER
+        ),
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=
+            execution_attempt_id,
+        provider_correlation_id=
+            provider_correlation_id,
+    )
+
+
+def emit_servicenow_provider_request_completed_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe a successfully returned and validated ServiceNow lookup.
+    """
+
+    return _emit_servicenow_correlated_security_event(
+        event_type=(
+            SecurityEventType
+            .PROVIDER_REQUEST_COMPLETED
+        ),
+        severity=SecuritySeverity.INFO,
+        outcome=SecurityOutcome.ALLOWED,
+        source_component=(
+            SecuritySourceComponent
+            .SERVICENOW_PROVIDER
+        ),
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=
+            execution_attempt_id,
+        provider_correlation_id=
+            provider_correlation_id,
+    )
+
+
+def emit_servicenow_provider_result_correlated_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe exactly one validated provider record correlated to the
+    server-derived VMAI execution correlation.
+    """
+
+    return _emit_servicenow_correlated_security_event(
+        event_type=(
+            SecurityEventType
+            .PROVIDER_RESULT_CORRELATED
+        ),
+        severity=SecuritySeverity.INFO,
+        outcome=SecurityOutcome.ALLOWED,
+        source_component=(
+            SecuritySourceComponent
+            .SERVICENOW_PROVIDER
+        ),
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=
+            execution_attempt_id,
+        provider_correlation_id=
+            provider_correlation_id,
+    )
+
+
+def emit_servicenow_provider_result_ambiguous_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe code-proven ServiceNow ambiguity after multiple validated
+    provider records match the same trusted correlation.
+    """
+
+    return _emit_servicenow_correlated_security_event(
+        event_type=(
+            SecurityEventType
+            .PROVIDER_RESULT_AMBIGUOUS
+        ),
+        severity=SecuritySeverity.HIGH,
+        outcome=(
+            SecurityOutcome.REVIEW_REQUIRED
+        ),
+        source_component=(
+            SecuritySourceComponent
+            .SERVICENOW_PROVIDER
+        ),
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=
+            execution_attempt_id,
+        provider_correlation_id=
+            provider_correlation_id,
+        reason_code=(
+            SecurityReasonCode
+            .PROVIDER_AMBIGUOUS
+        ),
+    )
+
+
+def emit_servicenow_reconciliation_resolved_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe successful authoritative reconciliation only after the
+    workflow-store transition has returned.
+    """
+
+    return _emit_servicenow_correlated_security_event(
+        event_type=(
+            SecurityEventType
+            .WORKFLOW_RECONCILIATION_RESOLVED
+        ),
+        severity=SecuritySeverity.INFO,
+        outcome=SecurityOutcome.ALLOWED,
+        source_component=(
+            SecuritySourceComponent
+            .SERVICENOW_RECONCILIATION
+        ),
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
+        execution_attempt_id=
+            execution_attempt_id,
+        provider_correlation_id=
+            provider_correlation_id,
+    )
