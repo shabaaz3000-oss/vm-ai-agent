@@ -7,6 +7,9 @@ from uuid import uuid4
 
 from app.auth import Principal
 from app.security_context import SecurityContext
+from app.security_observability_integrations import (
+    emit_api_tenant_binding_denied_security_event,
+)
 
 
 # -------------------------------------------------
@@ -182,6 +185,8 @@ def resolve_api_tenant(
     )
 
     if tenant_id is None:
+
+        emit_api_tenant_binding_denied_security_event()
 
         raise APITenantBindingError(
             "Authenticated principal has no "

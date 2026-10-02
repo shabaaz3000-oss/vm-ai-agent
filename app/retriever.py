@@ -20,6 +20,9 @@ from app.vector_index import (
 )
 
 from app.audit import log_event
+from app.security_observability_integrations import (
+    emit_retrieval_authorization_security_event,
+)
 from app.retrieval_authorization import evaluate_knowledge_chunk_authorization
 
 
@@ -240,6 +243,12 @@ class KnowledgeRetriever:
                         "reason":
                             decision.reason,
                     },
+                )
+
+                emit_retrieval_authorization_security_event(
+                    allowed=decision.allowed,
+                    reason=decision.reason,
+                    tenant_id=retrieval_principal.tenant_id,
                 )
 
             if decision.allowed:
