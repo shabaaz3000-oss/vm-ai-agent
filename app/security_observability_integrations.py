@@ -301,4 +301,3 @@ def emit_tool_output_prompt_injection_suspected_security_event(
         _report_emission_failure(exc)
 
         return False
-
