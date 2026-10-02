@@ -1218,3 +1218,175 @@ def emit_servicenow_reconciliation_resolved_security_event(
         provider_correlation_id=
             provider_correlation_id,
     )
+
+
+_SERVICENOW_LOOKUP_FAILURE_TELEMETRY = {
+    "transport": (
+        SecurityOutcome.FAILED,
+        SecurityReasonCode.RECONCILIATION_DENIED,
+    ),
+    "http_status": (
+        SecurityOutcome.FAILED,
+        SecurityReasonCode.RECONCILIATION_DENIED,
+    ),
+    "invalid_response": (
+        SecurityOutcome.FAILED,
+        SecurityReasonCode.RECONCILIATION_DENIED,
+    ),
+    "correlation_mismatch": (
+        SecurityOutcome.DENIED,
+        SecurityReasonCode.PROVIDER_CORRELATION_MISMATCH,
+    ),
+}
+
+
+def _emit_servicenow_reconciliation_denial_security_event(
+    *,
+    outcome: SecurityOutcome,
+    reason_code: SecurityReasonCode,
+    source_component: SecuritySourceComponent,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe a bounded ServiceNow provider/reconciliation refusal.
+
+    The expected VMAI value is independently rebound to trusted
+    tenant/workflow/exact-attempt state. Raw exact attempt authority is
+    never serialized.
+    """
+
+    try:
+        execution_attempt_ref = (
+            _trusted_execution_attempt_ref(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+            )
+        )
+
+        trusted_provider_correlation_id = (
+            _trusted_servicenow_provider_correlation_id(
+                tenant_id=tenant_id,
+                workflow_id=workflow_id,
+                execution_attempt_id=
+                    execution_attempt_id,
+                provider_correlation_id=
+                    provider_correlation_id,
+            )
+        )
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .PROVIDER_RECONCILIATION_DENIED
+            ),
+            severity=SecuritySeverity.HIGH,
+            outcome=outcome,
+            source_component=source_component,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_ref=
+                execution_attempt_ref,
+            provider_correlation_id=
+                trusted_provider_correlation_id,
+            resource_type=(
+                SecurityResourceType.RECONCILIATION
+            ),
+            action=SecurityAction.RECONCILE,
+            reason_code=reason_code,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_servicenow_provider_lookup_failure_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+    failure_kind: str,
+) -> bool:
+    """
+    Observe one typed ServiceNow lookup failure without inspecting or
+    serializing exception text, exception causes, or provider bodies.
+    """
+
+    try:
+        classification = (
+            _SERVICENOW_LOOKUP_FAILURE_TELEMETRY[
+                failure_kind
+            ]
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+    outcome, reason_code = (
+        classification
+    )
+
+
+    return (
+        _emit_servicenow_reconciliation_denial_security_event(
+            outcome=outcome,
+            reason_code=reason_code,
+            source_component=(
+                SecuritySourceComponent
+                .SERVICENOW_PROVIDER
+            ),
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_id=
+                execution_attempt_id,
+            provider_correlation_id=
+                provider_correlation_id,
+        )
+    )
+
+
+def emit_servicenow_provider_conflict_denied_security_event(
+    *,
+    tenant_id: str,
+    workflow_id: str,
+    execution_attempt_id: str,
+    provider_correlation_id: str,
+) -> bool:
+    """
+    Observe the actual reconciliation refusal caused by a previously
+    established multiple-result provider ambiguity.
+    """
+
+    return (
+        _emit_servicenow_reconciliation_denial_security_event(
+            outcome=SecurityOutcome.DENIED,
+            reason_code=(
+                SecurityReasonCode
+                .PROVIDER_AMBIGUOUS
+            ),
+            source_component=(
+                SecuritySourceComponent
+                .SERVICENOW_RECONCILIATION
+            ),
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            execution_attempt_id=
+                execution_attempt_id,
+            provider_correlation_id=
+                provider_correlation_id,
+        )
+    )

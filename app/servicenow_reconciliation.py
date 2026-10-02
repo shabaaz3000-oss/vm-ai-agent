@@ -7,6 +7,7 @@ from typing import Literal
 
 from app.providers.servicenow_client import (
     ServiceNowClient,
+    ServiceNowLookupError,
 )
 
 from app.providers.servicenow_config import (
@@ -41,6 +42,8 @@ from app.security_observability_integrations import (
     emit_servicenow_provider_result_correlated_security_event,
     emit_servicenow_reconciliation_resolved_security_event,
     emit_servicenow_reconciliation_started_security_event,
+    emit_servicenow_provider_conflict_denied_security_event,
+    emit_servicenow_provider_lookup_failure_security_event,
 )
 
 
@@ -246,6 +249,21 @@ def reconcile_servicenow_workflow(
             provider_correlation_id=
                 correlation_id,
         )
+
+    except ServiceNowLookupError as error:
+
+        emit_servicenow_provider_lookup_failure_security_event(
+            tenant_id=workflow.tenant_id,
+            workflow_id=workflow.workflow_id,
+            execution_attempt_id=
+                workflow.execution_attempt_id,
+            provider_correlation_id=
+                correlation_id,
+            failure_kind=
+                error.failure_kind.value,
+        )
+
+        raise
 
     finally:
 
@@ -494,6 +512,15 @@ def resolve_servicenow_workflow(
                 "CONFLICT reconciliation evidence "
                 "is inconsistent."
             )
+
+        emit_servicenow_provider_conflict_denied_security_event(
+            tenant_id=security_context.tenant_id,
+            workflow_id=evidence.workflow_id,
+            execution_attempt_id=
+                evidence.execution_attempt_id,
+            provider_correlation_id=
+                evidence.correlation_id,
+        )
 
         raise ServiceNowReconciliationError(
             "ServiceNow reconciliation found "

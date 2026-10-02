@@ -1047,3 +1047,60 @@ authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### ServiceNow provider failure telemetry
+
+ServiceNow lookup failures use bounded machine-readable classification.
+Telemetry MUST NOT determine failure semantics by parsing exception text,
+exception causes, provider bodies, or arbitrary records.
+
+The internal lookup classifications are:
+
+- `transport`
+- `http_status`
+- `invalid_response`
+- `correlation_mismatch`
+
+Transport, non-success HTTP status, and invalid/untrustworthy response
+failures emit `security.provider.reconciliation_denied` with outcome
+`failed` and reason `reconciliation_denied`.
+
+A returned provider record whose `correlation_id` does not match the
+server-requested VMAI correlation emits the same canonical event with
+outcome `denied` and reason `provider_correlation_mismatch`.
+
+For correlation mismatch, canonical `provider_correlation_id` is the
+server-built expected VMAI value. The mismatching provider-returned value
+MUST NOT be copied into canonical telemetry.
+
+`security.provider.request_started` remains before the lookup.
+`security.provider.request_completed` is emitted only after a successful,
+validated lookup return. A `ServiceNowLookupError` failure emits bounded
+failure telemetry and then re-raises the same exception. The existing
+client `finally` cleanup remains authoritative for closing the provider
+client.
+
+A multiple-result lookup is already observed as
+`security.provider.result_ambiguous`. When resolution subsequently refuses
+workflow mutation because the evidence outcome is `CONFLICT`, the actual
+refusal additionally emits `security.provider.reconciliation_denied` with
+outcome `denied` and reason `provider_ambiguous`.
+
+This layer does not observe store-owned cross-tenant, stale exact-attempt,
+workflow-state, existing-ticket, or reconciliation-CAS denials. Those
+remain separate workflow-store authority decisions.
+
+The failure-kind value is bounded classification metadata only. It is not
+authorization or workflow authority.
+
+Provider response bodies, raw HTTP payloads, arbitrary records, exception
+causes, credentials, authorization headers, cookies, tokens, passwords,
+ticket descriptions, comments, raw mismatching provider correlations, and
+raw execution-attempt identifiers MUST NOT be serialized into canonical
+telemetry.
+
+Provider correlation observes authority. Provider correlation is never
+authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
