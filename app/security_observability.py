@@ -177,6 +177,7 @@ class SecuritySourceComponent(str, Enum):
     RETRIEVER = "retriever"
     MCP_SESSION = "mcp_session"
     MCP_SERVER = "mcp_server"
+    TOOL_DISPATCHER = "tool_dispatcher"
     WORKFLOW = "workflow"
     EXECUTION = "execution"
     WORKFLOW_STORE = "workflow_store"

@@ -469,6 +469,7 @@ Initial components include:
 - `retriever`
 - `mcp_session`
 - `mcp_server`
+- `tool_dispatcher`
 - `workflow`
 - `execution`
 - `workflow_store`
@@ -780,3 +781,23 @@ The objective of Step 50 is not to create more authority.
 The objective is to make existing authority observable, measurable,
 correlatable, detectable, and defensible in production without exposing the
 sensitive information those controls are designed to protect.
+
+### MCP tool-dispatch observability provenance
+
+Canonical `security.mcp.tool_invocation_allowed` and
+`security.mcp.tool_invocation_denied` events emitted by the shared tool
+dispatcher require an explicit server-controlled MCP telemetry-origin
+marker on `ToolExecutionContext`.
+
+The telemetry-origin marker is observability metadata only. It MUST NOT
+grant tool access, change tool visibility, select a tenant, establish a
+principal, validate a session, or otherwise participate in an
+authorization decision.
+
+The presence of `SecurityContext` alone MUST NOT be treated as proof of
+MCP provenance. Ordinary or future non-MCP execution paths may also use
+trusted security context.
+
+Raw tool names, raw MCP session identifiers, credentials, tokens, and
+caller-supplied provenance values MUST NOT be copied into canonical MCP
+tool-invocation events.

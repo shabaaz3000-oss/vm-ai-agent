@@ -18,6 +18,7 @@ from app.risk_engine import (
 from app.tools.dispatcher import (
     ToolExecutionContext,
     dispatch_llm_tool,
+    ToolInvocationTelemetryOrigin,
 )
 
 from app.workflow import (
@@ -169,4 +170,6 @@ def build_mcp_rag_execution_context(
         asset=asset,
         risk=risk,
         retriever=retriever,
+        telemetry_origin=
+            ToolInvocationTelemetryOrigin.MCP,
     )

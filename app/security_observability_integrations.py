@@ -433,3 +433,110 @@ def emit_mcp_session_revoked_security_event(
         _report_emission_failure(exc)
 
         return False
+
+_MCP_TOOL_INVOCATION_DENIAL_REASON_CODES = {
+    "tool_not_authorized":
+        SecurityReasonCode.TOOL_NOT_AUTHORIZED,
+
+    "security_binding_mismatch":
+        SecurityReasonCode.SECURITY_BINDING_MISMATCH,
+}
+
+
+def emit_mcp_tool_invocation_allowed_security_event(
+    *,
+    tenant_id: str,
+) -> bool:
+    """
+    Observe an MCP tool invocation authorization that has already
+    passed the dispatcher's existing policy checks.
+
+    No raw tool name, raw session identifier, principal identifier,
+    prompt content, or caller-supplied provenance is emitted.
+    """
+
+    try:
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .MCP_TOOL_INVOCATION_ALLOWED
+            ),
+            severity=SecuritySeverity.INFO,
+            outcome=SecurityOutcome.ALLOWED,
+            source_component=(
+                SecuritySourceComponent
+                .TOOL_DISPATCHER
+            ),
+            tenant_id=tenant_id,
+            resource_type=(
+                SecurityResourceType.MCP_TOOL
+            ),
+            action=SecurityAction.INVOKE_TOOL,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_mcp_tool_invocation_denied_security_event(
+    *,
+    tenant_id: str,
+    reason: str,
+) -> bool:
+    """
+    Observe an MCP tool invocation denial produced by an existing
+    dispatcher enforcement point.
+
+    `reason` is mapped into the bounded Step 50 vocabulary and is
+    never copied into arbitrary canonical metadata.
+    """
+
+    try:
+        reason_code = (
+            _MCP_TOOL_INVOCATION_DENIAL_REASON_CODES[
+                reason
+            ]
+        )
+
+        severity = (
+            SecuritySeverity.HIGH
+            if (
+                reason
+                == "security_binding_mismatch"
+            )
+            else SecuritySeverity.MEDIUM
+        )
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .MCP_TOOL_INVOCATION_DENIED
+            ),
+            severity=severity,
+            outcome=SecurityOutcome.DENIED,
+            source_component=(
+                SecuritySourceComponent
+                .TOOL_DISPATCHER
+            ),
+            tenant_id=tenant_id,
+            resource_type=(
+                SecurityResourceType.MCP_TOOL
+            ),
+            action=SecurityAction.INVOKE_TOOL,
+            reason_code=reason_code,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False

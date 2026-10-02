@@ -22,6 +22,7 @@ from app.models import (
 from app.tools.dispatcher import (
     ToolExecutionContext,
     dispatch_llm_tool,
+    ToolInvocationTelemetryOrigin,
 )
 
 from app.tools.registry import (
@@ -200,6 +201,8 @@ def build_mcp_execution_context(
 
         security_context=
             build_mcp_security_context(),
+        telemetry_origin=
+            ToolInvocationTelemetryOrigin.MCP,
     )
 
 

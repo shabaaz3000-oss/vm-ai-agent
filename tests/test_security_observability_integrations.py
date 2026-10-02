@@ -684,3 +684,159 @@ def test_mcp_session_production_wiring_preserves_legacy_events():
         )
         == 1
     )
+
+
+def test_mcp_tool_invocation_allowed_uses_trusted_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_mcp_tool_invocation_allowed_security_event(
+            tenant_id="tenant-alpha",
+        )
+        is True
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .MCP_TOOL_INVOCATION_ALLOWED
+    )
+
+    assert (
+        event.outcome
+        is SecurityOutcome.ALLOWED
+    )
+
+    assert (
+        event.severity
+        is SecuritySeverity.INFO
+    )
+
+    assert (
+        event.tenant_id
+        == "tenant-alpha"
+    )
+
+    payload = event.to_dict()
+
+    assert (
+        payload["source_component"]
+        == "tool_dispatcher"
+    )
+
+    assert (
+        payload["resource_type"]
+        == "mcp_tool"
+    )
+
+    assert (
+        payload["action"]
+        == "invoke_tool"
+    )
+
+    assert "session_ref" not in payload
+    assert "principal_ref" not in payload
+    assert "tool" not in payload
+
+
+@pytest.mark.parametrize(
+    (
+        "reason",
+        "expected_reason",
+        "expected_severity",
+    ),
+    [
+        (
+            "tool_not_authorized",
+            SecurityReasonCode.TOOL_NOT_AUTHORIZED,
+            SecuritySeverity.MEDIUM,
+        ),
+        (
+            "security_binding_mismatch",
+            SecurityReasonCode
+            .SECURITY_BINDING_MISMATCH,
+            SecuritySeverity.HIGH,
+        ),
+    ],
+)
+def test_mcp_tool_invocation_denied_uses_bounded_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+    expected_reason: SecurityReasonCode,
+    expected_severity: SecuritySeverity,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_mcp_tool_invocation_denied_security_event(
+            tenant_id="tenant-alpha",
+            reason=reason,
+        )
+        is True
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .MCP_TOOL_INVOCATION_DENIED
+    )
+
+    assert (
+        event.outcome
+        is SecurityOutcome.DENIED
+    )
+
+    assert (
+        event.reason_code
+        is expected_reason
+    )
+
+    assert (
+        event.severity
+        is expected_severity
+    )
+
+    payload = event.to_dict()
+
+    assert "tool" not in payload
+    assert "session_ref" not in payload
+    assert "principal_ref" not in payload
+
+
+def test_mcp_tool_invocation_unknown_reason_is_observability_only(
+    caplog: pytest.LogCaptureFixture,
+):
+    caplog.set_level(
+        logging.ERROR
+    )
+
+    result = (
+        integrations
+        .emit_mcp_tool_invocation_denied_security_event(
+            tenant_id="tenant-alpha",
+            reason="future_unknown_reason",
+        )
+    )
+
+    assert result is False
+
+    assert (
+        "existing security decision preserved"
+        in caplog.text
+    )

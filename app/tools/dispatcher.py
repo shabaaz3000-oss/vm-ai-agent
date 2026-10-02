@@ -1,8 +1,13 @@
 from dataclasses import dataclass
+from enum import Enum
 
 from app.auth import Principal
 from app.security_context import SecurityContext
 from app.audit import log_event
+from app.security_observability_integrations import (
+    emit_mcp_tool_invocation_allowed_security_event,
+    emit_mcp_tool_invocation_denied_security_event,
+)
 
 from app.models import (
     AssetContext,
@@ -38,6 +43,13 @@ from app.tools.threat_intel import (
 # -------------------------------------------------
 
 
+
+
+class ToolInvocationTelemetryOrigin(str, Enum):
+    """Bounded observability provenance; never authorization."""
+
+    MCP = "mcp"
+
 @dataclass(
     frozen=True
 )
@@ -46,6 +58,7 @@ class ToolExecutionContext:
     principal: Principal
 
     security_context: SecurityContext | None = None
+    telemetry_origin: ToolInvocationTelemetryOrigin | None = None
 
     finding: VulnerabilityFinding | None = None
 
@@ -161,6 +174,73 @@ class ToolExecutionContext:
             )
 
 
+
+def _trusted_mcp_telemetry_tenant_id(
+    context: ToolExecutionContext,
+) -> str | None:
+    """
+    Return trusted tenant correlation only for an explicitly
+    server-marked MCP telemetry context.
+
+    This function is observability-only and is never consulted by
+    authorization.
+    """
+
+    if (
+        context.telemetry_origin
+        is not ToolInvocationTelemetryOrigin.MCP
+    ):
+        return None
+
+    security_context = (
+        context.security_context
+    )
+
+    if security_context is None:
+        return None
+
+    return security_context.tenant_id
+
+
+def _emit_mcp_tool_allowed_if_trusted(
+    context: ToolExecutionContext,
+) -> None:
+
+    tenant_id = (
+        _trusted_mcp_telemetry_tenant_id(
+            context
+        )
+    )
+
+    if tenant_id is None:
+        return
+
+    emit_mcp_tool_invocation_allowed_security_event(
+        tenant_id=tenant_id,
+    )
+
+
+def _emit_mcp_tool_denied_if_trusted(
+    context: ToolExecutionContext,
+    *,
+    reason: str,
+) -> None:
+
+    tenant_id = (
+        _trusted_mcp_telemetry_tenant_id(
+            context
+        )
+    )
+
+    if tenant_id is None:
+        return
+
+    emit_mcp_tool_invocation_denied_security_event(
+        tenant_id=tenant_id,
+        reason=reason,
+    )
+
+
 # -------------------------------------------------
 # LLM TOOL DISPATCHER
 # -------------------------------------------------
@@ -174,7 +254,16 @@ def dispatch_llm_tool(
     # Security-significant identity claims are checked
     # again at execution time so mutable Principal state
     # cannot drift from the trusted session context.
-    context.validate_security_binding()
+    try:
+        context.validate_security_binding()
+
+    except ValueError:
+        _emit_mcp_tool_denied_if_trusted(
+            context,
+            reason="security_binding_mismatch",
+        )
+
+        raise
 
     log_event(
         "LLM_TOOL_DISPATCH_REQUESTED",
@@ -206,6 +295,11 @@ def dispatch_llm_tool(
             },
         )
 
+        _emit_mcp_tool_denied_if_trusted(
+            context,
+            reason="tool_not_authorized",
+        )
+
         raise
 
     # -------------------------------------------------
@@ -222,6 +316,11 @@ def dispatch_llm_tool(
                 "reason":
                     "tool_not_llm_visible",
             },
+        )
+
+        _emit_mcp_tool_denied_if_trusted(
+            context,
+            reason="tool_not_authorized",
         )
 
         raise PermissionError(
@@ -245,10 +344,19 @@ def dispatch_llm_tool(
             },
         )
 
+        _emit_mcp_tool_denied_if_trusted(
+            context,
+            reason="tool_not_authorized",
+        )
+
         raise PermissionError(
             "LLM tool dispatch is restricted "
             "to read-only tools."
         )
+
+    _emit_mcp_tool_allowed_if_trusted(
+        context
+    )
 
     # -------------------------------------------------
     # 4. DISPATCH ALLOWLISTED TOOL
