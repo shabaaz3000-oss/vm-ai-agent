@@ -21,6 +21,7 @@ from app.workflow_store import (
     mark_workflow_needs_review,
     complete_workflow_execution,
 )
+from app.legacy_audit_hygiene import build_legacy_execution_attempt_audit_fields
 
 
 # -------------------------------------------------
@@ -255,9 +256,14 @@ def _execute_ticket_bound_workflow(
             "workflow_id":
                 result.workflow_id,
 
-            "execution_attempt_id":
-                result.execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    result.tenant_id,
+                workflow_id=
+                    result.workflow_id,
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            ),
             "approval_id":
                 approval_record[
                     "approval_id"
@@ -320,9 +326,14 @@ def _execute_ticket_bound_workflow(
                 "workflow_id":
                     result.workflow_id,
 
-                "execution_attempt_id":
-                    result.execution_attempt_id,
-
+                **build_legacy_execution_attempt_audit_fields(
+                    tenant_id=
+                        result.tenant_id,
+                    workflow_id=
+                        result.workflow_id,
+                    execution_attempt_id=
+                        result.execution_attempt_id,
+                ),
                 "approval_id":
                     approval_record[
                         "approval_id"
@@ -346,9 +357,14 @@ def _execute_ticket_bound_workflow(
             "workflow_id":
                 result.workflow_id,
 
-            "execution_attempt_id":
-                result.execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    result.tenant_id,
+                workflow_id=
+                    result.workflow_id,
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            ),
             "ticket_id":
                 created_ticket[
                     "ticket_id"
@@ -506,10 +522,14 @@ def claim_and_execute_workflow(
             "status":
                 claimed_result.status,
 
-            "execution_attempt_id":
-                claimed_result
-                .execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    claimed_result.tenant_id,
+                workflow_id=
+                    claimed_result.workflow_id,
+                execution_attempt_id=
+                    claimed_result.execution_attempt_id,
+            ),
             "processing_started_at":
                 (
                     claimed_result
@@ -695,10 +715,14 @@ def claim_and_execute_workflow(
                     "workflow_id":
                         workflow_id,
 
-                    "execution_attempt_id":
-                        claimed_result
-                        .execution_attempt_id,
-
+                    **build_legacy_execution_attempt_audit_fields(
+                        tenant_id=
+                            claimed_result.tenant_id,
+                        workflow_id=
+                            claimed_result.workflow_id,
+                        execution_attempt_id=
+                            claimed_result.execution_attempt_id,
+                    ),
                     "original_error_type":
                         type(error).__name__,
 
@@ -717,10 +741,14 @@ def claim_and_execute_workflow(
                     "workflow_id":
                         workflow_id,
 
-                    "execution_attempt_id":
-                        review_result
-                        .execution_attempt_id,
-
+                    **build_legacy_execution_attempt_audit_fields(
+                        tenant_id=
+                            review_result.tenant_id,
+                        workflow_id=
+                            review_result.workflow_id,
+                        execution_attempt_id=
+                            review_result.execution_attempt_id,
+                    ),
                     "status":
                         review_result.status,
 
@@ -777,9 +805,14 @@ def reconcile_stale_workflow(
             "workflow_id":
                 result.workflow_id,
 
-            "execution_attempt_id":
-                result.execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    result.tenant_id,
+                workflow_id=
+                    result.workflow_id,
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            ),
             "status":
                 result.status,
 

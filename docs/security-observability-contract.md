@@ -1556,3 +1556,57 @@ Exception text is not authority and is not required audit data.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Legacy execution-attempt audit confidentiality
+
+The raw exact `execution_attempt_id` participates in workflow execution,
+compare-and-swap, recovery, and reconciliation authority.
+
+It remains available internally wherever those authority checks require
+it, but legacy `log_event` records do not persist the raw exact value.
+
+For legacy audit correlation, trusted authoritative workflow state
+supplies the workflow and execution-attempt values.
+
+For the authenticated ServiceNow reconciliation endpoint, tenant
+correlation comes from the server-built trusted security context while
+workflow and execution-attempt correlation come from the authoritative
+resolved workflow result. The caller-supplied endpoint workflow
+identifier is not used as EA1 workflow correlation merely because it
+matches authoritative state.
+
+For other migrated workflow audit events, the authoritative returned
+`WorkflowResult` supplies tenant, workflow, and execution-attempt
+correlation.
+
+When all required trusted values are present, the audit record contains
+the pseudonymous `execution_attempt_ref` derived through the canonical
+EA1 correlation function.
+
+When authoritative tenant or execution-attempt correlation is absent,
+the legacy audit record omits execution-attempt correlation rather than
+persisting raw execution authority.
+
+The legacy audit helper does not establish trust. Call sites remain
+responsible for supplying trusted authoritative state.
+
+Optional audit-correlation failure does not establish, alter, or replace
+workflow authority.
+
+This tranche does not change:
+
+- `expected_execution_attempt_id` comparisons;
+- workflow claim semantics;
+- compare-and-swap behavior;
+- stale-processing authority;
+- ServiceNow reconciliation authority;
+- workflow state transitions.
+
+Correlation observes authority. Correlation is never authority.
+
+Audit observes authority. Audit is not authority.
+
+EA1 is observational only.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
