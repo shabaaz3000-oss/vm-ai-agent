@@ -830,3 +830,58 @@ trusted `SecurityContext.session_correlation_id`.
 validate, restore, revoke, or otherwise influence session authority.
 Exact session authority continues to depend on the underlying
 server-controlled session state and validation logic.
+
+### Workflow and execution-attempt correlation
+
+Canonical workflow telemetry distinguishes the persisted workflow
+identifier from the exact execution-attempt authority value.
+
+#### `workflow_id`
+
+Canonical `workflow_id` MAY contain the exact workflow identifier only
+after that value has been obtained from authoritative server-side
+workflow state, such as a persisted `WorkflowResult` returned by the
+workflow store.
+
+An HTTP path value, request parameter, model-generated value, provider
+response, or other caller-supplied string MUST NOT become authoritative
+canonical workflow correlation merely because it resembles a workflow
+identifier.
+
+#### `execution_attempt_ref`
+
+The exact `execution_attempt_id` participates in execution authority,
+including exact-attempt equality checks, compare-and-swap transitions,
+completion, recovery, and reconciliation.
+
+Canonical security telemetry therefore MUST NOT copy the raw
+`execution_attempt_id` into `execution_attempt_ref`.
+
+The v1 canonical execution-attempt reference is derived as:
+
+`EA1-` + SHA-256(
+`vm-ai-security-observability:execution-attempt-ref:v1`
++ trusted `tenant_id`
++ authoritative `workflow_id`
++ authoritative `execution_attempt_id`
+)
+
+The inputs are separated with the application correlation delimiter
+before hashing.
+
+The reference is deterministic for the same authoritative execution
+attempt and changes if the tenant, workflow, or execution-attempt value
+changes.
+
+`execution_attempt_ref` is pseudonymous observability metadata. It is
+not an execution credential, capability, approval token, workflow
+transition token, or substitute for the exact execution-attempt ID.
+
+All existing checks involving `expected_execution_attempt_id` MUST
+continue to compare against the exact authoritative
+`execution_attempt_id`.
+
+No metric label may contain `workflow_id`, `execution_attempt_ref`, or
+the raw `execution_attempt_id`.
+
+Correlation observes authority. Correlation is never authority.
