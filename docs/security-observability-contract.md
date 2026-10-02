@@ -1172,3 +1172,77 @@ Correlation observes authority. Correlation is never authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Canonical bounded security metrics registry
+
+The initial production security-metrics boundary is framework-independent.
+It consumes only validated canonical `SecurityEvent` objects and does not
+accept caller-defined metric names or arbitrary label mappings.
+
+The v1 counters are:
+
+- `security_events_total`
+- `security_denials_total`
+- `security_review_required_total`
+
+`security_events_total` uses only:
+
+- `event_type`
+- `severity`
+- `outcome`
+- `source_component`
+
+`security_denials_total` and
+`security_review_required_total` use only:
+
+- `event_type`
+- `reason_code`
+- `source_component`
+
+When a qualifying event has no canonical `reason_code`, the fixed literal
+`none` is used. This is one bounded synthetic value and does not introduce
+attacker-controlled cardinality.
+
+The registry exposes no generic arbitrary-label increment operation.
+Metrics are derived from canonical event enums inside the metrics boundary.
+
+The following security-event correlation fields are never metric labels:
+
+- `event_id`
+- `request_id`
+- `principal_ref`
+- `tenant_id`
+- `session_ref`
+- `workflow_id`
+- `execution_attempt_ref`
+- `provider_correlation_id`
+
+Raw execution-attempt IDs, raw session IDs, usernames, email addresses,
+ticket identifiers, ServiceNow `sys_id` values, exception text, provider
+response text, and other arbitrary strings are also prohibited.
+
+Theoretical series cardinality is explicitly bounded by the finite
+canonical enum vocabularies. The general event counter is bounded by:
+
+`|event_type| ? |severity| ? |outcome| ? |source_component|`
+
+The denial and review-required counters are each bounded by:
+
+`|event_type| ? (|reason_code| + 1) ? |source_component|`
+
+where the additional reason-code value is the fixed `none` label.
+
+The first registry is process-local, thread-safe, counter-only, and
+framework-independent. It does not add Prometheus, OpenTelemetry, StatsD,
+Datadog, or another exporter dependency.
+
+Exporter and canonical-event-delivery integration are separate steps.
+The metrics registry does not replace the existing audit sink and does not
+change `SecurityEventEmitter` delivery semantics in this tranche.
+
+Metrics observe authority. Metrics are never authority.
+
+A metrics observation or exporter failure MUST NOT alter authentication,
+authorization, tenant binding, session validity, retrieval authorization,
+workflow state, exact execution-attempt authority, provider reconciliation,
+or an API response.
