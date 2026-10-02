@@ -11,6 +11,10 @@ from pydantic import Field
 
 from app.auth import Principal
 from app.audit import log_event
+from app.security_observability_integrations import (
+    emit_mcp_session_revoked_security_event,
+    emit_mcp_session_validation_failed_security_event,
+)
 from app.security_context import SecurityContext
 
 from app.mcp_session_store import InMemorySessionStore
@@ -438,6 +442,10 @@ class MCPSessionManager:
             },
         )
 
+        emit_mcp_session_revoked_security_event(
+            tenant_id=revoked_session.tenant_id,
+        )
+
         return revoked_session
 
 
@@ -750,6 +758,11 @@ class MCPSessionManager:
                 },
             )
 
+            emit_mcp_session_validation_failed_security_event(
+                reason="session_not_found",
+                tenant_id=None,
+            )
+
             raise MCPSessionNotFound(
                 "MCP session was not found."
             )
@@ -776,6 +789,11 @@ class MCPSessionManager:
                     "reason":
                         "principal_mismatch",
                 },
+            )
+
+            emit_mcp_session_validation_failed_security_event(
+                reason="principal_mismatch",
+                tenant_id=session.tenant_id,
             )
 
             raise MCPSessionAccessDenied(
@@ -806,6 +824,11 @@ class MCPSessionManager:
                 },
             )
 
+            emit_mcp_session_validation_failed_security_event(
+                reason="tenant_mismatch",
+                tenant_id=session.tenant_id,
+            )
+
             raise MCPSessionAccessDenied(
                 "MCP session tenant mismatch."
             )
@@ -829,6 +852,11 @@ class MCPSessionManager:
                     "reason":
                         "session_revoked",
                 },
+            )
+
+            emit_mcp_session_validation_failed_security_event(
+                reason="session_revoked",
+                tenant_id=session.tenant_id,
             )
 
             raise MCPSessionRevoked(
@@ -862,6 +890,11 @@ class MCPSessionManager:
                     "reason":
                         "session_expired",
                 },
+            )
+
+            emit_mcp_session_validation_failed_security_event(
+                reason="session_expired",
+                tenant_id=session.tenant_id,
             )
 
             raise MCPSessionExpired(

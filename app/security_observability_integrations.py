@@ -301,3 +301,135 @@ def emit_tool_output_prompt_injection_suspected_security_event(
         _report_emission_failure(exc)
 
         return False
+
+_MCP_SESSION_VALIDATION_REASON_CODES = {
+    "session_not_found":
+        SecurityReasonCode.SESSION_MISSING,
+
+    "principal_mismatch":
+        SecurityReasonCode.SECURITY_BINDING_MISMATCH,
+
+    "tenant_mismatch":
+        SecurityReasonCode.CROSS_TENANT,
+
+    "session_revoked":
+        SecurityReasonCode.SESSION_REVOKED,
+
+    "session_expired":
+        SecurityReasonCode.SESSION_EXPIRED,
+}
+
+
+def emit_mcp_session_validation_failed_security_event(
+    *,
+    reason: str,
+    tenant_id: str | None,
+) -> bool:
+    """
+    Observe an authoritative MCP session validation denial.
+
+    For session_not_found there is no authoritative session tenant,
+    so tenant_id is deliberately omitted.
+
+    For all other branches, tenant_id must come from the retrieved
+    authoritative MCPSession, not from caller-supplied tenant input.
+
+    Raw session IDs, usernames, tokens, and caller authority claims
+    are deliberately excluded.
+    """
+
+    try:
+        reason_code = (
+            _MCP_SESSION_VALIDATION_REASON_CODES[
+                reason
+            ]
+        )
+
+        if reason == "session_not_found":
+            canonical_tenant_id = None
+
+        else:
+            if tenant_id is None:
+                raise ValueError(
+                    "Authoritative session tenant is required "
+                    "for this validation failure."
+                )
+
+            canonical_tenant_id = tenant_id
+
+        severity = (
+            SecuritySeverity.HIGH
+            if reason in {
+                "principal_mismatch",
+                "tenant_mismatch",
+            }
+            else SecuritySeverity.MEDIUM
+        )
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .MCP_SESSION_VALIDATION_FAILED
+            ),
+            severity=severity,
+            outcome=SecurityOutcome.DENIED,
+            source_component=(
+                SecuritySourceComponent.MCP_SESSION
+            ),
+            tenant_id=canonical_tenant_id,
+            resource_type=(
+                SecurityResourceType.MCP_SESSION
+            ),
+            action=SecurityAction.VALIDATE_SESSION,
+            reason_code=reason_code,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_mcp_session_revoked_security_event(
+    *,
+    tenant_id: str,
+) -> bool:
+    """
+    Observe a completed authoritative MCP session revocation.
+
+    This helper must be called only after the session store has
+    accepted the authoritative revocation state transition.
+
+    Raw session IDs and principal identifiers are not emitted.
+    """
+
+    try:
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .MCP_SESSION_REVOKED
+            ),
+            severity=SecuritySeverity.MEDIUM,
+            outcome=SecurityOutcome.REVOKED,
+            source_component=(
+                SecuritySourceComponent.MCP_SESSION
+            ),
+            tenant_id=tenant_id,
+            resource_type=(
+                SecurityResourceType.MCP_SESSION
+            ),
+            action=SecurityAction.REVOKE_SESSION,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False

@@ -461,3 +461,226 @@ def test_tool_output_suspicion_production_wiring_is_not_block_event():
         "blocked_security_event()"
         not in following
     )
+
+
+def test_mcp_session_validation_missing_omits_untrusted_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    result = (
+        integrations
+        .emit_mcp_session_validation_failed_security_event(
+            reason="session_not_found",
+            tenant_id="caller-controlled-tenant",
+        )
+    )
+
+    assert result is True
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .MCP_SESSION_VALIDATION_FAILED
+    )
+
+    assert (
+        event.reason_code
+        is SecurityReasonCode.SESSION_MISSING
+    )
+
+    assert event.tenant_id is None
+    assert event.outcome is SecurityOutcome.DENIED
+
+    payload = event.to_dict()
+
+    assert "tenant_id" not in payload
+    assert "session_ref" not in payload
+    assert "principal_ref" not in payload
+
+
+@pytest.mark.parametrize(
+    (
+        "reason",
+        "expected_reason",
+        "expected_severity",
+    ),
+    [
+        (
+            "principal_mismatch",
+            SecurityReasonCode
+            .SECURITY_BINDING_MISMATCH,
+            SecuritySeverity.HIGH,
+        ),
+        (
+            "tenant_mismatch",
+            SecurityReasonCode.CROSS_TENANT,
+            SecuritySeverity.HIGH,
+        ),
+        (
+            "session_revoked",
+            SecurityReasonCode.SESSION_REVOKED,
+            SecuritySeverity.MEDIUM,
+        ),
+        (
+            "session_expired",
+            SecurityReasonCode.SESSION_EXPIRED,
+            SecuritySeverity.MEDIUM,
+        ),
+    ],
+)
+def test_mcp_session_validation_failure_uses_bounded_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+    expected_reason: SecurityReasonCode,
+    expected_severity: SecuritySeverity,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    result = (
+        integrations
+        .emit_mcp_session_validation_failed_security_event(
+            reason=reason,
+            tenant_id="tenant-alpha",
+        )
+    )
+
+    assert result is True
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .MCP_SESSION_VALIDATION_FAILED
+    )
+
+    assert (
+        event.reason_code
+        is expected_reason
+    )
+
+    assert (
+        event.severity
+        is expected_severity
+    )
+
+    assert (
+        event.tenant_id
+        == "tenant-alpha"
+    )
+
+    payload = event.to_dict()
+
+    assert "session_ref" not in payload
+    assert "principal_ref" not in payload
+
+
+def test_mcp_session_validation_unknown_reason_fails_observability_only(
+    caplog: pytest.LogCaptureFixture,
+):
+    caplog.set_level(
+        logging.ERROR
+    )
+
+    result = (
+        integrations
+        .emit_mcp_session_validation_failed_security_event(
+            reason="future_unknown_reason",
+            tenant_id="tenant-alpha",
+        )
+    )
+
+    assert result is False
+
+    assert (
+        "existing security decision preserved"
+        in caplog.text
+    )
+
+
+def test_mcp_session_revoked_event_uses_authoritative_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    result = (
+        integrations
+        .emit_mcp_session_revoked_security_event(
+            tenant_id="tenant-alpha",
+        )
+    )
+
+    assert result is True
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .MCP_SESSION_REVOKED
+    )
+
+    assert (
+        event.outcome
+        is SecurityOutcome.REVOKED
+    )
+
+    assert (
+        event.tenant_id
+        == "tenant-alpha"
+    )
+
+    payload = event.to_dict()
+
+    assert "session_ref" not in payload
+    assert "principal_ref" not in payload
+
+
+def test_mcp_session_production_wiring_preserves_legacy_events():
+    text = Path(
+        "app/mcp_session.py"
+    ).read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert (
+        text.count(
+            "emit_mcp_session_validation_failed_"
+            "security_event("
+        )
+        == 5
+    )
+
+    assert (
+        text.count(
+            "emit_mcp_session_revoked_"
+            "security_event("
+        )
+        == 1
+    )
+
+    assert (
+        text.count(
+            '"MCP_SESSION_VALIDATION_BLOCKED"'
+        )
+        == 5
+    )
+
+    assert (
+        text.count(
+            '"MCP_SESSION_REVOKED"'
+        )
+        == 1
+    )
