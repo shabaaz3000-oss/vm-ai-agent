@@ -1246,3 +1246,58 @@ A metrics observation or exporter failure MUST NOT alter authentication,
 authorization, tenant binding, session validity, retrieval authorization,
 workflow state, exact execution-attempt authority, provider reconciliation,
 or an API response.
+
+### Canonical security metrics delivery integration
+
+Canonical production security events are observed through the existing
+`_emit_best_effort` integration seam. Individual event producers do not
+implement separate metrics calls.
+
+One already-constructed canonical `SecurityEvent` is offered to two
+independent observational paths:
+
+1. the existing audit sink;
+2. the bounded process-local security metrics registry.
+
+Audit delivery is attempted first. Metrics observation is then attempted
+exactly once regardless of whether audit delivery succeeded or failed.
+
+The two observer failure paths are isolated.
+
+A metrics observation failure MUST NOT suppress the audit attempt, alter
+the existing `_emit_best_effort` audit-success return value, or propagate
+into the security decision.
+
+An audit delivery failure MUST NOT prevent bounded metrics observation.
+
+If both observational paths fail, neither failure changes authentication,
+authorization, tenant binding, session validity, retrieval authorization,
+workflow state, exact execution-attempt authority, provider reconciliation,
+or an API response.
+
+The `_emit_best_effort` boolean contract remains backward compatible:
+
+- `True` means the existing audit delivery succeeded.
+- `False` means the existing audit delivery failed.
+
+Metrics success or failure does not alter that boolean.
+
+The metrics registry is explicitly process-local observability state and
+is accessed through `get_process_security_metrics_registry()`. It is not
+authorization, configuration, tenant, session, workflow, or execution
+authority.
+
+Metric observation continues to derive labels only from the bounded
+canonical enum fields defined by the security metrics registry. Event
+correlation identifiers remain prohibited as metric labels.
+
+Metrics observation failures are logged using only a bounded exception
+type name. Raw exception messages are not copied to logs.
+
+The existing `SecurityEventEmitter` exception-chain behavior is unchanged
+by this integration and remains a separate sensitive-data hardening item.
+
+Metrics observe authority. Metrics are never authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.

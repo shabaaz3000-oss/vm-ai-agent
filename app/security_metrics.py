@@ -499,3 +499,47 @@ class SecurityMetricsRegistry:
                     ),
             )
         )
+
+
+# Process-local observability state only.
+#
+# This registry has no role in authentication, authorization, tenant
+# selection, session validity, workflow transitions, exact-attempt
+# authority, or provider execution.
+_PROCESS_SECURITY_METRICS_REGISTRY = (
+    SecurityMetricsRegistry()
+)
+
+
+def get_process_security_metrics_registry(
+) -> SecurityMetricsRegistry:
+    """
+    Return the process-local canonical security metrics registry.
+
+    The explicit getter keeps process metrics lifecycle separate from
+    security authority and gives integration/export code one narrow
+    access boundary.
+    """
+
+    return (
+        _PROCESS_SECURITY_METRICS_REGISTRY
+    )
+
+
+def _reset_process_security_metrics_registry_for_tests(
+) -> SecurityMetricsRegistry:
+    """
+    Replace process metrics state for isolated tests.
+
+    This private helper changes observability state only.
+    """
+
+    global _PROCESS_SECURITY_METRICS_REGISTRY
+
+    _PROCESS_SECURITY_METRICS_REGISTRY = (
+        SecurityMetricsRegistry()
+    )
+
+    return (
+        _PROCESS_SECURITY_METRICS_REGISTRY
+    )

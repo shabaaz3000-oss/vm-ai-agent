@@ -33,6 +33,7 @@ from app.security_observability import (
     SecuritySeverity,
     SecuritySourceComponent,
 )
+from app.security_metrics import get_process_security_metrics_registry
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,9 +86,39 @@ def _report_emission_failure(
     )
 
 
+def _report_metrics_observation_failure(
+    exc: BaseException,
+) -> None:
+    """
+    Report a metrics failure without copying raw exception text.
+
+    Metrics failures are observational only and cannot change the
+    existing security decision or audit-delivery result.
+    """
+
+    _LOGGER.error(
+        "Canonical security metrics observation failed; "
+        "existing security decision preserved. "
+        "error_type=%s",
+        type(exc).__name__,
+    )
+
+
 def _emit_best_effort(
     event: SecurityEvent,
 ) -> bool:
+    """
+    Deliver one canonical event to independent audit and metrics
+    observers without making telemetry part of security authority.
+
+    Return semantics intentionally preserve the pre-metrics contract:
+    True means existing audit delivery succeeded; False means existing
+    audit delivery failed. Metrics success or failure does not alter
+    that result.
+    """
+
+    audit_succeeded = True
+
     try:
         sink = (
             build_existing_audit_security_event_sink()
@@ -100,11 +131,28 @@ def _emit_best_effort(
         )
 
     except Exception as exc:
-        _report_emission_failure(exc)
+        _report_emission_failure(
+            exc
+        )
 
-        return False
+        audit_succeeded = False
 
-    return True
+
+    try:
+        (
+            get_process_security_metrics_registry()
+            .observe(
+                event
+            )
+        )
+
+    except Exception as exc:
+        _report_metrics_observation_failure(
+            exc
+        )
+
+
+    return audit_succeeded
 
 
 def emit_api_tenant_binding_denied_security_event(
