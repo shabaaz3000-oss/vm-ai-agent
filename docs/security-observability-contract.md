@@ -1675,3 +1675,73 @@ Do not invent `principal_ref`.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Legacy audit ticket identity purpose limitation
+
+Legacy `ticket_id` is treated as operational work-item correlation, not
+as a credential, authentication secret, workflow authority, or provider
+request-correlation value.
+
+The current legacy audit boundary retains `ticket_id` only where the
+identifier originates from trusted returned ticket/workflow state and
+materially supports workflow-to-ticket traceability or incident-response
+reconstruction.
+
+There are two currently approved legacy audit provenance shapes.
+
+For the ticket-creation audit record, `MOCK_TICKET_CREATED` consumes
+`created_ticket["ticket_id"]`.
+
+`created_ticket` is produced only by
+`_create_ticket_with_selected_provider(...)`. Both control-flow branches
+invoke that same server-selected provider path, differing only in whether
+an already validated `TicketExecutionContext` is supplied.
+
+The provider selector does not accept a caller-supplied `ticket_id`. Its
+successful value is the return from `provider.create_ticket(...)`.
+
+The completed workflow result is populated from that same
+`created_ticket["ticket_id"]`.
+
+For the successful `execute_ticket_workflow` tool audit record,
+`TOOL_EXECUTED` consumes `result.ticket_id` from the completed
+authoritative `WorkflowResult`.
+
+For the production ServiceNow provider, `ticket_id` represents the
+provider-returned human-facing ticket number, while `external_sys_id`
+represents the provider-returned ServiceNow record identifier.
+
+These identifiers are distinct from the server-built ServiceNow
+`correlation_id` and canonical `provider_correlation_id`.
+
+`provider_correlation_id` correlates the trusted provider interaction.
+It must not be substituted for `ticket_id` merely to remove an
+operational identifier, because provider-call correlation and
+operational ticket identity have different semantics.
+
+Retaining `ticket_id` in purpose-limited legacy audit does not authorize
+adding `ticket_id`, `ticket_number`, `external_sys_id`, or `sys_id` to
+the canonical `SecurityEvent` schema.
+
+No ad hoc ticket pseudonymization or ticket-reference algorithm is
+introduced in this version.
+
+Ticket and provider identifiers are high-cardinality values and must not
+be used as security-metric labels.
+
+New audit records must not add ticket identity merely because it is
+available. Ticket identity should be retained only where operational
+reconstruction materially requires it and its provenance is trusted
+returned provider or workflow state.
+
+Audit observes authority. Audit is not authority.
+
+Ticket identity used for audit correlation does not establish workflow,
+approval, provider-selection, or execution authority.
+
+Provider correlation observes provider activity.
+
+Provider correlation is not ticket identity.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
