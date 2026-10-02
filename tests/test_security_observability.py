@@ -421,3 +421,44 @@ def test_two_events_receive_different_event_ids():
     second = _event()
 
     assert first.event_id != second.event_id
+
+
+
+def test_tool_output_prompt_injection_suspected_event_is_semantically_distinct():
+    event = SecurityEvent(
+        event_type=(
+            SecurityEventType
+            .AI_TOOL_OUTPUT_PROMPT_INJECTION_SUSPECTED
+        ),
+        severity=SecuritySeverity.MEDIUM,
+        outcome=SecurityOutcome.AMBIGUOUS,
+        source_component=(
+            SecuritySourceComponent.AGENT
+        ),
+        resource_type=(
+            SecurityResourceType.MCP_TOOL
+        ),
+        action=(
+            SecurityAction
+            .INSPECT_PROMPT_INJECTION
+        ),
+    )
+
+    payload = event.to_dict()
+
+    assert (
+        payload["event_type"]
+        == "security.ai."
+        "tool_output_prompt_injection_suspected"
+    )
+
+    assert (
+        payload["outcome"]
+        == "ambiguous"
+    )
+
+    assert (
+        payload["event_type"]
+        != "security.ai."
+        "tool_output_prompt_injection_blocked"
+    )

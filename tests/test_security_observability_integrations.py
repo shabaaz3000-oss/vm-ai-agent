@@ -374,3 +374,90 @@ def test_tool_output_suspicion_is_not_falsely_reported_as_block():
         "blocked_security_event"
         not in following
     )
+
+
+
+def test_tool_output_prompt_suspicion_emits_truthful_canonical_event(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events = _capture_events(
+        monkeypatch
+    )
+
+    assert (
+        integrations
+        .emit_tool_output_prompt_injection_suspected_security_event()
+        is True
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert (
+        event.event_type
+        is SecurityEventType
+        .AI_TOOL_OUTPUT_PROMPT_INJECTION_SUSPECTED
+    )
+
+    assert (
+        event.outcome
+        is SecurityOutcome.AMBIGUOUS
+    )
+
+    assert (
+        event.severity
+        is SecuritySeverity.MEDIUM
+    )
+
+    payload = event.to_dict()
+
+    assert (
+        payload["resource_type"]
+        == "mcp_tool"
+    )
+
+    for forbidden in (
+        "prompt",
+        "matches",
+        "username",
+        "role",
+        "tool",
+        "tool_output",
+        "result",
+    ):
+        assert forbidden not in payload
+
+
+def test_tool_output_suspicion_production_wiring_is_not_block_event():
+    agent_text = Path(
+        "app/agent.py"
+    ).read_text(
+        encoding="utf-8-sig"
+    )
+
+    legacy_index = agent_text.index(
+        "AGENT_TOOL_PROMPT_INJECTION_SUSPECTED"
+    )
+
+    following = agent_text[
+        legacy_index:
+        legacy_index + 1000
+    ]
+
+    assert (
+        "emit_tool_output_prompt_injection_"
+        "suspected_security_event()"
+        in following
+    )
+
+    assert (
+        "AI_TOOL_OUTPUT_PROMPT_INJECTION_BLOCKED"
+        not in following
+    )
+
+    assert (
+        "emit_direct_prompt_injection_"
+        "blocked_security_event()"
+        not in following
+    )

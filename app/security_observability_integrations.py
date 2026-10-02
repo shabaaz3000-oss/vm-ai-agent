@@ -260,3 +260,45 @@ def emit_direct_prompt_injection_blocked_security_event(
         _report_emission_failure(exc)
 
         return False
+
+def emit_tool_output_prompt_injection_suspected_security_event(
+) -> bool:
+    """
+    Observe prompt-injection-like content detected in a tool result.
+
+    This event records suspicion only. The current runtime does not
+    block the tool result at this decision point.
+
+    Raw tool output, detector matches, tool name, username, prompt
+    text, and model content are deliberately excluded.
+    """
+
+    try:
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .AI_TOOL_OUTPUT_PROMPT_INJECTION_SUSPECTED
+            ),
+            severity=SecuritySeverity.MEDIUM,
+            outcome=SecurityOutcome.AMBIGUOUS,
+            source_component=(
+                SecuritySourceComponent.AGENT
+            ),
+            resource_type=(
+                SecurityResourceType.MCP_TOOL
+            ),
+            action=(
+                SecurityAction
+                .INSPECT_PROMPT_INJECTION
+            ),
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+

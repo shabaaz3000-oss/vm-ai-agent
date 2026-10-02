@@ -8,6 +8,7 @@ from app.auth import Principal
 from app.audit import log_event
 from app.security_observability_integrations import (
     emit_direct_prompt_injection_blocked_security_event,
+    emit_tool_output_prompt_injection_suspected_security_event,
 )
 
 from app.input_security import (
@@ -818,6 +819,8 @@ def run_agent(
                         injection_matches,
                 },
             )
+
+            emit_tool_output_prompt_injection_suspected_security_event()
 
         # -------------------------------------------------
         # 13. BUILD TOOL OUTPUT

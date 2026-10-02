@@ -406,7 +406,18 @@ Event producers must not invent arbitrary outcome strings.
 ### 10.7 AI security
 
 - `security.ai.direct_prompt_injection_blocked`
+- `security.ai.tool_output_prompt_injection_suspected`
 - `security.ai.tool_output_prompt_injection_blocked`
+
+The `security.ai.tool_output_prompt_injection_suspected` event
+represents detection of prompt-injection-like content in a tool result
+when the runtime records suspicion but does not block that result at the
+same decision point. Its v1 `outcome` is `ambiguous`.
+
+The `security.ai.tool_output_prompt_injection_blocked` event is reserved
+for an enforcement point that actually blocks tool-output propagation.
+A detector-only or suspicion-only path MUST NOT emit the blocked event.
+
 
 ---
 

@@ -142,6 +142,9 @@ class SecurityEventType(str, Enum):
     AI_DIRECT_PROMPT_INJECTION_BLOCKED = (
         "security.ai.direct_prompt_injection_blocked"
     )
+    AI_TOOL_OUTPUT_PROMPT_INJECTION_SUSPECTED = (
+        "security.ai.tool_output_prompt_injection_suspected"
+    )
     AI_TOOL_OUTPUT_PROMPT_INJECTION_BLOCKED = (
         "security.ai.tool_output_prompt_injection_blocked"
     )
