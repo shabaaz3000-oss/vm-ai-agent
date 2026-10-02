@@ -159,7 +159,7 @@ flowchart TB
 
     ORCH -. "requests action; does not self-authorize" .-> WRITEREQ
     WRITEREQ --> POSTGRES
-    POSTGRES -. "approved workflow state required" .-> WRITEREQ
+    POSTGRES -. "server-controlled workflow claim required" .-> WRITEREQ
     WRITEREQ --> TICKETING
 
     MCPAUTH <--> POSTGRES
@@ -175,13 +175,13 @@ flowchart TB
 - Tool execution is mediated by a server-controlled dispatcher and RBAC policy.
 - Read operations are separated from controlled write operations.
 - PostgreSQL is authoritative for security-sensitive tenant, session, revocation, and workflow state.
-- A model-generated request cannot bypass an unapproved workflow state to reach an enterprise write target.
+- A model-generated request cannot reach an enterprise write target without a valid server-controlled workflow claim.
 
 ---
 
 ## 45.3 Human Approval + Controlled Execution Flow
 
-The controlled-execution workflow separates AI-generated intent from enterprise write authority. The model may recommend or request an action, but execution requires server-side workflow state, an authorized approver, and a final authorization check before the hidden write capability can run.
+The controlled-execution workflow separates AI-generated intent from enterprise write authority. The model may recommend or request an action, but execution requires server-controlled workflow state, an independently authorized approver, and a successful atomic execution claim immediately before the hidden write capability can run.
 
 ```mermaid
 sequenceDiagram
@@ -206,27 +206,34 @@ sequenceDiagram
 
     Note over LLM,Agent: Model output expresses intent only.<br/>It does not grant execution authority.
 
-    Agent->>DB: Create pending workflow request
-    DB-->>Agent: Pending workflow ID
+    Agent->>DB: Create AWAITING_APPROVAL workflow request
+    DB-->>Agent: Persisted workflow ID
 
     Agent-->>Approver: Present action for human approval
     Approver->>Policy: Submit approval decision
-    Policy->>DB: Validate approver authority + workflow state
+    Policy->>DB: Validate approver authority + tenant-bound workflow
 
     alt Authorized approval
-        DB->>DB: Atomically transition workflow to approved
-        DB-->>Policy: Approved authoritative state
-        Policy->>Exec: Permit controlled execution
-        Exec->>DB: Revalidate approved workflow state
-        DB-->>Exec: Execution authorized
+        Policy->>Exec: Permit controlled execution claim
+        Exec->>DB: Atomically claim AWAITING_APPROVAL -> PROCESSING
+        DB-->>Exec: Claimed workflow + fresh execution_attempt_id
         Exec->>Ticket: Execute hidden create_ticket action
-        Ticket-->>Exec: Ticket result
-        Exec->>DB: Record execution / terminal workflow state
-        Exec->>Audit: Record controlled action
-        Exec-->>Agent: Return sanitized execution result
-        Agent-->>Analyst: Report completed action
+
+        alt Ticket creation confirmed
+            Ticket-->>Exec: Confirmed ticket result
+            Exec->>DB: Complete exact execution attempt -> TICKET_CREATED
+            Exec->>Audit: Record controlled action
+            Exec-->>Agent: Return sanitized execution result
+            Agent-->>Analyst: Report completed action
+        else External outcome uncertain
+            Ticket-->>Exec: Timeout / ambiguous provider outcome
+            Exec->>DB: Mark exact execution attempt -> NEEDS_REVIEW
+            Exec->>Audit: Record ambiguous external side effect
+            Exec-->>Agent: Return review-required result
+            Agent-->>Analyst: Report that human reconciliation is required
+        end
     else Denied / invalid / stale / revoked
-        DB-->>Policy: Execution not authorized
+        DB-->>Policy: Execution claim not authorized
         Policy->>Audit: Record denied action
         Policy-->>Agent: Reject privileged execution
         Agent-->>Analyst: Report that action was not executed
@@ -237,13 +244,17 @@ sequenceDiagram
 
 - LLM output is treated as a proposed action, not authorization.
 - The privileged `create_ticket` capability is hidden from normal LLM-visible tool exposure.
-- A pending workflow is created before a sensitive write can occur.
+- An `AWAITING_APPROVAL` workflow is persisted before a sensitive write can occur.
 - Approval requires an independently authorized approver rather than self-approval by the requesting model or analyst workflow.
 - Workflow authority is derived from server-controlled state rather than client-supplied approval claims.
-- State transitions are validated before execution so stale, denied, revoked, or otherwise invalid workflows cannot authorize a write.
-- The controlled executor revalidates authoritative workflow state immediately before invoking the write capability.
-- Approved execution and denied attempts are recorded in the audit trail.
-- Enterprise side effects occur only after the complete authorization chain succeeds.
+- Execution is authorized only through an atomic `AWAITING_APPROVAL` to `PROCESSING` claim.
+- Each successful claim receives a fresh `execution_attempt_id`, and the controlled executor operates on that exact claimed attempt.
+- Competing instances cannot both successfully claim the same eligible workflow transition.
+- A confirmed provider result transitions the exact attempt to `TICKET_CREATED`.
+- An uncertain external side effect transitions the exact attempt to `NEEDS_REVIEW` rather than triggering a blind retry.
+- Denied, stale, revoked, conflicting, or otherwise invalid claims fail closed before the enterprise write is authorized.
+- Successful execution, ambiguous outcomes, and denied attempts can be represented in the audit trail.
+- Enterprise side effects occur only after the complete authorization and atomic-claim chain succeeds.
 
 ---
 
@@ -317,7 +328,7 @@ sequenceDiagram
 - Invalid, mismatched, revoked, or stale session state fails closed.
 - Session validation, revocation, and rejected transitions can be represented in the security audit trail.
 
-The current project demonstrates server-controlled MCP authority and shared session state. Enterprise OIDC-derived identity remains a future production enhancement rather than an implemented identity dependency.
+The current project combines enterprise identity-provider-derived authenticated principals with server-controlled MCP authority and shared session state. Identity establishes the authenticated principal boundary, while tenant and session authority are resolved separately from authoritative server-side state rather than trusted from client-supplied tenant or session context.
 
 ---
 
@@ -372,3 +383,67 @@ flowchart LR
 - Successful required checks permit the repository's controlled merge workflow to proceed.
 - The merged commit becomes part of the protected `main` history only after the required gate is satisfied.
 - These controls provide repository-level software-delivery governance without implying deployment, runtime infrastructure, or production release controls that are not implemented by this project.
+
+---
+
+## 49.1 Production Workflow Persistence + Distributed Execution Authority
+
+Production workflow execution authority is persisted in PostgreSQL so security-sensitive state remains consistent across application instances. SQLite remains the local/test backend, while production execution decisions use the shared PostgreSQL workflow store.
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor Approver as Authorized Approver
+    participant A as Application Instance A
+    participant B as Application Instance B
+    participant DB as PostgreSQL Workflow Authority
+    participant Ticket as Ticket Provider
+    actor Operator as Human Reconciliation Operator
+
+    Approver->>A: Approve tenant-bound workflow
+    A->>DB: Claim AWAITING_APPROVAL -> PROCESSING
+    B->>DB: Competing claim for same workflow
+
+    DB->>DB: Atomic state + tenant + claim precondition
+    DB-->>A: Winner + fresh execution_attempt_id
+    DB-->>B: Claim rejected
+
+    A->>Ticket: Execute ticket side effect
+
+    alt Provider confirms ticket
+        Ticket-->>A: Confirmed ticket result
+        A->>DB: Complete exact attempt -> TICKET_CREATED
+    else Provider outcome uncertain
+        Ticket-->>A: Timeout / ambiguous result
+        A->>DB: Mark exact attempt -> NEEDS_REVIEW
+
+        Operator->>DB: Reconcile with APPROVER authority + tenant + expected attempt
+
+        alt Ticket confirmed externally
+            DB->>DB: Reconcile exact attempt -> TICKET_CREATED
+        else Ticket confirmed NOT_FOUND and retry authorized
+            DB->>DB: Return workflow -> AWAITING_APPROVAL
+            Note over DB: Ambiguous prior attempt remains historical.<br/>A fresh execution_attempt_id is created only by the next successful claim.
+        else Stale attempt / wrong tenant / missing authority
+            DB-->>Operator: Reconciliation rejected
+        end
+    end
+```
+
+### Production Workflow Authority Security Properties
+
+- PostgreSQL is the shared production authority for workflow execution state across application instances.
+- Only an eligible `AWAITING_APPROVAL` workflow can be atomically claimed for transition to `PROCESSING`.
+- Every successful claim receives a fresh `execution_attempt_id`.
+- Under a multi-instance race, exactly one claimant can win the same eligible workflow transition.
+- Tenant-bound execution and recovery use trusted `SecurityContext` authority rather than raw client-supplied tenant values.
+- An uncertain external side effect enters `NEEDS_REVIEW`; it is not automatically re-executed.
+- Reconciliation requires APPROVER authority, the authoritative tenant binding, and the expected `execution_attempt_id`.
+- Stale attempts, cross-tenant contexts, and missing required authority fail closed.
+- A confirmed ticket reconciles to `TICKET_CREATED`.
+- A confirmed `NOT_FOUND` result may return the workflow to `AWAITING_APPROVAL` only through human-authorized retry semantics.
+- The ambiguous prior attempt remains historical; a fresh attempt is created only by the next successful atomic claim.
+- Generic production `update_workflow` mutation authority is absent from the security-sensitive execution surface; dedicated transition operations enforce state and authority preconditions.
+- Production startup validates workflow-store readiness and required schema state before authority-sensitive operation.
+- Security CI provisions PostgreSQL 17 so shared-backend workflow authority, multi-instance race, stale-attempt, and tenant-isolation integration tests execute against the production store implementation.

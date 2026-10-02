@@ -10,9 +10,6 @@ from app.tools.authorization import (
     require_tool_permission,
 )
 
-from app.workflow_store import (
-    update_workflow,
-)
 
 
 # -------------------------------------------------
@@ -44,14 +41,12 @@ def execute_ticket_workflow(
         },
     )
 
-    # -------------------------------------------------
-    # 1. AUTHORIZE TOOL USE
-    # -------------------------------------------------
-
     try:
 
         require_tool_permission(
-            principal=principal,
+            principal=
+                principal,
+
             tool_name=
                 "execute_ticket_workflow",
         )
@@ -77,9 +72,6 @@ def execute_ticket_workflow(
 
         raise
 
-    # -------------------------------------------------
-    # 2. VALIDATE TOOL ARGUMENT
-    # -------------------------------------------------
 
     if not workflow_id.strip():
 
@@ -87,17 +79,10 @@ def execute_ticket_workflow(
             "workflow_id cannot be blank."
         )
 
-    # -------------------------------------------------
-    # 3. CLAIM AND EXECUTE EXISTING WORKFLOW
-    # -------------------------------------------------
 
     try:
 
         if security_context is None:
-
-            # Preserve the legacy/local execution path.
-            # Tenant-bound workflows still fail closed
-            # inside the workflow-store claim.
 
             result = (
                 claim_and_execute_workflow(
@@ -124,16 +109,6 @@ def execute_ticket_workflow(
                 )
             )
 
-        # -------------------------------------------------
-        # 4. PERSIST SUCCESSFUL FINAL STATE
-        # -------------------------------------------------
-
-        persisted_result = (
-            update_workflow(
-                result
-            )
-        )
-
     except Exception as error:
 
         log_event(
@@ -158,9 +133,6 @@ def execute_ticket_workflow(
 
         raise
 
-    # -------------------------------------------------
-    # 5. AUDIT SUCCESS
-    # -------------------------------------------------
 
     log_event(
         "TOOL_EXECUTED",
@@ -175,14 +147,14 @@ def execute_ticket_workflow(
                 principal.role,
 
             "workflow_id":
-                persisted_result.workflow_id,
+                result.workflow_id,
 
             "status":
-                persisted_result.status,
+                result.status,
 
             "ticket_id":
-                persisted_result.ticket_id,
+                result.ticket_id,
         },
     )
 
-    return persisted_result
+    return result

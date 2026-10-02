@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -10,7 +12,6 @@ from app.auth import require_authenticated_user
 from app.execution import (
     claim_and_execute_workflow,
     reconcile_stale_workflow,
-    reject_workflow,
 )
 
 from app.models import WorkflowResult
@@ -20,7 +21,8 @@ from app.workflow import prepare_workflow
 from app.workflow_store import (
     get_workflow,
     save_workflow,
-    update_workflow,
+    validate_workflow_store_readiness,
+    reject_workflow_authoritatively,
 )
 
 from app.api_security_context import (
@@ -42,9 +44,20 @@ from app.servicenow_reconciliation import (
 # -------------------------------------------------
 
 
+@asynccontextmanager
+async def _lifespan(
+    _app: FastAPI,
+):
+
+    validate_workflow_store_readiness()
+
+    yield
+
+
 app = FastAPI(
     title="VM AI Agent API",
     version="0.3.0",
+    lifespan=_lifespan,
     description=(
         "Secure AI-assisted vulnerability management "
         "workflow API with authentication, RBAC, "
@@ -143,32 +156,100 @@ def approve_workflow(
 
     try:
 
-        completed_result = (
-            claim_and_execute_workflow(
-                workflow_id=workflow_id,
-
-                approved_by=
-                    principal.username,
+        authoritative = (
+            get_workflow(
+                workflow_id
             )
         )
+
+        if authoritative is None:
+
+            raise KeyError(
+                workflow_id
+            )
+
+        trusted_context = None
+
+        if authoritative.tenant_id is not None:
+
+            try:
+
+                trusted_context = (
+                    build_api_security_context(
+                        principal
+                    )
+                )
+
+            except APITenantBindingError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_403_FORBIDDEN,
+
+                    detail=(
+                        "Authenticated principal has no "
+                        "trusted API tenant binding."
+                    ),
+                )
+
+            except APIContextConfigurationError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+
+                    detail=(
+                        "Trusted API tenant authority "
+                        "is unavailable."
+                    ),
+                )
+
+        if trusted_context is None:
+
+            completed_result = (
+                claim_and_execute_workflow(
+                    workflow_id=
+                        workflow_id,
+
+                    approved_by=
+                        principal.username,
+                )
+            )
+
+        else:
+
+            completed_result = (
+                claim_and_execute_workflow(
+                    workflow_id=
+                        workflow_id,
+
+                    approved_by=
+                        principal.username,
+
+                    security_context=
+                        trusted_context,
+                )
+            )
 
     except KeyError:
 
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found.",
+            status_code=
+                status.HTTP_404_NOT_FOUND,
+
+            detail=
+                "Workflow not found.",
         )
 
     except PermissionError as error:
 
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+            status_code=
+                status.HTTP_409_CONFLICT,
 
-    update_workflow(
-        completed_result
-    )
+            detail=
+                str(error),
+        )
 
     return completed_result
 
@@ -192,35 +273,91 @@ def reject_workflow_endpoint(
 
     try:
 
-        result = get_workflow(
-            workflow_id
+        authoritative = (
+            get_workflow(
+                workflow_id
+            )
         )
+
+        if authoritative is None:
+
+            raise KeyError(
+                workflow_id
+            )
+
+        trusted_context = None
+
+        if authoritative.tenant_id is not None:
+
+            try:
+
+                trusted_context = (
+                    build_api_security_context(
+                        principal
+                    )
+                )
+
+            except APITenantBindingError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_403_FORBIDDEN,
+
+                    detail=(
+                        "Authenticated principal has no "
+                        "trusted API tenant binding."
+                    ),
+                )
+
+            except APIContextConfigurationError:
+
+                raise HTTPException(
+                    status_code=
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+
+                    detail=(
+                        "Trusted API tenant authority "
+                        "is unavailable."
+                    ),
+                )
+
+        if trusted_context is None:
+
+            rejected_result = (
+                reject_workflow_authoritatively(
+                    workflow_id
+                )
+            )
+
+        else:
+
+            rejected_result = (
+                reject_workflow_authoritatively(
+                    workflow_id,
+                    security_context=
+                        trusted_context,
+                )
+            )
 
     except KeyError:
 
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found.",
-        )
+            status_code=
+                status.HTTP_404_NOT_FOUND,
 
-    try:
-
-        rejected_result = (
-            reject_workflow(
-                result=result
-            )
+            detail=
+                "Workflow not found.",
         )
 
     except PermissionError as error:
 
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+            status_code=
+                status.HTTP_409_CONFLICT,
 
-    update_workflow(
-        rejected_result
-    )
+            detail=
+                str(error),
+        )
 
     return rejected_result
 

@@ -95,9 +95,15 @@ def connect_database():
 # -------------------------------------------------
 
 
-def save_workflow(
+def _sqlite_save_workflow(
     result: WorkflowResult
 ) -> WorkflowResult:
+    """
+    Create a new authoritative workflow row.
+
+    Creation authority is insert-only. An existing workflow_id
+    must never be overwritten through save_workflow().
+    """
 
     payload = (
         result.model_dump_json()
@@ -105,7 +111,7 @@ def save_workflow(
 
     with connect_database() as connection:
 
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT INTO workflows (
                 workflow_id,
@@ -115,10 +121,7 @@ def save_workflow(
             VALUES (?, ?, ?)
 
             ON CONFLICT(workflow_id)
-            DO UPDATE SET
-                status = excluded.status,
-                payload = excluded.payload,
-                updated_at = CURRENT_TIMESTAMP
+            DO NOTHING
             """,
             (
                 result.workflow_id,
@@ -126,6 +129,14 @@ def save_workflow(
                 payload,
             )
         )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow already exists; creation "
+                "authority cannot overwrite "
+                "authoritative state."
+            )
 
     return result
 
@@ -135,7 +146,7 @@ def save_workflow(
 # -------------------------------------------------
 
 
-def get_workflow(
+def _sqlite_get_workflow(
     workflow_id: str
 ) -> WorkflowResult:
 
@@ -171,42 +182,6 @@ def get_workflow(
 # -------------------------------------------------
 
 
-def update_workflow(
-    result: WorkflowResult
-) -> WorkflowResult:
-
-    payload = (
-        result.model_dump_json()
-    )
-
-    with connect_database() as connection:
-
-        cursor = connection.execute(
-            """
-            UPDATE workflows
-
-            SET
-                status = ?,
-                payload = ?,
-                updated_at = CURRENT_TIMESTAMP
-
-            WHERE workflow_id = ?
-            """,
-            (
-                result.status,
-                payload,
-                result.workflow_id,
-            )
-        )
-
-        if cursor.rowcount == 0:
-
-            raise KeyError(
-                "Cannot update a workflow "
-                "that does not exist."
-            )
-
-    return result
 
 
 # -------------------------------------------------
@@ -214,7 +189,7 @@ def update_workflow(
 # -------------------------------------------------
 
 
-def claim_workflow_for_execution(
+def _sqlite_claim_workflow_for_execution(
     workflow_id: str,
     *,
     security_context: SecurityContext | None = None,
@@ -365,16 +340,50 @@ def claim_workflow_for_execution(
 # -------------------------------------------------
 
 
-def mark_workflow_needs_review(
+def _sqlite_complete_workflow_execution(
     workflow_id: str,
-    reason: str
+    *,
+    expected_execution_attempt_id: str,
+    approval_id: str,
+    ticket_id: str,
+    security_context: SecurityContext | None = None,
 ) -> WorkflowResult:
+    """
+    Atomically complete the exact PROCESSING execution attempt.
 
-    if not reason.strip():
+    Caller-supplied workflow payloads are never authoritative here.
+    The current row is read under the SQLite write lock and only the
+    approved completion fields are applied.
+    """
 
-        raise ValueError(
-            "Recovery reason cannot be blank."
-        )
+    for field_name, value in (
+        (
+            "expected_execution_attempt_id",
+            expected_execution_attempt_id,
+        ),
+        (
+            "approval_id",
+            approval_id,
+        ),
+        (
+            "ticket_id",
+            ticket_id,
+        ),
+    ):
+
+        if (
+            not isinstance(
+                value,
+                str,
+            )
+            or not value.strip()
+            or value != value.strip()
+        ):
+
+            raise ValueError(
+                f"{field_name} must be a non-blank "
+                "normalized string."
+            )
 
     with connect_database() as connection:
 
@@ -400,7 +409,294 @@ def mark_workflow_needs_review(
         if row is None:
 
             raise KeyError(
-                f"Workflow not found: {workflow_id}"
+                f"Workflow not found: "
+                f"{workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "PROCESSING"
+        ):
+
+            raise PermissionError(
+                "Only a PROCESSING workflow can "
+                "be completed."
+            )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                row["payload"]
+            )
+        )
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow completion "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        if (
+            current.execution_attempt_id
+            != expected_execution_attempt_id
+        ):
+
+            raise PermissionError(
+                "Workflow execution attempt changed."
+            )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "TICKET_CREATED",
+
+                "approval_id":
+                    approval_id,
+
+                "ticket_id":
+                    ticket_id,
+
+                "recovery_reason":
+                    None,
+            }
+        )
+
+        completed = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'PROCESSING'
+                AND payload = ?
+            """,
+            (
+                completed.status,
+                completed.model_dump_json(),
+                workflow_id,
+                row["payload"],
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow completion authority changed."
+            )
+
+    return completed
+
+
+def _sqlite_reject_workflow_authoritatively(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    """
+    Atomically reject an AWAITING_APPROVAL workflow.
+
+    Rejection derives the new state from the authoritative row and
+    cannot accept arbitrary caller-supplied workflow state.
+    """
+
+    with connect_database() as connection:
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+
+            FROM workflows
+
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            )
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: "
+                f"{workflow_id}"
+            )
+
+        if (
+            row["status"]
+            != "AWAITING_APPROVAL"
+        ):
+
+            raise PermissionError(
+                "Workflow must be awaiting approval "
+                "before it can be rejected."
+            )
+
+        current = (
+            WorkflowResult
+            .model_validate_json(
+                row["payload"]
+            )
+        )
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow rejection "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        updated_data = (
+            current.model_dump()
+        )
+
+        updated_data.update(
+            {
+                "status":
+                    "REJECTED",
+
+                "approval_id":
+                    None,
+
+                "ticket_id":
+                    None,
+            }
+        )
+
+        rejected = (
+            WorkflowResult
+            .model_validate(
+                updated_data
+            )
+        )
+
+        cursor = connection.execute(
+            """
+            UPDATE workflows
+
+            SET
+                status = ?,
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+
+            WHERE
+                workflow_id = ?
+                AND status = 'AWAITING_APPROVAL'
+                AND payload = ?
+            """,
+            (
+                rejected.status,
+                rejected.model_dump_json(),
+                workflow_id,
+                row["payload"],
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            raise PermissionError(
+                "Workflow rejection authority changed."
+            )
+
+    return rejected
+
+def _sqlite_mark_workflow_needs_review(
+    workflow_id: str,
+    reason: str,
+    *,
+    expected_execution_attempt_id: str,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+
+    if (
+        not isinstance(
+            reason,
+            str,
+        )
+        or not reason.strip()
+    ):
+
+        raise ValueError(
+            "Recovery reason cannot be blank."
+        )
+
+    if (
+        not isinstance(
+            expected_execution_attempt_id,
+            str,
+        )
+        or not expected_execution_attempt_id.strip()
+        or expected_execution_attempt_id
+        != expected_execution_attempt_id.strip()
+    ):
+
+        raise ValueError(
+            "expected_execution_attempt_id "
+            "must be a non-blank normalized string."
+        )
+
+    with connect_database() as connection:
+
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                payload
+            FROM workflows
+            WHERE workflow_id = ?
+            """,
+            (
+                workflow_id,
+            ),
+        ).fetchone()
+
+        if row is None:
+
+            raise KeyError(
+                f"Workflow not found: "
+                f"{workflow_id}"
             )
 
         if (
@@ -419,6 +715,30 @@ def mark_workflow_needs_review(
                 row["payload"]
             )
         )
+
+        if current.tenant_id is not None:
+
+            if security_context is None:
+
+                raise PermissionError(
+                    "Tenant-bound workflow recovery "
+                    "requires trusted security context."
+                )
+
+            require_workflow_tenant(
+                current,
+                security_context=
+                    security_context,
+            )
+
+        if (
+            current.execution_attempt_id
+            != expected_execution_attempt_id
+        ):
+
+            raise PermissionError(
+                "Workflow execution attempt changed."
+            )
 
         updated_data = (
             current.model_dump()
@@ -444,28 +764,27 @@ def mark_workflow_needs_review(
         cursor = connection.execute(
             """
             UPDATE workflows
-
             SET
                 status = ?,
                 payload = ?,
                 updated_at = CURRENT_TIMESTAMP
-
             WHERE
                 workflow_id = ?
                 AND status = 'PROCESSING'
+                AND payload = ?
             """,
             (
                 review_result.status,
                 review_result.model_dump_json(),
                 workflow_id,
-            )
+                row["payload"],
+            ),
         )
 
         if cursor.rowcount != 1:
 
             raise PermissionError(
-                "Workflow state changed before "
-                "recovery could be recorded."
+                "Workflow recovery authority changed."
             )
 
     return review_result
@@ -476,7 +795,7 @@ def mark_workflow_needs_review(
 # -------------------------------------------------
 
 
-def mark_stale_processing_for_review(
+def _sqlite_mark_stale_processing_for_review(
     workflow_id: str,
     stale_after_seconds: int = 300,
     now: datetime | None = None
@@ -652,7 +971,7 @@ def mark_stale_processing_for_review(
 # -------------------------------------------------
 
 
-def clear_workflows() -> None:
+def _sqlite_clear_workflows() -> None:
 
     with connect_database() as connection:
 
@@ -733,7 +1052,7 @@ def _validate_reconciliation_transition_target(
         )
 
 
-def confirm_reconciled_ticket_creation(
+def _sqlite_confirm_reconciled_ticket_creation(
     workflow_id: str,
     *,
     expected_execution_attempt_id: str,
@@ -902,7 +1221,7 @@ def confirm_reconciled_ticket_creation(
     return resolved
 
 
-def authorize_reconciled_retry(
+def _sqlite_authorize_reconciled_retry(
     workflow_id: str,
     *,
     expected_execution_attempt_id: str,
@@ -1046,3 +1365,498 @@ def authorize_reconciled_retry(
             )
 
     return authorized
+# ============================================================
+# WORKFLOW STORE BACKEND ABSTRACTION
+# ============================================================
+#
+# The functions above implement the original SQLite authority
+# semantics. They are intentionally retained in this module so
+# existing local/test behavior and security-sensitive monkeypatch
+# points remain stable.
+#
+# Public callers below resolve a WorkflowStore backend and dispatch
+# through the common contract.
+#
+# PostgreSQL selection deliberately fails closed until the
+# production implementation is introduced.
+# ============================================================
+
+import os as _workflow_store_os
+
+from app.workflow_store_contract import WorkflowStore
+
+
+WORKFLOW_STORE_BACKEND_ENV = (
+    "VM_AI_WORKFLOW_STORE_BACKEND"
+)
+
+WORKFLOW_STORE_DATABASE_URL_ENV = (
+    "VM_AI_WORKFLOW_DATABASE_URL"
+)
+
+
+class SQLiteWorkflowStore:
+    """
+    Adapter exposing the existing SQLite workflow authority
+    through the shared WorkflowStore contract.
+    """
+
+    def save_workflow(
+        self,
+        result: WorkflowResult,
+    ) -> WorkflowResult:
+        return _sqlite_save_workflow(
+            result
+        )
+
+    def get_workflow(
+        self,
+        workflow_id: str,
+    ) -> WorkflowResult:
+        return _sqlite_get_workflow(
+            workflow_id
+        )
+
+
+    def claim_workflow_for_execution(
+        self,
+        workflow_id: str,
+        *,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_claim_workflow_for_execution(
+                workflow_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+    def complete_workflow_execution(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        approval_id: str,
+        ticket_id: str,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        return _sqlite_complete_workflow_execution(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            approval_id=
+                approval_id,
+            ticket_id=
+                ticket_id,
+            security_context=
+                security_context,
+        )
+
+    def reject_workflow_authoritatively(
+        self,
+        workflow_id: str,
+        *,
+        security_context: SecurityContext | None = None,
+    ) -> WorkflowResult:
+        return _sqlite_reject_workflow_authoritatively(
+            workflow_id,
+            security_context=
+                security_context,
+        )
+
+    def mark_workflow_needs_review(self, workflow_id: str, reason: str, *, expected_execution_attempt_id: str, security_context: SecurityContext | None=None) -> WorkflowResult:
+        return _sqlite_mark_workflow_needs_review(workflow_id, reason, expected_execution_attempt_id=expected_execution_attempt_id, security_context=security_context)
+
+    def mark_stale_processing_for_review(
+        self,
+        workflow_id: str,
+        stale_after_seconds: int = 300,
+        now: datetime | None = None,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_mark_stale_processing_for_review(
+                workflow_id,
+                stale_after_seconds=
+                    stale_after_seconds,
+                now=now,
+            )
+        )
+
+    def clear_workflows(
+        self,
+    ) -> None:
+        _sqlite_clear_workflows()
+
+    def confirm_reconciled_ticket_creation(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        ticket_id: str,
+        security_context: SecurityContext,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_confirm_reconciled_ticket_creation(
+                workflow_id,
+                expected_execution_attempt_id=
+                    expected_execution_attempt_id,
+                ticket_id=
+                    ticket_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+    def authorize_reconciled_retry(
+        self,
+        workflow_id: str,
+        *,
+        expected_execution_attempt_id: str,
+        security_context: SecurityContext,
+    ) -> WorkflowResult:
+        return (
+            _sqlite_authorize_reconciled_retry(
+                workflow_id,
+                expected_execution_attempt_id=
+                    expected_execution_attempt_id,
+                security_context=
+                    security_context,
+            )
+        )
+
+
+def get_workflow_store_backend_name() -> str:
+    """
+    Resolve the configured workflow persistence backend.
+
+    SQLite remains the backward-compatible local/test default.
+    Production deployments may explicitly select PostgreSQL
+    using a separately configured database URL.
+    """
+
+    configured = (
+        _workflow_store_os.getenv(
+            WORKFLOW_STORE_BACKEND_ENV,
+            "sqlite",
+        )
+    )
+
+    backend = configured.strip().lower()
+
+    if not backend:
+        raise RuntimeError(
+            "VM_AI_WORKFLOW_STORE_BACKEND "
+            "cannot be blank."
+        )
+
+    return backend
+
+
+
+def _get_postgresql_workflow_database_url() -> str:
+    """
+    Resolve and validate the PostgreSQL workflow database URL.
+
+    The value is never included in configuration error messages
+    so database credentials cannot leak through exception text.
+    """
+
+    from urllib.parse import parse_qs
+    from urllib.parse import urlsplit
+
+    configured = (
+        _workflow_store_os.getenv(
+            WORKFLOW_STORE_DATABASE_URL_ENV
+        )
+    )
+
+    if (
+        configured is None
+        or not configured.strip()
+    ):
+        raise RuntimeError(
+            "PostgreSQL workflow store requires "
+            "VM_AI_WORKFLOW_DATABASE_URL."
+        )
+
+    if configured != configured.strip():
+        raise RuntimeError(
+            "VM_AI_WORKFLOW_DATABASE_URL must be "
+            "a normalized PostgreSQL URL."
+        )
+
+    parsed = urlsplit(
+        configured
+    )
+
+    if (
+        parsed.scheme
+        not in {
+            "postgres",
+            "postgresql",
+        }
+        or not parsed.netloc
+    ):
+        raise RuntimeError(
+            "VM_AI_WORKFLOW_DATABASE_URL must use "
+            "a PostgreSQL URL."
+        )
+
+    environment = (
+        _workflow_store_os.getenv(
+            "VM_AI_ENV",
+            "local",
+        )
+        .strip()
+        .lower()
+    )
+
+    if environment == "production":
+
+        sslmode_values = (
+            parse_qs(
+                parsed.query
+            )
+            .get(
+                "sslmode",
+                [],
+            )
+        )
+
+        if (
+            len(sslmode_values) != 1
+            or sslmode_values[0].lower()
+            not in {
+                "require",
+                "verify-ca",
+                "verify-full",
+            }
+        ):
+            raise RuntimeError(
+                "Production PostgreSQL workflow "
+                "authority requires TLS."
+            )
+
+    return configured
+
+
+def validate_workflow_store_readiness() -> None:
+    """
+    Validate configured workflow persistence before serving API
+    requests.
+
+    SQLite remains the local/test backend and requires no external
+    startup validation.
+
+    PostgreSQL runtime authority performs only read-only schema
+    compatibility validation. Runtime startup never provisions,
+    migrates, alters, or repairs PostgreSQL schema objects.
+    """
+
+    backend = (
+        get_workflow_store_backend_name()
+    )
+
+    if backend == "sqlite":
+        return
+
+    if backend in {
+        "postgres",
+        "postgresql",
+    }:
+
+        from app.workflow_postgresql_schema import (
+            validate_postgresql_workflow_schema,
+        )
+
+        validate_postgresql_workflow_schema(
+            database_url=
+                _get_postgresql_workflow_database_url()
+        )
+
+        return
+
+    raise RuntimeError(
+        "Unsupported workflow store backend: "
+        f"{backend}"
+    )
+
+
+def get_workflow_store() -> WorkflowStore:
+    """
+    Return the authoritative workflow-store backend.
+
+    Unknown or not-yet-implemented production backends fail
+    closed. There is no implicit downgrade to SQLite.
+    """
+
+    backend = (
+        get_workflow_store_backend_name()
+    )
+
+    if backend == "sqlite":
+        return SQLiteWorkflowStore()
+
+    if backend in {
+        "postgres",
+        "postgresql",
+    }:
+        from app.workflow_postgresql_store import (
+            PostgreSQLWorkflowStore,
+        )
+
+        return PostgreSQLWorkflowStore(
+            database_url=
+                _get_postgresql_workflow_database_url()
+        )
+
+    raise RuntimeError(
+        "Unsupported workflow store backend: "
+        f"{backend}"
+    )
+
+
+# ============================================================
+# STABLE PUBLIC WORKFLOW STORE API
+# ============================================================
+
+
+def save_workflow(
+    result: WorkflowResult
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .save_workflow(
+            result
+        )
+    )
+
+
+def get_workflow(
+    workflow_id: str
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .get_workflow(
+            workflow_id
+        )
+    )
+
+
+
+
+def claim_workflow_for_execution(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .claim_workflow_for_execution(
+            workflow_id,
+            security_context=
+                security_context,
+        )
+    )
+
+
+def complete_workflow_execution(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    approval_id: str,
+    ticket_id: str,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .complete_workflow_execution(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            approval_id=
+                approval_id,
+            ticket_id=
+                ticket_id,
+            security_context=
+                security_context,
+        )
+    )
+
+
+def reject_workflow_authoritatively(
+    workflow_id: str,
+    *,
+    security_context: SecurityContext | None = None,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .reject_workflow_authoritatively(
+            workflow_id,
+            security_context=
+                security_context,
+        )
+    )
+
+def mark_workflow_needs_review(workflow_id: str, reason: str, *, expected_execution_attempt_id: str, security_context: SecurityContext | None=None) -> WorkflowResult:
+    return get_workflow_store().mark_workflow_needs_review(workflow_id, reason, expected_execution_attempt_id=expected_execution_attempt_id, security_context=security_context)
+
+
+def mark_stale_processing_for_review(
+    workflow_id: str,
+    stale_after_seconds: int = 300,
+    now: datetime | None = None
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .mark_stale_processing_for_review(
+            workflow_id,
+            stale_after_seconds=
+                stale_after_seconds,
+            now=now,
+        )
+    )
+
+
+def clear_workflows() -> None:
+    get_workflow_store().clear_workflows()
+
+
+def confirm_reconciled_ticket_creation(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    ticket_id: str,
+    security_context: SecurityContext,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .confirm_reconciled_ticket_creation(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            ticket_id=
+                ticket_id,
+            security_context=
+                security_context,
+        )
+    )
+
+
+def authorize_reconciled_retry(
+    workflow_id: str,
+    *,
+    expected_execution_attempt_id: str,
+    security_context: SecurityContext,
+) -> WorkflowResult:
+    return (
+        get_workflow_store()
+        .authorize_reconciled_retry(
+            workflow_id,
+            expected_execution_attempt_id=
+                expected_execution_attempt_id,
+            security_context=
+                security_context,
+        )
+    )

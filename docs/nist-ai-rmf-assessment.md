@@ -49,7 +49,7 @@ The VM AI Agent implements several technical and procedural controls that suppor
 - **Audit logging:** Security-relevant workflow events are recorded to support accountability and investigation.
 - **Audit trace reconstruction:** Workflow activity can be reconstructed to review execution order, tool usage, and RAG activity.
 - **AI security evaluations:** Expected and adversarial AI behavior is evaluated through repeatable security test cases.
-- **Automated testing and Security CI:** Application tests, PostgreSQL integration tests, AI security evaluations, dependency checks, and secret scanning provide ongoing validation of security requirements.
+- **Automated testing and Security CI:** Application tests, PostgreSQL session-state and workflow-authority integration tests, AI security evaluations, dependency checks, and secret scanning provide ongoing validation of security requirements.
 - **Protected repository delivery:** The `main` branch is governed by an active repository ruleset that requires pull requests and required GitHub Actions status checks, requires the branch to be tested with current `main`, and blocks force pushes and deletion.
 - **No routine governance bypass:** The protected-branch ruleset has no configured bypass actors, and the repository owner cannot bypass the ruleset through the normal account path.
 - **Negative-control validation:** Repository enforcement was tested by attempting a direct push to `main` and attempting to merge a pull request with a deliberately failing required test. GitHub rejected both operations.
@@ -131,7 +131,7 @@ The VM AI Agent includes the following major components:
 - **Human approval boundary:** separates AI-generated recommendations from execution authority.
 - **Controlled tool layer:** performs explicitly defined workflow operations.
 - **Ticketing integration:** represents downstream remediation-ticket creation through controlled application logic.
-- **Workflow store:** maintains persistent workflow state.
+- **Workflow store:** uses SQLite for local/test persistence and PostgreSQL as the shared production authority for atomic workflow claims, tenant-bound execution, exact execution-attempt transitions, and reconciliation through trusted `SecurityContext` authority.
 - **Audit logging and trace reconstruction:** records security-relevant activity and allows workflow behavior to be reconstructed.
 - **Evaluation framework:** tests expected and adversarial AI security behavior.
 - **Security CI:** validates application tests and selected software-development security controls.
@@ -229,10 +229,10 @@ The project currently includes the following measurement and evaluation mechanis
 - **AI security evaluations:** repeatable evaluation cases exercise expected and adversarial AI-assisted behavior.
 - **RAG evaluations:** retrieval behavior can be evaluated to determine whether relevant context is used and whether retrieved content creates unsafe behavior.
 - **Authorization testing:** tests validate that protected workflow operations cannot be performed without the required authentication, role, or approval state.
-- **Workflow-state testing:** workflow transitions and execution claims are tested to reduce the likelihood of invalid, duplicate, or conflicting execution.
+- **Workflow-state testing:** multi-instance atomic claims, fresh and exact execution-attempt binding, tenant isolation, stale reconciliation rejection, and controlled `NEEDS_REVIEW` recovery are tested against workflow authority requirements.
 - **Audit-trace testing:** recorded events can be reconstructed and checked for expected ordering and relevant workflow evidence.
 - **Tool-use observation:** tool activity can be identified through application and audit evidence rather than relying solely on model-generated descriptions.
-- **Security CI:** automated checks execute on repository changes to identify application test failures, AI-security regressions, PostgreSQL session-state integration failures, exposed secrets, and selected dependency risks.
+- **Security CI:** automated checks execute on repository changes to identify application test failures, AI-security regressions, PostgreSQL session-state and workflow-authority integration failures, exposed secrets, and selected dependency risks.
 - **Repository-enforcement testing:** negative-control exercises validate that protected-branch rules reject direct updates to `main` and prevent pull requests with failed required checks from merging.
 
 #### Example Risk-to-Measurement Mapping
@@ -242,8 +242,9 @@ The project currently includes the following measurement and evaluation mechanis
 | Prompt injection through retrieved content | Execute adversarial RAG evaluation cases and observe model behavior, tool requests, and audit evidence |
 | Inaccurate AI analysis | Compare AI output against structured security inputs and deterministic application results |
 | Unauthorized workflow execution | Attempt protected operations without required authorization or approval and verify rejection |
-| Bypass of human approval | Test workflow transitions to confirm execution cannot occur from an unapproved state |
-| Duplicate or conflicting execution | Test atomic execution claims and stale-workflow reconciliation behavior |
+| Bypass of human approval | Verify execution cannot occur unless authorized approval is followed by a valid atomic `AWAITING_APPROVAL` to `PROCESSING` claim |
+| Duplicate or conflicting execution | Test multi-instance atomic claim races, fresh execution-attempt creation, and rejection of stale competing claims |
+| Ambiguous external execution outcome | Simulate uncertain provider results and verify transition to `NEEDS_REVIEW` without automatic re-execution, followed by tenant-bound exact-attempt reconciliation |
 | Excessive or unexpected tool use | Inspect audit traces and evaluation results for tool invocation order and frequency |
 | Incomplete audit evidence | Reconstruct workflows from recorded events and verify expected security-relevant activity is present |
 | Software dependency or secret exposure | Run dependency and secret-scanning checks through Security CI |
@@ -309,12 +310,13 @@ The project generally favors preventing or limiting high-impact AI actions rathe
 | Inaccurate or fabricated AI analysis | Deterministic security logic remains authoritative where appropriate, and AI output is treated as advisory |
 | Prompt injection through retrieved content | Retrieved information is treated as contextual data rather than trusted execution authority, with downstream authorization controls limiting impact |
 | Unauthorized workflow execution | Authentication, RBAC, workflow-state validation, and human approval restrict execution |
-| Human approval bypass | Execution requires an approved workflow state and appropriate authorization |
-| Duplicate execution | Atomic execution claims reduce the likelihood that the same workflow is executed multiple times |
-| Stale or interrupted workflows | Reconciliation logic supports recovery of workflows left in an inconsistent execution state |
+| Human approval bypass | Execution requires authorized approval followed by a successful atomic `AWAITING_APPROVAL` to `PROCESSING` claim |
+| Duplicate execution | PostgreSQL atomic claims enforce one winner for an eligible multi-instance claim race and assign a fresh `execution_attempt_id` to the successful claim |
+| Stale or interrupted workflows | `NEEDS_REVIEW` recovery requires APPROVER authority, authoritative tenant binding, and the expected `execution_attempt_id`; stale or cross-tenant reconciliation is rejected |
+| Ambiguous external execution outcome | Uncertain side effects enter `NEEDS_REVIEW` and are not automatically retried; reconciliation can confirm `TICKET_CREATED` or authorize a human-reviewed return to `AWAITING_APPROVAL` |
 | Excessive tool authority | Tool operations are exposed through explicitly defined application functions rather than unrestricted system access |
 | Unexpected AI tool behavior | Tool activity is observable through audit events and execution traces |
-| Manipulation of workflow state | Persistent workflow state is validated before protected transitions and execution |
+| Manipulation of workflow state | Dedicated transition operations enforce workflow state, tenant, and execution-attempt preconditions; generic production `update_workflow` mutation authority is absent |
 | Incomplete accountability | Audit logging and trace reconstruction provide evidence of important workflow activity |
 | Software dependency risk | Dependency checks are included in Security CI |
 | Exposed credentials or secrets | Secret scanning is included in Security CI |
@@ -534,10 +536,11 @@ The VM AI Agent implements several layers intended to reduce information-securit
 - authentication protects restricted application operations;
 - RBAC limits protected actions to authorized roles;
 - human approval is required before sensitive workflow execution;
-- workflow-state validation prevents invalid execution paths;
+- dedicated workflow transitions enforce state, tenant, and execution-attempt preconditions;
 - deterministic application logic limits dependence on model-generated decisions;
 - tool operations are exposed through controlled application functions;
-- atomic execution claims reduce duplicate or conflicting execution;
+- PostgreSQL atomic execution claims provide one winner in multi-instance races and create a fresh execution attempt;
+- uncertain external outcomes enter `NEEDS_REVIEW` and require exact-attempt, tenant-bound reconciliation rather than blind retry;
 - audit logging records security-relevant workflow activity;
 - audit traces provide visibility into tool and RAG behavior;
 - adversarial evaluations exercise security-sensitive AI behavior; and
@@ -555,8 +558,10 @@ Evaluation cases should include:
 - attempts to execute workflows without required approval;
 - attempts to bypass RBAC;
 - malformed or unexpected tool arguments;
-- conflicting or malicious RAG context; and
-- attempts to trigger multiple executions of the same workflow.
+- conflicting or malicious RAG context;
+- attempts to trigger multiple executions of the same workflow;
+- stale or cross-tenant workflow reconciliation attempts; and
+- ambiguous external outcomes that must enter `NEEDS_REVIEW` instead of automatic retry.
 
 Expected results should verify that unauthorized or unsafe operations are blocked and that relevant activity is observable through audit evidence.
 

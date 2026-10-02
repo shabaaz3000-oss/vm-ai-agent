@@ -16,6 +16,7 @@ The implementation validates several security properties beyond the core AI work
 
 - MCP session and tenant authority are server-controlled and backed by authoritative PostgreSQL state, including atomic compare-and-swap (CAS) semantics for security-sensitive state transitions.
 - Server-controlled session revocation prevents a revoked MCP session from remaining authoritative across application instances.
+- Production workflow execution authority is persisted in PostgreSQL: for a given eligible claim race, only one claimant can atomically transition `AWAITING_APPROVAL` to `PROCESSING`, the winning claim receives a fresh `execution_attempt_id`, and tenant-bound recovery rejects stale or cross-tenant reconciliation.
 - Protected `main` requires pull requests and required status checks, including Python Tests, Dependency Vulnerability Scan, and Gitleaks Secret Scan, before normal merges are allowed.
 
 ---
@@ -124,7 +125,7 @@ The evaluation requires no Tenable API credentials, OpenAI API
 credentials, ServiceNow credentials, approval, ticket creation, or
 external execution.
 
-The command runs eight complementary security evaluation layers.
+The command runs nine complementary security evaluation layers.
 
 ### 1. Prompt-Injection Detection Corpus
 
@@ -359,7 +360,39 @@ MCP session and tenant authority are created and validated by
 trusted application code rather than supplied by the language
 model.
 
-### 8. Standardized Attack Harness
+### 8. Workflow Execution Authority
+
+The eighth layer evaluates the server-controlled workflow execution
+boundary rather than relying only on isolated store tests.
+
+It exercises authority and recovery cases including:
+
+```text
+tenant-bound execution authority
+exact execution-attempt binding
+stale execution-attempt rejection
+cross-tenant reconciliation rejection
+missing-context rejection
+controlled uncertain-outcome recovery
+```
+
+Current result:
+
+```text
+Total Cases: 10
+Authority Protection Cases: 7
+State Transition / Recovery Cases: 3
+Passed Cases: 10
+Failed Cases: 0
+Authority Failures: 0
+Execution Errors: 0
+Workflow Execution Authority Result: PASS
+```
+
+The evaluator is credential-free and performs no approval, ticket
+creation, or external execution.
+
+### 9. Standardized Attack Harness
 
 The eighth layer executes standardized adversarial scenarios against
 security boundaries in the application.
@@ -407,7 +440,7 @@ OVERALL SECURITY EVALUATION: PASS
 
 The command returns a non-zero process exit code if any prompt-injection,
 RAG quarantine, tool-security, authorization-security, data-leakage,
-excessive-agency, MCP identity/session-isolation, or standardized attack evaluation fails.
+excessive-agency, MCP identity/session-isolation, workflow-execution-authority, or standardized attack evaluation fails.
 
 The same public security-evaluation command is executed in GitHub
 Actions so known AI-security regressions can block a pull request.
@@ -865,6 +898,43 @@ Human reconciliation is required before continuing from an uncertain external ou
 
 ---
 
+### 14. Distributed Workflow Execution Authority
+
+Production workflow authority is shared through PostgreSQL rather than
+derived from process-local memory.
+
+```text
+AWAITING_APPROVAL
+        |
+        | atomic claim
+        v
+PROCESSING + fresh execution_attempt_id
+        |
+        +---- confirmed ticket result ----> TICKET_CREATED
+        |
+        +---- uncertain external result --> NEEDS_REVIEW
+```
+
+For a given eligible `AWAITING_APPROVAL` workflow claim, only one
+application instance can win the atomic transition to `PROCESSING`.
+Competing or stale claims fail closed, and only the winning claim receives
+a fresh `execution_attempt_id`.
+
+An uncertain external side effect is not permission for an automatic retry.
+The workflow enters `NEEDS_REVIEW` while preserving the ambiguous
+`execution_attempt_id`.
+
+Reconciliation requires authorized approver context, the authoritative
+tenant binding, and the expected execution attempt. A confirmed external
+ticket resolves to `TICKET_CREATED`. A human-authorized retry returns the
+workflow to `AWAITING_APPROVAL`; a fresh attempt is created only by the
+next successful atomic claim.
+
+Generic workflow mutation authority is intentionally absent from the
+production security-sensitive execution surface.
+
+---
+
 ## Vulnerability Provider Architecture
 
 The workflow is scanner-independent at its core.
@@ -1196,6 +1266,11 @@ The demo scanner and asset records correlate correctly
 ---
 
 ## Security CI
+
+The Python test job provisions PostgreSQL 17 so production workflow-store
+integration, multi-instance claim races, stale reconciliation, and
+tenant-bound execution-authority tests run against the shared production
+backend rather than being skipped as local environment tests.
 
 The repository includes a GitHub Actions security workflow:
 
@@ -1603,15 +1678,27 @@ Enterprise identity-provider integration is implemented for the enterprise autho
 
 ### Workflow Database
 
-Workflow state is stored in SQLite.
+SQLite remains the default local/test workflow store. The production
+PostgreSQL backend provides shared workflow authority across application
+instances.
 
-The default path is:
+Production startup validates workflow-store readiness and required schema
+state before authority-sensitive operation. Missing or incompatible
+required schema state fails closed rather than silently falling back to
+process-local or SQLite authority.
+
+Security-sensitive production mutations use dedicated transition operations
+rather than a generic `update_workflow` capability.
+
+For the default local/test SQLite backend, workflow state is stored at:
+
+The default SQLite path is:
 
 ```text
 data/workflows.db
 ```
 
-It can be changed with:
+The SQLite path can be changed with:
 
 ```dotenv
 VM_AI_DB_PATH=data/workflows.db

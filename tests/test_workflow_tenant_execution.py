@@ -578,11 +578,6 @@ def test_tool_forwards_trusted_context(
         fake_execute,
     )
 
-    monkeypatch.setattr(
-        ticketing_tool,
-        "update_workflow",
-        lambda result: result,
-    )
 
     monkeypatch.setattr(
         ticketing_tool,
@@ -658,3 +653,175 @@ def test_execution_surfaces_accept_no_raw_tenant_authority():
                 forbidden
                 not in signature.parameters
             )
+
+
+def test_needs_review_rejects_stale_execution_attempt(
+    tmp_path,
+    monkeypatch,
+):
+
+    db(
+        tmp_path,
+        monkeypatch,
+        "review-stale-attempt.db",
+    )
+
+    result = workflow(
+        workflow_id=
+            "WF-REVIEW-STALE0001",
+    )
+
+    workflow_store.save_workflow(
+        result
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            result.workflow_id
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="execution attempt changed",
+    ):
+
+        workflow_store \
+            .mark_workflow_needs_review(
+                result.workflow_id,
+                "Synthetic ambiguous outcome.",
+                expected_execution_attempt_id=
+                    "EXEC-STALE-REVIEW0001",
+            )
+
+    authoritative = (
+        workflow_store.get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+    assert authoritative.status == "PROCESSING"
+
+
+def test_needs_review_rejects_cross_tenant_context(
+    tmp_path,
+    monkeypatch,
+):
+
+    db(
+        tmp_path,
+        monkeypatch,
+        "review-cross-tenant.db",
+    )
+
+    result = bound(
+        tenant_id=
+            "tenant-alpha",
+
+        workflow_id=
+            "WF-REVIEW-TENANT0001",
+    )
+
+    workflow_store.save_workflow(
+        result
+    )
+
+    alpha = context(
+        tenant_id=
+            "tenant-alpha",
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=
+                alpha,
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="different tenant",
+    ):
+
+        workflow_store \
+            .mark_workflow_needs_review(
+                result.workflow_id,
+                "Synthetic ambiguous outcome.",
+                expected_execution_attempt_id=
+                    claimed.execution_attempt_id,
+                security_context=
+                    context(
+                        tenant_id=
+                            "tenant-bravo",
+
+                        principal_id=
+                            "approver-bravo",
+                    ),
+            )
+
+    authoritative = (
+        workflow_store.get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert authoritative == claimed
+    assert authoritative.status == "PROCESSING"
+
+
+def test_needs_review_requires_context_for_tenant_bound_workflow(
+    tmp_path,
+    monkeypatch,
+):
+
+    db(
+        tmp_path,
+        monkeypatch,
+        "review-context-required.db",
+    )
+
+    result = bound(
+        tenant_id=
+            "tenant-alpha",
+
+        workflow_id=
+            "WF-REVIEW-CONTEXT0001",
+    )
+
+    workflow_store.save_workflow(
+        result
+    )
+
+    claimed = (
+        workflow_store
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=
+                context(),
+        )
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="requires trusted security context",
+    ):
+
+        workflow_store \
+            .mark_workflow_needs_review(
+                result.workflow_id,
+                "Synthetic ambiguous outcome.",
+                expected_execution_attempt_id=
+                    claimed.execution_attempt_id,
+            )
+
+    authoritative = (
+        workflow_store.get_workflow(
+            result.workflow_id
+        )
+    )
+
+    assert authoritative == claimed

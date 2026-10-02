@@ -43,6 +43,11 @@ from app.identity_aware_rag_security_evaluator import (
     run_identity_aware_rag_security_evaluation,
 )
 
+from app.workflow_authority_security_evaluator import (
+    run_workflow_authority_security_evaluation,
+)
+
+
 from run_security_evals import (
     calculate_security_score,
     run_security_evaluations,
@@ -838,6 +843,81 @@ def display_identity_aware_rag_security_evaluation(
         )
     )
 
+# -------------------------------------------------
+# DISPLAY WORKFLOW EXECUTION AUTHORITY
+# -------------------------------------------------
+
+
+def display_workflow_authority_security_evaluation(
+    result,
+) -> None:
+
+    print()
+
+    print(
+        "WORKFLOW EXECUTION AUTHORITY"
+    )
+
+    print(
+        "-" * 70
+    )
+
+    print()
+
+    print(
+        "Total Cases:",
+        result.total_cases,
+    )
+
+    print(
+        "Authority Protection Cases:",
+        result.authority_protection_cases,
+    )
+
+    print(
+        "State Transition / Recovery Cases:",
+        result.transition_cases,
+    )
+
+    print()
+
+    print(
+        "Passed Cases:",
+        result.passed_cases,
+    )
+
+    print(
+        "Failed Cases:",
+        result.failed_cases,
+    )
+
+    print(
+        "Authority Failures:",
+        result.authority_failures,
+    )
+
+    print(
+        "Execution Errors:",
+        result.execution_errors,
+    )
+
+    print()
+
+    if result.passed:
+
+        print(
+            "Workflow Execution Authority "
+            "Result: PASS"
+        )
+
+    else:
+
+        print(
+            "Workflow Execution Authority "
+            "Result: FAIL"
+        )
+
+
 
 
 
@@ -857,6 +937,7 @@ def display_security_evaluation(
     attack_results,
     identity_rag_result=None,
     enterprise_identity_result=None,
+    workflow_authority_result=None,
 ) -> None:
 
     print()
@@ -1335,6 +1416,16 @@ def display_security_evaluation(
         )
 
     # -------------------------------------------------
+    # -------------------------------------------------
+    # WORKFLOW EXECUTION AUTHORITY
+    # -------------------------------------------------
+
+    if workflow_authority_result is not None:
+
+        display_workflow_authority_security_evaluation(
+            workflow_authority_result
+        )
+
     # STANDARDIZED ATTACK HARNESS
     # -------------------------------------------------
 
@@ -1482,6 +1573,10 @@ def display_security_evaluation(
             identity_rag_result is None
             or identity_rag_result.passed
         )
+        and (
+            workflow_authority_result is None
+            or workflow_authority_result.passed
+        )
         and attack_harness_passed
     )
 
@@ -1594,6 +1689,7 @@ def run_security_eval() -> int:
     - evaluates excessive-agency controls
     - evaluates MCP identity and session isolation
     - evaluates enterprise identity authority boundaries
+    - evaluates workflow execution authority and recovery
     - runs the standardized attack harness
     - reports false negatives
     - reports false positives
@@ -1642,6 +1738,10 @@ def run_security_eval() -> int:
         run_identity_aware_rag_security_evaluation()
     )
 
+    workflow_authority_result = (
+        run_workflow_authority_security_evaluation()
+    )
+
     attack_results = (
         run_security_evaluations()
     )
@@ -1659,6 +1759,8 @@ def run_security_eval() -> int:
             identity_rag_result,
         enterprise_identity_result=
             enterprise_identity_result,
+        workflow_authority_result=
+            workflow_authority_result,
     )
 
     attack_harness_passed = (
@@ -1681,6 +1783,7 @@ def run_security_eval() -> int:
         and mcp_identity_result.passed
         and enterprise_identity_result.passed
         and identity_rag_result.passed
+        and workflow_authority_result.passed
         and attack_harness_passed
     ):
 
