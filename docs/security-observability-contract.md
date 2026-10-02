@@ -923,3 +923,64 @@ a migration concern for the sensitive-data-control phase. New canonical
 security events MUST NOT copy that raw authority value.
 
 Correlation observes authority. Correlation is never authority.
+
+### Authoritative execution-claim denial telemetry
+
+SQLite and PostgreSQL workflow stores emit
+`security.workflow.execution_claim_denied` only beside existing
+authoritative execution-claim denial decisions.
+
+Telemetry remains observational and best-effort. It MUST NOT participate
+in workflow lookup, execution eligibility, tenant validation,
+execution-attempt generation, locking, compare-and-swap behavior,
+winner selection, or any later workflow transition.
+
+When authoritative persisted status is not `AWAITING_APPROVAL`, the
+canonical denial reason is:
+
+- `execution_already_claimed` when persisted status is `PROCESSING`;
+- otherwise `workflow_transition_not_allowed`.
+
+That decision occurs before an authoritative `WorkflowResult` has been
+parsed. The canonical event therefore omits `workflow_id`, `tenant_id`,
+and `execution_attempt_ref` rather than promoting the incoming lookup
+identifier into trusted correlation.
+
+For a tenant-bound workflow with no trusted `SecurityContext`,
+`security_binding_mismatch` is emitted using only the already parsed
+authoritative workflow's `workflow_id` and persisted tenant binding.
+
+When the existing tenant-authority check raises
+`WorkflowTenantBindingError`, canonical telemetry is emitted before the
+same exception is re-raised unchanged.
+
+If the normalized persisted workflow tenant differs from the trusted
+security-context tenant, the reason is `cross_tenant`. Canonical
+`tenant_id` is the persisted authoritative workflow tenant, never the
+mismatching caller tenant.
+
+If persisted tenant authority cannot safely be used as normalized
+canonical correlation, the reason is `security_binding_mismatch` and the
+invalid tenant value is omitted.
+
+A failed execution-claim compare-and-swap is reported as
+`execution_already_claimed`. The freshly generated candidate
+`execution_attempt_id` MUST NOT be emitted, hashed, or converted into
+`execution_attempt_ref`, because the losing claimant did not establish
+that candidate attempt as persisted execution authority.
+
+The current SQLite and PostgreSQL claim implementations do not re-read
+the winning workflow after a failed claim CAS. Consequently a CAS-loser
+event contains only authoritative workflow and tenant correlation that
+was already available before the attempted mutation, and contains no
+execution-attempt correlation.
+
+Unknown-workflow lookup failures remain outside canonical claim-denial
+telemetry in this tranche. No authoritative workflow object exists at
+that point, and canonical telemetry MUST NOT copy the caller-facing
+lookup argument into `workflow_id`.
+
+Existing execution-claim exceptions, authorization decisions, transaction
+semantics, and winner-selection behavior remain unchanged.
+
+Correlation observes authority. Correlation is never authority.

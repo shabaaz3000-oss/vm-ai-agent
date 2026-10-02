@@ -760,3 +760,145 @@ def emit_workflow_stale_processing_detected_security_event(
         _report_emission_failure(exc)
 
         return False
+
+
+_WORKFLOW_EXECUTION_CLAIM_DENIALS = {
+    "workflow_transition_not_allowed": (
+        SecurityReasonCode
+        .WORKFLOW_TRANSITION_NOT_ALLOWED,
+        SecuritySeverity.MEDIUM,
+    ),
+
+    "execution_already_claimed": (
+        SecurityReasonCode
+        .EXECUTION_ALREADY_CLAIMED,
+        SecuritySeverity.MEDIUM,
+    ),
+
+    "security_binding_mismatch": (
+        SecurityReasonCode
+        .SECURITY_BINDING_MISMATCH,
+        SecuritySeverity.HIGH,
+    ),
+
+    "cross_tenant": (
+        SecurityReasonCode.CROSS_TENANT,
+        SecuritySeverity.HIGH,
+    ),
+}
+
+
+def _emit_workflow_execution_claim_denied_security_event(
+    *,
+    source_component: SecuritySourceComponent,
+    reason: str,
+    tenant_id: str | None = None,
+    workflow_id: str | None = None,
+) -> bool:
+    """
+    Observe an authoritative workflow execution-claim denial.
+
+    This adapter intentionally accepts no execution_attempt_id.
+    Claim-denial telemetry in this tranche cannot serialize or
+    derive correlation from an uncommitted candidate attempt.
+    """
+
+    try:
+        if source_component not in {
+            SecuritySourceComponent.WORKFLOW_STORE,
+            (
+                SecuritySourceComponent
+                .WORKFLOW_POSTGRESQL_STORE
+            ),
+        }:
+            raise ValueError(
+                "Unsupported workflow claim-denial "
+                "source component."
+            )
+
+        try:
+            (
+                reason_code,
+                severity,
+            ) = (
+                _WORKFLOW_EXECUTION_CLAIM_DENIALS[
+                    reason
+                ]
+            )
+
+        except KeyError as exc:
+            raise ValueError(
+                "Unsupported workflow claim-denial reason."
+            ) from exc
+
+        event = SecurityEvent(
+            event_type=(
+                SecurityEventType
+                .WORKFLOW_EXECUTION_CLAIM_DENIED
+            ),
+            severity=severity,
+            outcome=SecurityOutcome.DENIED,
+            source_component=source_component,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            resource_type=(
+                SecurityResourceType.WORKFLOW
+            ),
+            action=SecurityAction.CLAIM_EXECUTION,
+            reason_code=reason_code,
+        )
+
+        return _emit_best_effort(
+            event
+        )
+
+    except Exception as exc:
+        _report_emission_failure(exc)
+
+        return False
+
+
+def emit_sqlite_workflow_execution_claim_denied_security_event(
+    *,
+    reason: str,
+    tenant_id: str | None = None,
+    workflow_id: str | None = None,
+) -> bool:
+    """
+    Emit SQLite workflow-store claim-denial telemetry.
+    """
+
+    return (
+        _emit_workflow_execution_claim_denied_security_event(
+            source_component=(
+                SecuritySourceComponent
+                .WORKFLOW_STORE
+            ),
+            reason=reason,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+        )
+    )
+
+
+def emit_postgresql_workflow_execution_claim_denied_security_event(
+    *,
+    reason: str,
+    tenant_id: str | None = None,
+    workflow_id: str | None = None,
+) -> bool:
+    """
+    Emit PostgreSQL workflow-store claim-denial telemetry.
+    """
+
+    return (
+        _emit_workflow_execution_claim_denied_security_event(
+            source_component=(
+                SecuritySourceComponent
+                .WORKFLOW_POSTGRESQL_STORE
+            ),
+            reason=reason,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+        )
+    )

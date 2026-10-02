@@ -12,6 +12,9 @@ from app.security_context import SecurityContext
 from app.workflow_tenant import (
     require_workflow_tenant,
 )
+from app.security_observability_integrations import emit_postgresql_workflow_execution_claim_denied_security_event
+from app.workflow_tenant import WorkflowTenantBindingError
+
 
 
 class PostgreSQLWorkflowStore:
@@ -341,6 +344,14 @@ class PostgreSQLWorkflowStore:
                 status
                 != "AWAITING_APPROVAL"
             ):
+                emit_postgresql_workflow_execution_claim_denied_security_event(
+                    reason=(
+                        "execution_already_claimed"
+                        if status == "PROCESSING"
+                        else "workflow_transition_not_allowed"
+                    ),
+                )
+
                 raise PermissionError(
                     "Workflow must be awaiting approval "
                     "before execution can be claimed."
@@ -355,16 +366,54 @@ class PostgreSQLWorkflowStore:
             if current.tenant_id is not None:
 
                 if security_context is None:
+                    emit_postgresql_workflow_execution_claim_denied_security_event(
+                        reason="security_binding_mismatch",
+                        tenant_id=current.tenant_id,
+                        workflow_id=current.workflow_id,
+                    )
+
                     raise PermissionError(
                         "Tenant-bound workflow execution "
                         "requires trusted security context."
                     )
 
-                require_workflow_tenant(
-                    current,
-                    security_context=
-                        security_context,
-                )
+                try:
+                    require_workflow_tenant(
+                        current,
+                        security_context=
+                            security_context,
+                    )
+                except WorkflowTenantBindingError:
+                    canonical_tenant_id = (
+                        current.tenant_id
+                        if (
+                            isinstance(
+                                current.tenant_id,
+                                str,
+                            )
+                            and current.tenant_id.strip()
+                            and current.tenant_id
+                            == current.tenant_id.strip()
+                        )
+                        else None
+                    )
+
+                    emit_postgresql_workflow_execution_claim_denied_security_event(
+                        reason=(
+                            "cross_tenant"
+                            if (
+                                canonical_tenant_id
+                                is not None
+                                and canonical_tenant_id
+                                != security_context.tenant_id
+                            )
+                            else "security_binding_mismatch"
+                        ),
+                        tenant_id=canonical_tenant_id,
+                        workflow_id=current.workflow_id,
+                    )
+
+                    raise
 
             updated_data = (
                 current.model_dump()
@@ -419,6 +468,12 @@ class PostgreSQLWorkflowStore:
             )
 
             if cursor.rowcount != 1:
+                emit_postgresql_workflow_execution_claim_denied_security_event(
+                    reason="execution_already_claimed",
+                    tenant_id=current.tenant_id,
+                    workflow_id=current.workflow_id,
+                )
+
                 raise PermissionError(
                     "Workflow execution has already "
                     "been claimed."
