@@ -1514,3 +1514,45 @@ Audit observes authority. Audit is not authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Legacy audit exception-message confidentiality
+
+Legacy `log_event` records must not serialize arbitrary exception
+messages.
+
+Exception strings may contain credentials, bearer tokens, provider
+responses, transport details, identifiers, or other sensitive
+operational content that is not required for audit correlation.
+
+The legacy execution events:
+
+- `TICKET_EXECUTION_BLOCKED`
+- `WORKFLOW_EXECUTION_CLAIM_BLOCKED`
+
+therefore retain bounded `error_type` metadata but do not persist
+`str(error)` or another free-form message equivalent.
+
+The legacy audit boundary must not replace removed exception strings with
+fields such as:
+
+- `error_message`
+- `exception_message`
+- `sanitized_message`
+
+unless a future contract defines a bounded vocabulary for such a field.
+
+Removing exception text does not alter exception propagation. The
+underlying `PermissionError` is still re-raised through the existing
+execution control flow.
+
+This tranche does not modify raw `execution_attempt_id` handling. Exact
+execution-attempt audit hygiene is handled separately so that its
+authoritative tenant/workflow/attempt derivation can be evaluated at each
+call site.
+
+Audit observes authority. Audit is not authority.
+
+Exception text is not authority and is not required audit data.
+
+Security telemetry observes authority. Security telemetry is not
+authority.

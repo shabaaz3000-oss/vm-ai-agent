@@ -331,8 +331,6 @@ def _execute_ticket_bound_workflow(
                 "error_type":
                     "PermissionError",
 
-                "message":
-                    str(error),
             }
         )
 
@@ -493,8 +491,6 @@ def claim_and_execute_workflow(
                 "error_type":
                     "PermissionError",
 
-                "message":
-                    str(error),
             }
         )
 
