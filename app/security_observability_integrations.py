@@ -34,6 +34,8 @@ from app.security_observability import (
     SecuritySourceComponent,
 )
 from app.security_metrics import get_process_security_metrics_registry
+from app.security_alert_delivery import get_process_security_alert_sink
+from app.security_detection import evaluate_security_event
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,20 +106,62 @@ def _report_metrics_observation_failure(
     )
 
 
+def _report_detection_evaluation_failure(
+    exc: BaseException,
+) -> None:
+    """
+    Report deterministic detection failure without copying exception text.
+
+    Detection is observational and cannot alter audit, metrics, or the
+    existing security decision.
+    """
+
+    _LOGGER.error(
+        "Canonical security detection evaluation failed; "
+        "existing security decision preserved. "
+        "error_type=%s",
+        type(exc).__name__,
+    )
+
+
+def _report_alert_delivery_failure(
+    exc: BaseException,
+) -> None:
+    """
+    Report structured alert-delivery failure without copying exception text.
+
+    Alert delivery is observational and cannot alter audit, metrics,
+    detection authority, or the existing security decision.
+    """
+
+    _LOGGER.error(
+        "Canonical security alert delivery failed; "
+        "existing security decision preserved. "
+        "error_type=%s",
+        type(exc).__name__,
+    )
+
+
 def _emit_best_effort(
     event: SecurityEvent,
 ) -> bool:
     """
-    Deliver one canonical event to independent audit and metrics
-    observers without making telemetry part of security authority.
+    Offer one canonical event to independent audit, metrics, and
+    deterministic detection observers.
 
-    Return semantics intentionally preserve the pre-metrics contract:
-    True means existing audit delivery succeeded; False means existing
-    audit delivery failed. Metrics success or failure does not alter
-    that result.
+    A matched detection is delivered as a structured SecurityAlert.
+
+    Return semantics intentionally remain backward compatible:
+    True means audit delivery succeeded; False means audit delivery failed.
+    Metrics, detection, and alert-delivery outcomes do not alter that value.
     """
 
     audit_succeeded = True
+
+
+    # --------------------------------------------------------
+    # Observer 1: existing audit delivery.
+    # --------------------------------------------------------
 
     try:
         sink = (
@@ -138,6 +182,10 @@ def _emit_best_effort(
         audit_succeeded = False
 
 
+    # --------------------------------------------------------
+    # Observer 2: bounded metrics.
+    # --------------------------------------------------------
+
     try:
         (
             get_process_security_metrics_registry()
@@ -150,6 +198,46 @@ def _emit_best_effort(
         _report_metrics_observation_failure(
             exc
         )
+
+
+    # --------------------------------------------------------
+    # Observer 3: deterministic single-event detection.
+    # --------------------------------------------------------
+
+    alert = None
+
+    try:
+        alert = (
+            evaluate_security_event(
+                event
+            )
+        )
+
+    except Exception as exc:
+        _report_detection_evaluation_failure(
+            exc
+        )
+
+
+    # --------------------------------------------------------
+    # Structured alert delivery occurs only for a rule match.
+    # It has its own independent failure boundary.
+    # --------------------------------------------------------
+
+    if alert is not None:
+
+        try:
+            (
+                get_process_security_alert_sink()
+                .emit(
+                    alert
+                )
+            )
+
+        except Exception as exc:
+            _report_alert_delivery_failure(
+                exc
+            )
 
 
     return audit_succeeded

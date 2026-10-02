@@ -1390,3 +1390,86 @@ Metrics observe authority. Metrics are never authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### Deterministic detection and structured alert delivery
+
+The canonical best-effort observability flow contains three sibling
+observers:
+
+1. existing audit delivery;
+2. bounded metrics observation;
+3. deterministic single-event detection.
+
+When deterministic detection produces a `SecurityAlert`, the alert is
+offered to a fourth independently isolated structured alert-delivery
+boundary.
+
+The processing order is:
+
+1. audit attempt;
+2. metrics attempt;
+3. deterministic detection evaluation;
+4. alert delivery when and only when a rule matches.
+
+Each observational failure domain is isolated.
+
+Audit failure does not prevent metrics, detection, or alert delivery.
+
+Metrics failure does not prevent detection or alert delivery.
+
+Detection evaluation failure does not alter audit delivery, metrics,
+security authority, or the `_emit_best_effort` return value. Because no
+valid alert exists in that case, alert delivery is not attempted.
+
+Alert-delivery failure does not alter audit delivery, metrics, the source
+security event, the detection result, security authority, or the
+`_emit_best_effort` return value.
+
+`evaluate_security_event(event)` returning `None` is a normal no-match
+result and produces no alert-delivery attempt.
+
+The `_emit_best_effort` boolean remains backward compatible:
+
+- `True` means existing audit delivery succeeded.
+- `False` means existing audit delivery failed.
+
+Metrics, detection, and alert-delivery outcomes do not modify this
+boolean.
+
+The alert-delivery boundary is framework-independent and exposes a
+`SecurityAlertSink` protocol.
+
+The v1 process-local implementation is `InMemorySecurityAlertSink`.
+It is thread-safe and exposes an immutable tuple snapshot through its
+`alerts` property.
+
+Process-local alerts are available only through the explicit
+`get_process_security_alert_sink()` observability boundary. A private
+reset helper exists only for deterministic test isolation.
+
+Process-local alert state is observability state only. It MUST NOT be
+consulted to authenticate, authorize, select a tenant, validate a
+session, transition a workflow, establish execution-attempt authority,
+or resolve provider state.
+
+Detection and alert-delivery failures are logged using only bounded
+exception type names. Raw exception messages are not copied to logs.
+
+Structured alert delivery serializes only fields already permitted by the
+`SecurityAlert` model. It does not copy raw prompts, RAG content, tool
+output, provider bodies, credentials, raw execution secrets, ServiceNow
+`sys_id` values, or arbitrary exception messages.
+
+No external SIEM, notification, Prometheus, OpenTelemetry, or vendor
+alerting dependency is introduced by this tranche.
+
+No sliding-window, threshold, rate, or grouping state is introduced.
+
+Detection observes authority. Detection is never authority.
+
+Alerts describe observed security conditions. Alerts are never authority.
+
+Metrics observe authority. Metrics are never authority.
+
+Security telemetry observes authority. Security telemetry is not
+authority.
