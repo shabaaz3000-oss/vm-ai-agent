@@ -1,14 +1,14 @@
-# VM AI Agent Architecture
+# AI Vulnerability Management Agent Architecture
 
-This document is the version-controlled architecture reference for the VM AI Agent security architecture.
+This document is the version-controlled architecture reference for the AI Vulnerability Management Agent security architecture.
 
 It captures the major application components, trust boundaries, controlled execution paths, authoritative session state, and secure software-delivery controls implemented by the project.
 
 ---
 
-## 45.1 Overall VM AI Agent Architecture
+## 45.1 Overall AI Vulnerability Management Agent Architecture
 
-The VM AI Agent separates user interaction, AI reasoning, tool execution, human approval, enterprise integrations, and security state into distinct control boundaries.
+The AI Vulnerability Management Agent separates user interaction, AI reasoning, tool execution, human approval, enterprise integrations, and security state into distinct control boundaries.
 
 ```mermaid
 flowchart LR
@@ -16,7 +16,7 @@ flowchart LR
     USER["Security Analyst / Approver"]
     MCPCLIENT["MCP Client / AI Host"]
 
-    subgraph APP["VM AI Agent"]
+    subgraph APP["AI Vulnerability Management Agent"]
         ENTRY["CLI / API Entry Points"]
 
         GATE["Security Gateway<br/>Authentication / Authorization<br/>Input Validation<br/>Prompt-Injection Detection"]
@@ -188,7 +188,7 @@ sequenceDiagram
     autonumber
 
     actor Analyst as Security Analyst
-    participant Agent as VM AI Agent
+    participant Agent as AI Vulnerability Management Agent
     participant LLM as LLM
     participant Policy as Authorization / Policy Layer
     participant DB as PostgreSQL Workflow State
@@ -267,10 +267,10 @@ sequenceDiagram
     autonumber
 
     actor Client as MCP Client
-    participant A as VM AI Agent Instance A
+    participant A as AI Vulnerability Management Agent Instance A
     participant Authority as MCP Session Authority
     participant DB as PostgreSQL
-    participant B as VM AI Agent Instance B
+    participant B as AI Vulnerability Management Agent Instance B
     actor Admin as Authorized Server Control
     participant Audit as Audit Trail
 

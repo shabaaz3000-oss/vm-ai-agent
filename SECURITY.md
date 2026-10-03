@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-VM AI Agent is a portfolio and engineering demonstration rather than a production service.
+AI Vulnerability Management Agent is a portfolio and engineering demonstration rather than a production service.
 
 Security fixes are applied to the current `main` branch.
 

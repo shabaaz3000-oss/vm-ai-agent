@@ -112,7 +112,7 @@ def test_demo_command_runs_with_real_sample_files(
     assert exit_code == 0
 
     assert (
-        "VM AI AGENT - PORTFOLIO DEMO"
+        "AI VULNERABILITY MANAGEMENT AGENT - PORTFOLIO DEMO"
         in output
     )
 

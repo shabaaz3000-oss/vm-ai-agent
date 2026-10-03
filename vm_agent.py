@@ -266,7 +266,7 @@ def display_demo_notice() -> None:
     print("=" * 70)
 
     print(
-        "VM AI AGENT - PORTFOLIO DEMO"
+        "AI VULNERABILITY MANAGEMENT AGENT - PORTFOLIO DEMO"
     )
 
     print("=" * 70)
@@ -314,7 +314,7 @@ def display_analysis_result(
     result,
     *,
     title: str = (
-        "VM AI AGENT - TENABLE CSV ANALYSIS"
+        "AI VULNERABILITY MANAGEMENT AGENT - TENABLE CSV ANALYSIS"
     ),
 ) -> None:
 
@@ -945,7 +945,7 @@ def display_security_evaluation(
     print("=" * 70)
 
     print(
-        "VM AI AGENT - SECURITY EVALUATION"
+        "AI VULNERABILITY MANAGEMENT AGENT - SECURITY EVALUATION"
     )
 
     print("=" * 70)
@@ -1661,7 +1661,7 @@ def run_demo() -> int:
     display_analysis_result(
         result,
         title=(
-            "VM AI AGENT - DEMO RESULT"
+            "AI VULNERABILITY MANAGEMENT AGENT - DEMO RESULT"
         ),
     )
 

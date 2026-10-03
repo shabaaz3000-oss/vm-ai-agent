@@ -37,7 +37,7 @@ from app.tools.registry import (
 
 
 mcp = MCPServer(
-    "VM AI Agent"
+    "AI Vulnerability Management Agent"
 )
 
 

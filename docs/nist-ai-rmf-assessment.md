@@ -2,11 +2,11 @@
 
 ## Project
 
-VM AI Agent
+AI Vulnerability Management Agent
 
 ## Purpose
 
-This document evaluates the VM AI Agent using the NIST AI Risk Management Framework (AI RMF).
+This document evaluates the AI Vulnerability Management Agent using the NIST AI Risk Management Framework (AI RMF).
 
 The assessment is organized around the four core AI RMF functions:
 
@@ -37,9 +37,9 @@ AI risk management is iterative. As the system, data sources, models, tools, thr
 
 GOVERN establishes the policies, responsibilities, processes, and oversight used to manage AI risk throughout the system lifecycle.
 
-### VM AI Agent Controls
+### AI Vulnerability Management Agent Controls
 
-The VM AI Agent implements several technical and procedural controls that support the GOVERN function of the NIST AI RMF. Because this is a portfolio-scale application rather than an organizational AI program, some governance outcomes are only partially implemented or remain future work.
+The AI Vulnerability Management Agent implements several technical and procedural controls that support the GOVERN function of the NIST AI RMF. Because this is a portfolio-scale application rather than an organizational AI program, some governance outcomes are only partially implemented or remain future work.
 
 #### Existing Governance Controls
 
@@ -86,7 +86,7 @@ The project does not yet implement all organizational governance outcomes descri
 - contingency procedures for third-party AI or data-source failures; and
 - organization-level AI roles, training, and executive accountability.
 
-These gaps do not necessarily indicate application vulnerabilities. They identify governance capabilities that would be required if the VM AI Agent were developed or deployed as part of a production organizational AI program.
+These gaps do not necessarily indicate application vulnerabilities. They identify governance capabilities that would be required if the AI Vulnerability Management Agent were developed or deployed as part of a production organizational AI program.
 
 ---
 
@@ -96,11 +96,11 @@ These gaps do not necessarily indicate application vulnerabilities. They identif
 
 MAP establishes the context in which the AI system operates, including its purpose, users, components, data sources, dependencies, and potential risks.
 
-### VM AI Agent Architecture
+### AI Vulnerability Management Agent Architecture
 
 #### System Purpose
 
-The VM AI Agent is a security-focused application that assists with vulnerability management workflows.
+The AI Vulnerability Management Agent is a security-focused application that assists with vulnerability management workflows.
 
 The system combines deterministic security logic, AI-assisted analysis, retrieval-augmented generation (RAG), human approval, controlled tool execution, and audit logging.
 
@@ -119,7 +119,7 @@ The application is not designed to provide unrestricted autonomous access to sec
 
 #### Major System Components
 
-The VM AI Agent includes the following major components:
+The AI Vulnerability Management Agent includes the following major components:
 
 - **FastAPI application layer:** exposes application workflow endpoints.
 - **Authentication system:** establishes the identity of users interacting with protected operations.
@@ -213,11 +213,11 @@ These risks will be evaluated in greater detail through the MEASURE and MANAGE f
 
 MEASURE evaluates identified AI risks and determines whether security, safety, reliability, and other controls are operating as intended.
 
-### VM AI Agent Measurements and Evaluations
+### AI Vulnerability Management Agent Measurements and Evaluations
 
 #### Measurement Approach
 
-The VM AI Agent uses software tests, AI security evaluations, audit evidence, and CI checks to assess risks identified during the MAP function.
+The AI Vulnerability Management Agent uses software tests, AI security evaluations, audit evidence, and CI checks to assess risks identified during the MAP function.
 
 The project does not assume that the presence of a security control proves that the control is effective. Where practical, expected behavior is validated through repeatable tests and observable application evidence.
 
@@ -293,11 +293,11 @@ This evidence-based approach supports the transition from assumed security to me
 
 MANAGE prioritizes identified risks and determines how those risks should be mitigated, accepted, transferred, avoided, or monitored.
 
-### VM AI Agent Risk Treatments
+### AI Vulnerability Management Agent Risk Treatments
 
 #### Risk Management Approach
 
-The VM AI Agent uses a defense-in-depth approach to manage AI and application risks.
+The AI Vulnerability Management Agent uses a defense-in-depth approach to manage AI and application risks.
 
 Risk treatment decisions are based on the potential impact of a failure, the trustworthiness of the component involved, and whether a deterministic or human-controlled mechanism can reduce reliance on probabilistic AI behavior.
 
@@ -421,11 +421,11 @@ Higher-impact actions should therefore receive stronger deterministic controls, 
 
 NIST AI 600-1 extends the AI Risk Management Framework by identifying risks that are unique to or intensified by generative AI systems.
 
-Not every Generative AI Profile risk has the same relevance to the VM AI Agent. Risk relevance depends on the system's intended use, architecture, data, external dependencies, and potential impact.
+Not every Generative AI Profile risk has the same relevance to the AI Vulnerability Management Agent. Risk relevance depends on the system's intended use, architecture, data, external dependencies, and potential impact.
 
 ### GenAI Risk Prioritization
 
-| NIST AI 600-1 Risk | Relevance to VM AI Agent | Rationale |
+| NIST AI 600-1 Risk | Relevance to AI Vulnerability Management Agent | Rationale |
 | --- | --- | --- |
 | Confabulation | High | Incorrect or fabricated vulnerability analysis could mislead analysts or influence remediation decisions |
 | Information Security | High | The application processes vulnerability information and integrates AI, RAG, authorization, workflow state, and controlled tools |
@@ -442,7 +442,7 @@ Not every Generative AI Profile risk has the same relevance to the VM AI Agent. 
 
 ### Priority GenAI Risks
 
-The following risks receive the greatest attention in the current VM AI Agent assessment because they are most closely connected to the application's architecture and intended use.
+The following risks receive the greatest attention in the current AI Vulnerability Management Agent assessment because they are most closely connected to the application's architecture and intended use.
 
 #### Confabulation
 
@@ -531,7 +531,7 @@ Successful exploitation could result in:
 
 **Existing Controls**
 
-The VM AI Agent implements several layers intended to reduce information-security risk:
+The AI Vulnerability Management Agent implements several layers intended to reduce information-security risk:
 
 - authentication protects restricted application operations;
 - RBAC limits protected actions to authorized roles;
@@ -731,7 +731,7 @@ Potential improvements include:
 
 **Risk**
 
-The VM AI Agent depends on multiple software, data, and service components that may fail, change, or introduce vulnerabilities outside the application's direct control.
+The AI Vulnerability Management Agent depends on multiple software, data, and service components that may fail, change, or introduce vulnerabilities outside the application's direct control.
 
 Relevant dependencies may include:
 
@@ -816,7 +816,7 @@ Potential improvements include:
 
 **Risk**
 
-A production implementation of the VM AI Agent may process sensitive enterprise information through prompts, retrieved documents, workflow records, AI outputs, and audit logs.
+A production implementation of the AI Vulnerability Management Agent may process sensitive enterprise information through prompts, retrieved documents, workflow records, AI outputs, and audit logs.
 
 Relevant information could include:
 
