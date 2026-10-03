@@ -1939,3 +1939,92 @@ authority.
 
 Telemetry observes PostgreSQL-backed authority. Telemetry is not
 PostgreSQL authority.
+
+## 24. Step 50 Closure Evidence
+
+Step 50 acceptance evidence is established by implementation tests,
+adversarial evaluation, PostgreSQL runtime validation, the security
+evaluation harness, and protected-main delivery controls.
+
+Repository delivery status is established by CI and merge history rather
+than by documentation text alone.
+
+### 24.1 Implemented Security Properties
+
+Step 50 implements:
+
+- canonical structured security events;
+- trusted session and execution-attempt correlation;
+- ServiceNow provider correlation;
+- authoritative workflow success and denial telemetry;
+- bounded security metrics;
+- deterministic security detections;
+- structured alert delivery;
+- observer-failure isolation;
+- legacy audit sensitive-data minimization;
+- adversarial observability evaluation;
+- PostgreSQL-backed multi-instance telemetry authority validation.
+
+### 24.2 Runtime Evidence
+
+Validated evidence includes:
+
+- 4 dedicated PostgreSQL telemetry-authority cases;
+- 31 PostgreSQL integration cases with zero skips;
+- 123 PostgreSQL-related regression cases with zero skips;
+- 296 Step 50 regression cases;
+- credential-free security evaluation success;
+- seven of seven standardized attack-harness cases passing.
+
+PostgreSQL test cases count as runtime evidence only when actually
+executed. A skipped PostgreSQL case does not satisfy this acceptance
+boundary.
+
+### 24.3 Explicit V1 Limitations
+
+The v1 observability implementation does not claim:
+
+- globally aggregated multi-instance metrics;
+- durable distributed alerting;
+- external Prometheus/OpenTelemetry export;
+- cryptographic audit hash chaining or signatures;
+- WORM audit persistence;
+- HMAC-based EA1 correlation;
+- globally distributed telemetry aggregation.
+
+The metrics registry and in-memory alert sink remain process-local.
+
+`audit.jsonl` is not represented as cryptographically tamper-evident.
+
+EA1 remains deterministic SHA-256 pseudonymous correlation and must
+never replace exact execution-attempt authority.
+
+### 24.4 Delivery Gate
+
+Step 50 implementation and runtime evidence do not by themselves
+authorize the final project-completion label.
+
+The label:
+
+`VM AI Agent v1 ? production security architecture complete`
+
+is applied only when:
+
+1. the Step 50.9 documentation closure is committed;
+2. the branch is pushed;
+3. required Security CI checks pass;
+4. the pull request is merged through protected main;
+5. local `main` is synchronized with `origin/main`.
+
+Until those delivery conditions are satisfied, implementation may be
+feature-complete while repository delivery closure remains pending.
+
+PostgreSQL owns shared workflow authority.
+
+Correlation observes authority. Correlation is never authority.
+
+Detection observes authority. Detection is never authority.
+
+Alerts describe observed conditions. Alerts are never authority.
+
+Security telemetry observes authority. Security telemetry is not authority.
