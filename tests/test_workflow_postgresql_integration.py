@@ -1978,3 +1978,959 @@ def test_multi_instance_needs_review_has_exactly_one_winner():
             "requires reconciliation."
         )
     )
+
+# ============================================================
+# STEP 50.8C ? POSTGRESQL SECURITY OBSERVABILITY
+# ============================================================
+
+
+def test_postgresql_claim_race_telemetry_uses_only_committed_authority(
+    monkeypatch,
+):
+    """
+    PostgreSQL chooses the winner.
+
+    Telemetry observes the result.
+
+    The losing claim must not promote an uncommitted candidate
+    execution attempt into canonical correlation.
+    """
+
+    from concurrent.futures import (
+        ThreadPoolExecutor,
+    )
+
+    from threading import (
+        Barrier,
+    )
+
+    import app.security_observability_integrations as integrations
+
+    from app.security_observability_correlation import (
+        build_execution_attempt_ref,
+    )
+
+
+    database_url = (
+        postgres_database_url()
+    )
+
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+
+    first.save_workflow(
+        result
+    )
+
+
+    events = []
+
+
+    def capture(
+        event,
+    ):
+        events.append(
+            event
+        )
+
+        return True
+
+
+    monkeypatch.setattr(
+        integrations,
+        "_emit_best_effort",
+        capture,
+    )
+
+
+    barrier = Barrier(
+        2
+    )
+
+
+    def compete(
+        store: PostgreSQLWorkflowStore,
+    ) -> str | None:
+
+        barrier.wait(
+            timeout=10
+        )
+
+
+        try:
+
+            claimed = (
+                store
+                .claim_workflow_for_execution(
+                    result.workflow_id,
+                    security_context=
+                        approver,
+                )
+            )
+
+        except PermissionError:
+
+            return None
+
+
+        return (
+            claimed
+            .execution_attempt_id
+        )
+
+
+    with ThreadPoolExecutor(
+        max_workers=2
+    ) as executor:
+
+        first_future = (
+            executor.submit(
+                compete,
+                first,
+            )
+        )
+
+        second_future = (
+            executor.submit(
+                compete,
+                second,
+            )
+        )
+
+
+        attempt_ids = [
+            value
+            for value in (
+                first_future.result(),
+                second_future.result(),
+            )
+            if value is not None
+        ]
+
+
+    assert len(
+        attempt_ids
+    ) == 1
+
+
+    winning_attempt = (
+        attempt_ids[
+            0
+        ]
+    )
+
+
+    assert (
+        winning_attempt
+        is not None
+    )
+
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+    assert (
+        authoritative
+        .execution_attempt_id
+        == winning_attempt
+    )
+
+    assert (
+        authoritative.tenant_id
+        is not None
+    )
+
+
+    denial_payloads = [
+        event.to_dict()
+        for event in events
+        if (
+            event.to_dict()[
+                "event_type"
+            ]
+            ==
+            (
+                "security.workflow."
+                "execution_claim_denied"
+            )
+        )
+    ]
+
+
+    assert len(
+        denial_payloads
+    ) == 1
+
+
+    denial = (
+        denial_payloads[
+            0
+        ]
+    )
+
+
+    assert (
+        denial[
+            "reason_code"
+        ]
+        == "execution_already_claimed"
+    )
+
+    assert (
+        denial[
+            "source_component"
+        ]
+        == "workflow_postgresql_store"
+    )
+
+
+    # PROCESSING is detected from authoritative row state
+    # before parsing a candidate/current attempt for
+    # correlation. Therefore the denial is intentionally
+    # uncorrelated rather than copying the caller lookup.
+    assert (
+        denial.get(
+            "workflow_id"
+        )
+        is None
+    )
+
+    assert (
+        denial.get(
+            "tenant_id"
+        )
+        is None
+    )
+
+    assert (
+        denial.get(
+            "execution_attempt_ref"
+        )
+        is None
+    )
+
+
+    assert (
+        winning_attempt
+        not in str(
+            denial
+        )
+    )
+
+
+    # Exercise the same canonical success adapter used by
+    # claim_and_execute_workflow, but feed it the result
+    # re-read from PostgreSQL authority.
+    events.clear()
+
+
+    assert (
+        integrations
+        .emit_workflow_execution_claimed_security_event(
+            tenant_id=
+                authoritative.tenant_id,
+
+            workflow_id=
+                authoritative.workflow_id,
+
+            execution_attempt_id=
+                authoritative
+                .execution_attempt_id,
+        )
+        is True
+    )
+
+
+    assert len(
+        events
+    ) == 1
+
+
+    claim_payload = (
+        events[
+            0
+        ]
+        .to_dict()
+    )
+
+
+    expected_ref = (
+        build_execution_attempt_ref(
+            tenant_id=
+                authoritative.tenant_id,
+
+            workflow_id=
+                authoritative.workflow_id,
+
+            execution_attempt_id=
+                winning_attempt,
+        )
+    )
+
+
+    assert (
+        claim_payload[
+            "event_type"
+        ]
+        == "security.workflow.execution_claimed"
+    )
+
+    assert (
+        claim_payload[
+            "workflow_id"
+        ]
+        == authoritative.workflow_id
+    )
+
+    assert (
+        claim_payload[
+            "tenant_id"
+        ]
+        == authoritative.tenant_id
+    )
+
+    assert (
+        claim_payload[
+            "execution_attempt_ref"
+        ]
+        == expected_ref
+    )
+
+
+    assert (
+        winning_attempt
+        not in str(
+            claim_payload
+        )
+    )
+
+
+
+def test_postgresql_reconciliation_mismatch_telemetry_uses_locked_current_attempt(
+    monkeypatch,
+):
+    """
+    Stale caller reconciliation evidence cannot become
+    canonical execution-attempt correlation.
+
+    EA1 must derive from PostgreSQL's locked current attempt.
+    """
+
+    import app.security_observability_integrations as integrations
+
+    from app.security_observability_correlation import (
+        build_execution_attempt_ref,
+    )
+
+
+    database_url = (
+        postgres_database_url()
+    )
+
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+
+    first.save_workflow(
+        result
+    )
+
+
+    claimed = (
+        first
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=
+                approver,
+        )
+    )
+
+
+    assert (
+        claimed.execution_attempt_id
+        is not None
+    )
+
+
+    review = (
+        first
+        .mark_workflow_needs_review(
+            result.workflow_id,
+            (
+                "PostgreSQL telemetry "
+                "correlation proof."
+            ),
+            expected_execution_attempt_id=
+                claimed.execution_attempt_id,
+            security_context=
+                approver,
+        )
+    )
+
+
+    assert (
+        review.status
+        == "NEEDS_REVIEW"
+    )
+
+
+    events = []
+
+
+    def capture(
+        event,
+    ):
+        events.append(
+            event
+        )
+
+        return True
+
+
+    monkeypatch.setattr(
+        integrations,
+        "_emit_best_effort",
+        capture,
+    )
+
+
+    stale_attempt = (
+        "EXEC-STALE508C"
+    )
+
+
+    assert (
+        stale_attempt
+        != review.execution_attempt_id
+    )
+
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        second.authorize_reconciled_retry(
+            result.workflow_id,
+            expected_execution_attempt_id=
+                stale_attempt,
+            security_context=
+                approver,
+        )
+
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+
+    assert (
+        authoritative.status
+        == "NEEDS_REVIEW"
+    )
+
+    assert (
+        authoritative
+        .execution_attempt_id
+        == review.execution_attempt_id
+    )
+
+    assert (
+        authoritative.tenant_id
+        is not None
+    )
+
+    assert (
+        authoritative
+        .execution_attempt_id
+        is not None
+    )
+
+
+    denials = [
+        event.to_dict()
+        for event in events
+        if (
+            event.to_dict()[
+                "event_type"
+            ]
+            ==
+            (
+                "security.provider."
+                "reconciliation_denied"
+            )
+        )
+    ]
+
+
+    assert len(
+        denials
+    ) == 1
+
+
+    denial = denials[
+        0
+    ]
+
+
+    assert (
+        denial[
+            "reason_code"
+        ]
+        == "execution_attempt_mismatch"
+    )
+
+    assert (
+        denial[
+            "source_component"
+        ]
+        == "workflow_postgresql_store"
+    )
+
+    assert (
+        denial[
+            "workflow_id"
+        ]
+        == authoritative.workflow_id
+    )
+
+    assert (
+        denial[
+            "tenant_id"
+        ]
+        == authoritative.tenant_id
+    )
+
+
+    expected_ref = (
+        build_execution_attempt_ref(
+            tenant_id=
+                authoritative.tenant_id,
+
+            workflow_id=
+                authoritative.workflow_id,
+
+            execution_attempt_id=
+                authoritative
+                .execution_attempt_id,
+        )
+    )
+
+
+    assert (
+        denial[
+            "execution_attempt_ref"
+        ]
+        == expected_ref
+    )
+
+
+    # Neither the stale caller evidence nor the raw current
+    # execution-attempt authority may appear in canonical output.
+    assert (
+        stale_attempt
+        not in str(
+            denial
+        )
+    )
+
+    assert (
+        authoritative
+        .execution_attempt_id
+        not in str(
+            denial
+        )
+    )
+
+    assert (
+        denial.get(
+            "provider_correlation_id"
+        )
+        is None
+    )
+
+
+
+def test_postgresql_wrong_state_reconciliation_denial_does_not_promote_lookup(
+    monkeypatch,
+):
+    """
+    A workflow_id supplied as a lookup argument is not canonical
+    correlation until persisted WorkflowResult authority has been
+    parsed.
+
+    PROCESSING -> authorize retry fails before that boundary.
+    """
+
+    import app.security_observability_integrations as integrations
+
+
+    database_url = (
+        postgres_database_url()
+    )
+
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+
+    first.save_workflow(
+        result
+    )
+
+
+    claimed = (
+        first
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=
+                approver,
+        )
+    )
+
+
+    assert (
+        claimed.status
+        == "PROCESSING"
+    )
+
+    assert (
+        claimed.execution_attempt_id
+        is not None
+    )
+
+
+    events = []
+
+
+    def capture(
+        event,
+    ):
+        events.append(
+            event
+        )
+
+        return True
+
+
+    monkeypatch.setattr(
+        integrations,
+        "_emit_best_effort",
+        capture,
+    )
+
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        second.authorize_reconciled_retry(
+            result.workflow_id,
+            expected_execution_attempt_id=
+                claimed.execution_attempt_id,
+            security_context=
+                approver,
+        )
+
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+    assert (
+        authoritative
+        .execution_attempt_id
+        == claimed.execution_attempt_id
+    )
+
+
+    denials = [
+        event.to_dict()
+        for event in events
+        if (
+            event.to_dict()[
+                "event_type"
+            ]
+            ==
+            (
+                "security.provider."
+                "reconciliation_denied"
+            )
+        )
+    ]
+
+
+    assert len(
+        denials
+    ) == 1
+
+
+    denial = (
+        denials[
+            0
+        ]
+    )
+
+
+    assert (
+        denial[
+            "reason_code"
+        ]
+        == "workflow_transition_not_allowed"
+    )
+
+
+    assert (
+        denial.get(
+            "workflow_id"
+        )
+        is None
+    )
+
+    assert (
+        denial.get(
+            "tenant_id"
+        )
+        is None
+    )
+
+    assert (
+        denial.get(
+            "execution_attempt_ref"
+        )
+        is None
+    )
+
+    assert (
+        denial.get(
+            "provider_correlation_id"
+        )
+        is None
+    )
+
+
+
+def test_postgresql_observer_failure_cannot_change_authoritative_claim(
+    monkeypatch,
+):
+    """
+    An observer failure during a PostgreSQL-backed denial must not
+    change the already-authoritative winning claim.
+
+    Metrics failure is intentionally injected inside
+    _emit_best_effort's independent metrics boundary.
+    """
+
+    import app.security_observability_integrations as integrations
+
+
+    database_url = (
+        postgres_database_url()
+    )
+
+
+    first = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    second = PostgreSQLWorkflowStore(
+        database_url=database_url
+    )
+
+    authoritative_store = (
+        PostgreSQLWorkflowStore(
+            database_url=database_url
+        )
+    )
+
+
+    approver = context(
+        role="APPROVER",
+    )
+
+    result = bound()
+
+
+    first.save_workflow(
+        result
+    )
+
+
+    winner = (
+        first
+        .claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=
+                approver,
+        )
+    )
+
+
+    assert (
+        winner.execution_attempt_id
+        is not None
+    )
+
+
+    class SuccessfulAuditEmitter:
+
+        def __init__(
+            self,
+            sink,
+        ):
+            self.sink = sink
+
+
+        def emit(
+            self,
+            event,
+        ):
+            return None
+
+
+    class FailingMetricsRegistry:
+
+        def observe(
+            self,
+            event,
+        ):
+            raise RuntimeError(
+                "STEP508C_OBSERVER_FAILURE_CANARY"
+            )
+
+
+    monkeypatch.setattr(
+        integrations,
+        "build_existing_audit_security_event_sink",
+        lambda:
+            object(),
+    )
+
+    monkeypatch.setattr(
+        integrations,
+        "SecurityEventEmitter",
+        SuccessfulAuditEmitter,
+    )
+
+    monkeypatch.setattr(
+        integrations,
+        "get_process_security_metrics_registry",
+        lambda:
+            FailingMetricsRegistry(),
+    )
+
+    monkeypatch.setattr(
+        integrations,
+        "evaluate_security_event",
+        lambda event:
+            None,
+    )
+
+
+    with pytest.raises(
+        PermissionError
+    ):
+
+        second.claim_workflow_for_execution(
+            result.workflow_id,
+            security_context=
+                approver,
+        )
+
+
+    authoritative = (
+        authoritative_store
+        .get_workflow(
+            result.workflow_id
+        )
+    )
+
+
+    assert (
+        authoritative.status
+        == "PROCESSING"
+    )
+
+    assert (
+        authoritative
+        .execution_attempt_id
+        == winner.execution_attempt_id
+    )

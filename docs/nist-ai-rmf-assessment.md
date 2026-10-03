@@ -898,3 +898,101 @@ Priority risks identified through this assessment are tracked in the project AI 
 [`ai-risk-register.md`](ai-risk-register.md)
 
 The risk register documents qualitative likelihood and impact, existing controls, residual risk, treatment decisions, and recommended future actions.
+
+
+## 7. Production Security Observability Closure Evidence
+
+This section records implemented Step 50 evidence using the NIST AI RMF
+GOVERN, MAP, MEASURE, and MANAGE functions.
+
+### GOVERN ? Security Authority and Accountability
+
+Implemented governance evidence includes:
+
+- telemetry is explicitly non-authoritative;
+- identity, tenant, session, workflow, and provider authority remain
+  separated from observability;
+- PostgreSQL remains shared workflow authority;
+- legacy identity and ticket audit fields are purpose-limited;
+- sensitive credentials, prompt/RAG content, provider bodies, and
+  execution secrets are excluded or minimized;
+- observer failure cannot redefine an authoritative security outcome;
+- v1 limitations are documented rather than represented as implemented
+  deployment controls.
+
+### MAP ? Trust Boundaries and Security Context
+
+The production trust model distinguishes:
+
+- authenticated enterprise principal context;
+- server-controlled tenant and session authority;
+- authorization-aware RAG and MCP boundaries;
+- PostgreSQL workflow and exact execution-attempt authority;
+- ServiceNow/provider side-effect boundaries;
+- downstream canonical security telemetry.
+
+Caller-controlled identifiers, prompts, stale workflow evidence, and
+provider bodies do not become authoritative merely because they are
+observable.
+
+### MEASURE ? Security Evaluation and Runtime Evidence
+
+Implemented measurement capabilities include:
+
+- canonical structured security events;
+- bounded metric dimensions;
+- deterministic single-event detections;
+- structured alert records;
+- secret and sensitive-content non-reflection testing;
+- raw authority-identifier rejection;
+- metric-cardinality adversarial testing;
+- observer-failure isolation testing;
+- PostgreSQL-backed multi-instance telemetry validation.
+
+Validated Step 50 evidence includes:
+
+- 4 dedicated PostgreSQL telemetry-authority tests;
+- 31 PostgreSQL integration tests with zero skips;
+- 123 PostgreSQL-related regression tests with zero skips;
+- 296 Step 50 security-observability regression tests;
+- the security evaluation passing every defined evaluation category;
+- the standardized seven-attack harness passing all seven cases.
+
+These results describe the implemented evaluation corpus and do not
+demonstrate the absence of all possible attacks or defects.
+
+### MANAGE ? Risk Treatment and Failure Containment
+
+Implemented risk treatments include:
+
+- fail-closed authorization boundaries outside telemetry;
+- exact PostgreSQL workflow and execution-attempt authority during
+  multi-instance races;
+- stale reconciliation evidence prevented from replacing persisted
+  execution authority;
+- wrong-state caller identifiers prevented from becoming canonical
+  authority-derived correlation;
+- observer failure prevented from selecting claim winners or modifying
+  persisted workflow outcomes;
+- sensitive content minimized from canonical and legacy telemetry;
+- high-cardinality identifiers excluded from metric labels;
+- detections and alerts kept downstream from authority decisions.
+
+### Residual Deployment Limitations
+
+The following are not represented as completed controls:
+
+- globally aggregated multi-instance metrics;
+- durable distributed alert delivery;
+- an external Prometheus/OpenTelemetry exporter;
+- cryptographic audit hash chaining or signatures;
+- demonstrated WORM audit storage;
+- HMAC-based EA1 correlation;
+- a distributed telemetry backend.
+
+The metrics registry and in-memory alert sink remain process-local.
+`audit.jsonl` remains structured persistence without a claim of
+cryptographic tamper evidence.
+
+EA1 remains deterministic SHA-256 pseudonymous correlation and is not
+authority.

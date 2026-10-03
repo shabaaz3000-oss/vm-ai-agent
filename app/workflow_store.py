@@ -237,6 +237,14 @@ def _sqlite_claim_workflow_for_execution(
             != "AWAITING_APPROVAL"
         ):
 
+            emit_sqlite_workflow_execution_claim_denied_security_event(
+                reason=(
+                    "execution_already_claimed"
+                    if row["status"] == "PROCESSING"
+                    else "workflow_transition_not_allowed"
+                ),
+            )
+
             raise PermissionError(
                 "Workflow must be awaiting approval "
                 "before execution can be claimed."
@@ -268,15 +276,53 @@ def _sqlite_claim_workflow_for_execution(
 
             if security_context is None:
 
+                emit_sqlite_workflow_execution_claim_denied_security_event(
+                    reason="security_binding_mismatch",
+                    tenant_id=current.tenant_id,
+                    workflow_id=current.workflow_id,
+                )
+
                 raise PermissionError(
                     "Tenant-bound workflow execution "
                     "requires trusted security context."
                 )
 
-            require_workflow_tenant(
-                current,
-                security_context=security_context,
-            )
+            try:
+                require_workflow_tenant(
+                    current,
+                    security_context=security_context,
+                )
+            except WorkflowTenantBindingError:
+                canonical_tenant_id = (
+                    current.tenant_id
+                    if (
+                        isinstance(
+                            current.tenant_id,
+                            str,
+                        )
+                        and current.tenant_id.strip()
+                        and current.tenant_id
+                        == current.tenant_id.strip()
+                    )
+                    else None
+                )
+
+                emit_sqlite_workflow_execution_claim_denied_security_event(
+                    reason=(
+                        "cross_tenant"
+                        if (
+                            canonical_tenant_id
+                            is not None
+                            and canonical_tenant_id
+                            != security_context.tenant_id
+                        )
+                        else "security_binding_mismatch"
+                    ),
+                    tenant_id=canonical_tenant_id,
+                    workflow_id=current.workflow_id,
+                )
+
+                raise
 
         updated_data = (
             current.model_dump()
@@ -326,6 +372,12 @@ def _sqlite_claim_workflow_for_execution(
         )
 
         if cursor.rowcount != 1:
+
+            emit_sqlite_workflow_execution_claim_denied_security_event(
+                reason="execution_already_claimed",
+                tenant_id=current.tenant_id,
+                workflow_id=current.workflow_id,
+            )
 
             raise PermissionError(
                 "Workflow execution has already "
@@ -1005,6 +1057,15 @@ def _validate_reconciliation_transition_target(
         SecurityContext,
     ):
 
+        emit_workflow_store_reconciliation_denied_security_event(
+            source_component="workflow_store",
+            reason_code="security_binding_mismatch",
+            workflow_id=current.workflow_id,
+            tenant_id=current.tenant_id,
+            execution_attempt_id=
+                current.execution_attempt_id,
+        )
+
         raise PermissionError(
             "Trusted SecurityContext is required "
             "for reconciliation resolution."
@@ -1015,16 +1076,80 @@ def _validate_reconciliation_transition_target(
         != "APPROVER"
     ):
 
+        emit_workflow_store_reconciliation_denied_security_event(
+            source_component="workflow_store",
+            reason_code="reconciliation_denied",
+            workflow_id=current.workflow_id,
+            tenant_id=current.tenant_id,
+            execution_attempt_id=
+                current.execution_attempt_id,
+        )
+
         raise PermissionError(
             "Reconciliation resolution requires "
             "APPROVER security context."
         )
 
-    require_workflow_tenant(
-        current,
-        security_context=
-            security_context,
-    )
+    try:
+        require_workflow_tenant(
+            current,
+            security_context=
+                security_context,
+        )
+
+    except WorkflowTenantBindingError:
+
+        trusted_current_tenant = (
+            current.tenant_id
+            if (
+                isinstance(
+                    current.tenant_id,
+                    str,
+                )
+                and current.tenant_id.strip()
+                and current.tenant_id
+                == current.tenant_id.strip()
+            )
+            else None
+        )
+
+        trusted_context_tenant = (
+            security_context.tenant_id
+            if (
+                isinstance(
+                    security_context.tenant_id,
+                    str,
+                )
+                and security_context.tenant_id.strip()
+                and security_context.tenant_id
+                == security_context.tenant_id.strip()
+            )
+            else None
+        )
+
+        tenant_reason = (
+            "cross_tenant"
+            if (
+                trusted_current_tenant
+                is not None
+                and trusted_context_tenant
+                is not None
+                and trusted_current_tenant
+                != trusted_context_tenant
+            )
+            else "security_binding_mismatch"
+        )
+
+        emit_workflow_store_reconciliation_denied_security_event(
+            source_component="workflow_store",
+            reason_code=tenant_reason,
+            workflow_id=current.workflow_id,
+            tenant_id=current.tenant_id,
+            execution_attempt_id=
+                current.execution_attempt_id,
+        )
+
+        raise
 
     if (
         not isinstance(
@@ -1036,6 +1161,13 @@ def _validate_reconciliation_transition_target(
         != expected_execution_attempt_id.strip()
     ):
 
+        emit_workflow_store_reconciliation_denied_security_event(
+            source_component="workflow_store",
+            reason_code="reconciliation_denied",
+            workflow_id=current.workflow_id,
+            tenant_id=current.tenant_id,
+        )
+
         raise ValueError(
             "expected_execution_attempt_id must be "
             "a non-blank normalized string."
@@ -1045,6 +1177,15 @@ def _validate_reconciliation_transition_target(
         current.execution_attempt_id
         != expected_execution_attempt_id
     ):
+
+        emit_workflow_store_reconciliation_denied_security_event(
+            source_component="workflow_store",
+            reason_code="execution_attempt_mismatch",
+            workflow_id=current.workflow_id,
+            tenant_id=current.tenant_id,
+            execution_attempt_id=
+                current.execution_attempt_id,
+        )
 
         raise PermissionError(
             "Workflow execution attempt changed "
@@ -1131,6 +1272,11 @@ def _sqlite_confirm_reconciled_ticket_creation(
             != "NEEDS_REVIEW"
         ):
 
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_store",
+                reason_code="workflow_transition_not_allowed",
+            )
+
             raise PermissionError(
                 "Only a NEEDS_REVIEW workflow can "
                 "be confirmed after reconciliation."
@@ -1161,6 +1307,15 @@ def _sqlite_confirm_reconciled_ticket_creation(
             current.ticket_id
             is not None
         ):
+
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_store",
+                reason_code="reconciliation_denied",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
 
             raise PermissionError(
                 "NEEDS_REVIEW workflow already "
@@ -1211,6 +1366,15 @@ def _sqlite_confirm_reconciled_ticket_creation(
         )
 
         if cursor.rowcount != 1:
+
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_store",
+                reason_code="reconciliation_denied",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
 
             raise PermissionError(
                 "Workflow state changed before "
@@ -1283,6 +1447,11 @@ def _sqlite_authorize_reconciled_retry(
             row["status"]
             != "NEEDS_REVIEW"
         ):
+
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_store",
+                reason_code="workflow_transition_not_allowed",
+            )
 
             raise PermissionError(
                 "Only a NEEDS_REVIEW workflow can "
@@ -1358,6 +1527,15 @@ def _sqlite_authorize_reconciled_retry(
 
         if cursor.rowcount != 1:
 
+            emit_workflow_store_reconciliation_denied_security_event(
+                source_component="workflow_store",
+                reason_code="reconciliation_denied",
+                workflow_id=current.workflow_id,
+                tenant_id=current.tenant_id,
+                execution_attempt_id=
+                    current.execution_attempt_id,
+            )
+
             raise PermissionError(
                 "Workflow state changed before "
                 "retry authorization could "
@@ -1384,6 +1562,11 @@ def _sqlite_authorize_reconciled_retry(
 import os as _workflow_store_os
 
 from app.workflow_store_contract import WorkflowStore
+from app.security_observability_integrations import emit_sqlite_workflow_execution_claim_denied_security_event
+from app.workflow_tenant import WorkflowTenantBindingError
+
+from app.security_observability_integrations import emit_workflow_store_reconciliation_denied_security_event
+
 
 
 WORKFLOW_STORE_BACKEND_ENV = (

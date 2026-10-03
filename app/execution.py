@@ -1,5 +1,10 @@
 from app.approval import create_approval
 from app.audit import log_event
+from app.security_observability_integrations import (
+    emit_workflow_execution_claimed_security_event,
+    emit_workflow_needs_review_security_event,
+    emit_workflow_stale_processing_detected_security_event,
+)
 
 from app.models import WorkflowResult
 from app.ticket_execution_context import (
@@ -16,6 +21,7 @@ from app.workflow_store import (
     mark_workflow_needs_review,
     complete_workflow_execution,
 )
+from app.legacy_audit_hygiene import build_legacy_execution_attempt_audit_fields
 
 
 # -------------------------------------------------
@@ -250,9 +256,14 @@ def _execute_ticket_bound_workflow(
             "workflow_id":
                 result.workflow_id,
 
-            "execution_attempt_id":
-                result.execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    result.tenant_id,
+                workflow_id=
+                    result.workflow_id,
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            ),
             "approval_id":
                 approval_record[
                     "approval_id"
@@ -315,9 +326,14 @@ def _execute_ticket_bound_workflow(
                 "workflow_id":
                     result.workflow_id,
 
-                "execution_attempt_id":
-                    result.execution_attempt_id,
-
+                **build_legacy_execution_attempt_audit_fields(
+                    tenant_id=
+                        result.tenant_id,
+                    workflow_id=
+                        result.workflow_id,
+                    execution_attempt_id=
+                        result.execution_attempt_id,
+                ),
                 "approval_id":
                     approval_record[
                         "approval_id"
@@ -326,8 +342,6 @@ def _execute_ticket_bound_workflow(
                 "error_type":
                     "PermissionError",
 
-                "message":
-                    str(error),
             }
         )
 
@@ -343,9 +357,14 @@ def _execute_ticket_bound_workflow(
             "workflow_id":
                 result.workflow_id,
 
-            "execution_attempt_id":
-                result.execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    result.tenant_id,
+                workflow_id=
+                    result.workflow_id,
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            ),
             "ticket_id":
                 created_ticket[
                     "ticket_id"
@@ -488,8 +507,6 @@ def claim_and_execute_workflow(
                 "error_type":
                     "PermissionError",
 
-                "message":
-                    str(error),
             }
         )
 
@@ -505,10 +522,14 @@ def claim_and_execute_workflow(
             "status":
                 claimed_result.status,
 
-            "execution_attempt_id":
-                claimed_result
-                .execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    claimed_result.tenant_id,
+                workflow_id=
+                    claimed_result.workflow_id,
+                execution_attempt_id=
+                    claimed_result.execution_attempt_id,
+            ),
             "processing_started_at":
                 (
                     claimed_result
@@ -522,6 +543,14 @@ def claim_and_execute_workflow(
             "approved_by":
                 approved_by,
         }
+    )
+
+    emit_workflow_execution_claimed_security_event(
+        tenant_id=claimed_result.tenant_id,
+        workflow_id=claimed_result.workflow_id,
+        execution_attempt_id=
+            claimed_result
+            .execution_attempt_id,
     )
 
 
@@ -686,10 +715,14 @@ def claim_and_execute_workflow(
                     "workflow_id":
                         workflow_id,
 
-                    "execution_attempt_id":
-                        claimed_result
-                        .execution_attempt_id,
-
+                    **build_legacy_execution_attempt_audit_fields(
+                        tenant_id=
+                            claimed_result.tenant_id,
+                        workflow_id=
+                            claimed_result.workflow_id,
+                        execution_attempt_id=
+                            claimed_result.execution_attempt_id,
+                    ),
                     "original_error_type":
                         type(error).__name__,
 
@@ -708,10 +741,14 @@ def claim_and_execute_workflow(
                     "workflow_id":
                         workflow_id,
 
-                    "execution_attempt_id":
-                        review_result
-                        .execution_attempt_id,
-
+                    **build_legacy_execution_attempt_audit_fields(
+                        tenant_id=
+                            review_result.tenant_id,
+                        workflow_id=
+                            review_result.workflow_id,
+                        execution_attempt_id=
+                            review_result.execution_attempt_id,
+                    ),
                     "status":
                         review_result.status,
 
@@ -722,6 +759,14 @@ def claim_and_execute_workflow(
                         review_result
                         .recovery_reason,
                 }
+            )
+
+            emit_workflow_needs_review_security_event(
+                tenant_id=review_result.tenant_id,
+                workflow_id=review_result.workflow_id,
+                execution_attempt_id=
+                    review_result
+                    .execution_attempt_id,
             )
 
         raise
@@ -760,15 +805,34 @@ def reconcile_stale_workflow(
             "workflow_id":
                 result.workflow_id,
 
-            "execution_attempt_id":
-                result.execution_attempt_id,
-
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    result.tenant_id,
+                workflow_id=
+                    result.workflow_id,
+                execution_attempt_id=
+                    result.execution_attempt_id,
+            ),
             "status":
                 result.status,
 
             "recovery_reason":
                 result.recovery_reason,
         }
+    )
+
+    emit_workflow_stale_processing_detected_security_event(
+        tenant_id=result.tenant_id,
+        workflow_id=result.workflow_id,
+        execution_attempt_id=
+            result.execution_attempt_id,
+    )
+
+    emit_workflow_needs_review_security_event(
+        tenant_id=result.tenant_id,
+        workflow_id=result.workflow_id,
+        execution_attempt_id=
+            result.execution_attempt_id,
     )
 
     return result

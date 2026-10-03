@@ -1,4 +1,4 @@
-﻿# VM AI Agent Architecture
+# VM AI Agent Architecture
 
 This document is the version-controlled architecture reference for the VM AI Agent security architecture.
 
@@ -447,3 +447,168 @@ sequenceDiagram
 - Generic production `update_workflow` mutation authority is absent from the security-sensitive execution surface; dedicated transition operations enforce state and authority preconditions.
 - Production startup validates workflow-store readiness and required schema state before authority-sensitive operation.
 - Security CI provisions PostgreSQL 17 so shared-backend workflow authority, multi-instance race, stale-attempt, and tenant-isolation integration tests execute against the production store implementation.
+
+## 50. Production Security Observability and Multi-Instance Telemetry
+
+Step 50 adds security observability as a downstream, non-authoritative
+layer over the production security architecture.
+
+### Authority Flow
+
+The production authority flow is:
+
+1. **Enterprise identity provider**
+   establishes the authenticated principal.
+
+2. **Server-controlled tenant and session state**
+   establishes the authoritative tenant/session context used by
+   authorization.
+
+3. **Authorization-aware RAG and MCP boundaries**
+   enforce retrieval and tool access from trusted principal, tenant,
+   session, role, and classification state.
+
+4. **PostgreSQL workflow authority**
+   owns persisted workflow state, exactly-one execution claims,
+   exact execution-attempt comparison, reconciliation, stale-processing
+   recovery, retry authorization, and compare-and-swap transitions.
+
+5. **ServiceNow provider boundary**
+   performs external ticket side effects only after trusted workflow
+   authority permits execution.
+
+6. **Security observability**
+   consumes canonical events describing those decisions. Audit, metrics,
+   detection, alerts, and correlation do not become authorization,
+   workflow, session, tenant, provider, or execution authority.
+
+Conceptually:
+
+```text
+Enterprise IdP
+     |
+     v
+Authenticated Principal
+     |
+     v
+Server-Controlled Tenant / Session State
+     |
+     +----> Authorization-Aware RAG / MCP
+     |
+     v
+PostgreSQL Workflow Authority
+     |
+     +----> Exact Execution Attempt / Reconciliation
+     |
+     v
+ServiceNow Provider Boundary
+     |
+     v
+External Side Effect
+
+Authoritative decision points
+     |
+     +----> Canonical SecurityEvent
+                |
+                +----> structured audit
+                +----> bounded metrics
+                +----> deterministic detection
+                +----> structured alert delivery
+```
+
+Telemetry observes authority.
+
+Telemetry is not authority.
+
+### Canonical Security Telemetry
+
+The canonical event model uses bounded semantic dimensions and trusted
+correlation fields.
+
+High-cardinality identifiers such as tenant, workflow, principal,
+session, execution-attempt reference, provider correlation, ticket,
+asset, finding, and RAG chunk identifiers do not become metric labels.
+
+The exact execution-attempt ID remains internal execution authority.
+EA1 is a deterministic pseudonymous reference derived from trusted
+tenant, authoritative workflow, and authoritative execution-attempt
+state.
+
+EA1 is observational metadata only.
+
+### Failure Isolation
+
+Audit, metric observation, detection, and alert delivery are independent
+best-effort observers.
+
+Observer failure must not:
+
+- authorize an otherwise denied operation;
+- select a workflow claimant;
+- change the persisted PostgreSQL winner;
+- modify exact execution-attempt comparison;
+- alter reconciliation authority;
+- suppress a required authorization decision;
+- roll back an authoritative workflow transition merely because
+  telemetry failed afterward.
+
+### PostgreSQL Multi-Instance Runtime Evidence
+
+The workflow and session authority implementation was exercised against
+a real PostgreSQL 17 runtime.
+
+Validated evidence includes:
+
+- 4 dedicated PostgreSQL telemetry-authority tests;
+- 31 PostgreSQL integration tests with zero skips;
+- 123 PostgreSQL-related regression tests with zero skips;
+- exactly-one multi-instance claim and reconciliation semantics;
+- canonical winning-attempt correlation derived from persisted
+  PostgreSQL state;
+- stale caller reconciliation evidence excluded from canonical
+  execution-attempt correlation;
+- wrong-state pre-parse denials prevented from promoting caller lookup
+  identifiers into canonical correlation;
+- observer failure demonstrated not to alter persisted PostgreSQL
+  authority.
+
+### Deployment Scope
+
+The built-in security metrics registry and in-memory alert sink are
+process-local.
+
+The v1 repository does not claim:
+
+- globally aggregated multi-instance metrics;
+- durable distributed alert delivery;
+- an external Prometheus/OpenTelemetry exporter;
+- cryptographic audit hash chaining or signing;
+- WORM audit storage;
+- HMAC-based EA1 correlation.
+
+Those remain deployment/integration or future-hardening concerns.
+
+### Production Security Properties
+
+The resulting authority model is:
+
+**Identity establishes principal authority.**
+
+**Server state establishes tenant/session authority.**
+
+**PostgreSQL establishes shared workflow authority.**
+
+**Exact execution-attempt IDs establish execution and reconciliation
+authority where required.**
+
+**Provider adapters perform external effects only after authority permits
+them.**
+
+**Correlation observes authority. Correlation is never authority.**
+
+**Detection observes authority. Detection is never authority.**
+
+**Alerts describe observed conditions. Alerts are never authority.**
+
+**Security telemetry observes authority. Security telemetry is not
+authority.**

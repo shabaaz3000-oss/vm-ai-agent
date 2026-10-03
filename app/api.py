@@ -37,6 +37,7 @@ from app.providers.servicenow_client import (
 from app.servicenow_reconciliation import (
     resolve_servicenow_workflow,
 )
+from app.legacy_audit_hygiene import build_legacy_execution_attempt_audit_fields
 
 
 # -------------------------------------------------
@@ -659,11 +660,14 @@ def resolve_servicenow_workflow_endpoint(
             "workflow_status":
                 resolved.status,
 
-            "execution_attempt_id":
-                (
-                    resolved.execution_attempt_id
-                    or ""
-                ),
+            **build_legacy_execution_attempt_audit_fields(
+                tenant_id=
+                    trusted_context.tenant_id,
+                workflow_id=
+                    resolved.workflow_id,
+                execution_attempt_id=
+                    resolved.execution_attempt_id,
+            ),
         },
     )
 

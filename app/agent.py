@@ -6,6 +6,10 @@ from pydantic import BaseModel
 from app.ai_analyzer import _get_client
 from app.auth import Principal
 from app.audit import log_event
+from app.security_observability_integrations import (
+    emit_direct_prompt_injection_blocked_security_event,
+    emit_tool_output_prompt_injection_suspected_security_event,
+)
 
 from app.input_security import (
     aggregate_prompt_injection_matches,
@@ -400,6 +404,8 @@ def run_agent(
                     direct_injection_matches,
             },
         )
+
+        emit_direct_prompt_injection_blocked_security_event()
 
         raise PermissionError(
             "Agent request rejected by "
@@ -813,6 +819,8 @@ def run_agent(
                         injection_matches,
                 },
             )
+
+            emit_tool_output_prompt_injection_suspected_security_event()
 
         # -------------------------------------------------
         # 13. BUILD TOOL OUTPUT

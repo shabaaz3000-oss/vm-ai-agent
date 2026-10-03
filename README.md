@@ -109,6 +109,90 @@ The CVE and infrastructure data used by the portfolio demo are synthetic and are
 
 ---
 
+## Production Security Observability (Step 50)
+
+The production-security architecture includes a canonical security
+observability layer that remains downstream from authorization, workflow,
+session, tenant, and provider authority.
+
+Implemented security-observability properties include:
+
+- canonical structured `SecurityEvent` records with bounded event types,
+  severities, outcomes, reason codes, and source components;
+- server-controlled correlation for session, workflow,
+  execution-attempt, and provider activity;
+- deterministic pseudonymous EA1 execution-attempt references that do
+  not replace exact execution-attempt authority;
+- independent best-effort audit, metrics, detection, and alert-delivery
+  observer boundaries;
+- bounded security metrics that exclude high-cardinality identifiers
+  from metric labels;
+- deterministic single-event security detections and structured alerts;
+- legacy-audit minimization for exception messages, execution attempts,
+  identity, ticket identifiers, prompt-injection metadata, RAG metadata,
+  and quarantine records;
+- adversarial observability evaluation for secret reflection,
+  raw-authority identifier injection, cardinality pressure, observer
+  failure, and sensitive-content leakage;
+- real PostgreSQL multi-instance validation demonstrating that telemetry
+  observes persisted workflow authority rather than selecting it.
+
+### Step 50 Runtime Evidence
+
+Validated Step 50 evidence includes:
+
+- 4 dedicated PostgreSQL telemetry-authority cases with zero skips;
+- 31 PostgreSQL integration cases with zero skips;
+- 123 PostgreSQL-related regression cases with zero skips;
+- 296 Step 50 security-observability regression cases;
+- the credential-free `security-eval` harness passing every evaluation
+  category;
+- the standardized seven-attack harness passing all seven cases.
+
+These counts describe the validated test corpus. They are not a claim
+that testing proves the absence of all security defects.
+
+### Observability Authority Boundary
+
+The authority model remains explicit:
+
+- enterprise identity establishes authenticated principal context;
+- server-controlled tenant and session state constrain authorization;
+- PostgreSQL owns distributed workflow and exact execution-attempt
+  authority;
+- the ServiceNow provider boundary owns external ticket side effects;
+- security telemetry observes those authoritative decisions without
+  becoming a new source of authority.
+
+**PostgreSQL owns shared workflow authority.**
+
+**Correlation observes authority. Correlation is never authority.**
+
+**Security telemetry observes authority. Security telemetry is not
+authority.**
+
+### V1 Observability Limitations
+
+The v1 architecture intentionally does not overstate its deployment
+capabilities:
+
+- the built-in metrics registry is process-local and is not globally
+  aggregated across application instances;
+- the in-memory alert sink is process-local and non-durable;
+- no Prometheus or OpenTelemetry exporter is included in v1;
+- `audit.jsonl` is structured audit persistence, but it is not
+  cryptographically hash-chained, signed, or demonstrated as WORM
+  storage;
+- EA1 is deterministic SHA-256 pseudonymous correlation, not an HMAC,
+  credential, capability, approval token, or execution authority;
+- distributed telemetry aggregation and durable external alert delivery
+  remain deployment/integration work.
+
+The final project label **VM AI Agent v1 ? production security
+architecture complete** is applied only after the Step 50.9 pull request
+passes required security CI, is merged through protected main, and local
+`main` is synchronized with `origin/main`.
+
 ## AI Security Evaluation Harness
 
 The project includes a credential-free adversarial security evaluation

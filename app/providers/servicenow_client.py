@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import Enum
+
 from typing import Any
 
 import httpx
@@ -39,6 +41,15 @@ class ServiceNowResponseError(
     """
 
 
+class ServiceNowLookupFailureKind(str, Enum):
+    """Bounded classification for trusted lookup failures."""
+
+    TRANSPORT = "transport"
+    HTTP_STATUS = "http_status"
+    INVALID_RESPONSE = "invalid_response"
+    CORRELATION_MISMATCH = "correlation_mismatch"
+
+
 class ServiceNowLookupError(
     ServiceNowClientError
 ):
@@ -49,6 +60,20 @@ class ServiceNowLookupError(
     The lookup performs no external mutation. The workflow must
     remain NEEDS_REVIEW until a later lookup succeeds.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_kind: ServiceNowLookupFailureKind,
+    ) -> None:
+        super().__init__(
+            message
+        )
+
+        self.failure_kind = (
+            failure_kind
+        )
 
 
 class ServiceNowClient:
@@ -160,7 +185,8 @@ class ServiceNowClient:
             raise ServiceNowLookupError(
                 "ServiceNow reconciliation lookup "
                 "failed before a trustworthy response "
-                "was processed."
+                "was processed.",
+                failure_kind=ServiceNowLookupFailureKind.TRANSPORT,
             ) from error
 
         if (
@@ -171,7 +197,8 @@ class ServiceNowClient:
             raise ServiceNowLookupError(
                 "ServiceNow reconciliation lookup "
                 f"failed with HTTP "
-                f"{response.status_code}."
+                f"{response.status_code}.",
+                failure_kind=ServiceNowLookupFailureKind.HTTP_STATUS,
             )
 
         try:
@@ -182,7 +209,8 @@ class ServiceNowClient:
 
             raise ServiceNowLookupError(
                 "ServiceNow reconciliation lookup "
-                "returned invalid JSON."
+                "returned invalid JSON.",
+                failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
             ) from error
 
         if not isinstance(
@@ -192,7 +220,8 @@ class ServiceNowClient:
 
             raise ServiceNowLookupError(
                 "ServiceNow reconciliation response "
-                "must be an object."
+                "must be an object.",
+                failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
             )
 
         result = body.get(
@@ -206,7 +235,8 @@ class ServiceNowClient:
 
             raise ServiceNowLookupError(
                 "ServiceNow reconciliation response "
-                "is missing the result list."
+                "is missing the result list.",
+                failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
             )
 
         if len(
@@ -215,7 +245,8 @@ class ServiceNowClient:
 
             raise ServiceNowLookupError(
                 "ServiceNow reconciliation returned "
-                "more records than the fixed limit."
+                "more records than the fixed limit.",
+                failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
             )
 
         normalized = []
@@ -235,7 +266,8 @@ class ServiceNowClient:
 
                 raise ServiceNowLookupError(
                     "ServiceNow reconciliation record "
-                    "must be an object."
+                    "must be an object.",
+                    failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
                 )
 
             if (
@@ -247,7 +279,8 @@ class ServiceNowClient:
 
                 raise ServiceNowLookupError(
                     "ServiceNow reconciliation record "
-                    "contains unexpected fields."
+                    "contains unexpected fields.",
+                    failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
                 )
 
             sys_id = record.get(
@@ -285,7 +318,8 @@ class ServiceNowClient:
 
                 raise ServiceNowLookupError(
                     "ServiceNow reconciliation record "
-                    "contains an invalid sys_id."
+                    "contains an invalid sys_id.",
+                    failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
                 )
 
             if (
@@ -300,7 +334,8 @@ class ServiceNowClient:
 
                 raise ServiceNowLookupError(
                     "ServiceNow reconciliation record "
-                    "contains an invalid number."
+                    "contains an invalid number.",
+                    failure_kind=ServiceNowLookupFailureKind.INVALID_RESPONSE,
                 )
 
             if (
@@ -311,7 +346,8 @@ class ServiceNowClient:
                 raise ServiceNowLookupError(
                     "ServiceNow reconciliation record "
                     "does not match the requested "
-                    "correlation_id."
+                    "correlation_id.",
+                    failure_kind=ServiceNowLookupFailureKind.CORRELATION_MISMATCH,
                 )
 
             normalized.append(
