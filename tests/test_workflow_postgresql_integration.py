@@ -2006,7 +2006,7 @@ def test_postgresql_claim_race_telemetry_uses_only_committed_authority(
 
     import app.security_observability_integrations as integrations
 
-    from app.security_observability import (
+    from app.security_observability_correlation import (
         build_execution_attempt_ref,
     )
 
@@ -2348,7 +2348,7 @@ def test_postgresql_reconciliation_mismatch_telemetry_uses_locked_current_attemp
 
     import app.security_observability_integrations as integrations
 
-    from app.security_observability import (
+    from app.security_observability_correlation import (
         build_execution_attempt_ref,
     )
 
