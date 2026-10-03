@@ -1877,3 +1877,65 @@ Correlation observes authority. Correlation is never authority.
 
 Security telemetry observes authority. Security telemetry is not
 authority.
+
+### PostgreSQL multi-instance telemetry proof
+
+Production PostgreSQL integration is runtime-tested rather than inferred
+from collected or skipped integration tests.
+
+The PostgreSQL workflow store remains the sole shared workflow-state
+authority. `SELECT ... FOR UPDATE`, workflow-state predicates, exact
+execution-attempt comparison, and conditional update/CAS semantics decide
+the authoritative outcome before telemetry is interpreted.
+
+A two-instance PostgreSQL execution-claim race produces exactly one
+persisted winning execution attempt.
+
+A losing claim must not promote a candidate or uncommitted execution
+attempt into canonical telemetry. When the persisted row is already
+`PROCESSING`, claim-denial telemetry is intentionally uncorrelated because
+the wrong-state decision occurs before authoritative `WorkflowResult`
+correlation is parsed.
+
+The successful execution-claim adapter may derive EA1 only from the
+`WorkflowResult` returned by the authoritative claim operation. Runtime
+PostgreSQL validation re-reads the persisted winning attempt and verifies
+that canonical EA1 is derived from that winning value while the raw
+execution-attempt identifier remains absent.
+
+For reconciliation, PostgreSQL keeps `SELECT ... FOR UPDATE` authority
+through persisted workflow parsing, tenant validation, exact
+execution-attempt comparison, mutation, and CAS verification.
+
+When stale reconciliation evidence does not match
+`current.execution_attempt_id`, canonical denial correlation uses only the
+persisted current workflow, persisted tenant, and EA1 derived from the
+persisted current execution attempt. The stale caller attempt and the raw
+current execution attempt are not emitted.
+
+A wrong-state reconciliation denial that occurs before authoritative
+`WorkflowResult` parsing must not promote the caller lookup `workflow_id`,
+tenant, or execution attempt into canonical correlation.
+
+Observer failure remains independent from PostgreSQL authority. A failure
+inside audit, metrics, detection, or alert delivery cannot select a
+workflow winner, roll back an already committed winner, authorize a
+loser, or replace PostgreSQL state.
+
+The built-in security metrics registry and in-memory security-alert sink
+remain process-local. They do not provide globally aggregated
+multi-instance metrics, distributed alert durability, or distributed
+workflow coordination. Production aggregation/export is a deployment
+concern unless a distributed telemetry backend is explicitly configured.
+
+PostgreSQL test database URLs and credentials are test/runtime secrets.
+Validation evidence must report execution results without printing or
+persisting those values.
+
+PostgreSQL owns shared workflow authority.
+
+Correlation observes PostgreSQL-backed authority. Correlation is never
+authority.
+
+Telemetry observes PostgreSQL-backed authority. Telemetry is not
+PostgreSQL authority.
