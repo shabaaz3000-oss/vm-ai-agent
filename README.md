@@ -1,6 +1,6 @@
-# VM AI Agent
+# AI Vulnerability Management Agent
 
-[![Security CI](https://github.com/shabaaz3000-oss/vm-ai-agent/actions/workflows/security-ci.yml/badge.svg)](https://github.com/shabaaz3000-oss/vm-ai-agent/actions/workflows/security-ci.yml)
+[![Security CI](https://github.com/shabaaz3000-oss/ai-vulnerability-management-agent/actions/workflows/security-ci.yml/badge.svg)](https://github.com/shabaaz3000-oss/ai-vulnerability-management-agent/actions/workflows/security-ci.yml)
 
 A security-focused AI-assisted vulnerability management workflow that combines vulnerability scanner data, enterprise asset context, deterministic risk policy, secure retrieval-augmented generation (RAG), AI advisory analysis, human approval, and controlled ticket execution.
 
@@ -188,7 +188,7 @@ capabilities:
 - distributed telemetry aggregation and durable external alert delivery
   remain deployment/integration work.
 
-The final project label **VM AI Agent v1 ? production security
+The final project label **AI Vulnerability Management Agent v1 ? production security
 architecture complete** is applied only after the Step 50.9 pull request
 passes required security CI, is merged through protected main, and local
 `main` is synchronized with `origin/main`.
@@ -603,7 +603,7 @@ Retrieved knowledge is also treated as non-authoritative data. A source may be t
 
 ## Threat Model
 
-A dedicated threat model documents the primary trust boundaries, abuse cases, security assumptions, residual risks, and mitigations for the VM AI Agent.
+A dedicated threat model documents the primary trust boundaries, abuse cases, security assumptions, residual risks, and mitigations for the AI Vulnerability Management Agent.
 
 It currently covers 19 threat scenarios, including:
 
@@ -626,7 +626,7 @@ It currently covers 19 threat scenarios, including:
 
 See:
 
-**[VM AI Agent Threat Model](THREAT_MODEL.md)**
+**[AI Vulnerability Management Agent Threat Model](THREAT_MODEL.md)**
 
 ---
 
@@ -1799,8 +1799,8 @@ The workflow store uses transaction controls to support atomic execution claims 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/shabaaz3000-oss/vm-ai-agent.git
-cd vm-ai-agent
+git clone https://github.com/shabaaz3000-oss/ai-vulnerability-management-agent.git
+cd ai-vulnerability-management-agent
 ```
 
 ### 2. Create a virtual environment
@@ -1856,7 +1856,7 @@ python -m pytest -q
 ## Project Structure
 
 ```text
-vm-ai-agent/
+ai-vulnerability-management-agent/
 |
 |-- .github/
 |   `-- workflows/
@@ -1969,7 +1969,7 @@ vm-ai-agent/
 
 ## AI Risk and Governance Documentation
 
-The repository includes dedicated AI risk-management artifacts that apply the NIST AI Risk Management Framework and NIST AI 600-1 Generative AI Profile to the VM AI Agent.
+The repository includes dedicated AI risk-management artifacts that apply the NIST AI Risk Management Framework and NIST AI 600-1 Generative AI Profile to the AI Vulnerability Management Agent.
 
 ### NIST AI RMF Assessment
 
@@ -2067,12 +2067,12 @@ The central design principle of this project is:
 
 > **AI may recommend. Deterministic policy decides. Humans authorize. Controlled code executes.**
 
-That separation of authority is the core security boundary of the VM AI Agent.
+That separation of authority is the core security boundary of the AI Vulnerability Management Agent.
 ---
 
 ## Production ServiceNow Ticketing Boundary
 
-The VM AI Agent supports a server-selected ticket-provider boundary:
+The AI Vulnerability Management Agent supports a server-selected ticket-provider boundary:
 
 - `mock` remains the safe local-development and demonstration default.
 - `servicenow` enables the hardened ServiceNow REST integration.

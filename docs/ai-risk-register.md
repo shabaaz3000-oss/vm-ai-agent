@@ -1,8 +1,8 @@
-# VM AI Agent Risk Register
+# AI Vulnerability Management Agent Risk Register
 
 ## Purpose
 
-This risk register documents priority AI and security risks identified during the NIST AI RMF assessment of the VM AI Agent.
+This risk register documents priority AI and security risks identified during the NIST AI RMF assessment of the AI Vulnerability Management Agent.
 
 The register is intended to demonstrate how identified risks can be translated into measurable and actionable risk-management decisions.
 

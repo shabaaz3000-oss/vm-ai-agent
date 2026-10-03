@@ -3,7 +3,7 @@
 ## Status
 
 This document defines the version 1 security observability contract for the
-VM AI Agent.
+AI Vulnerability Management Agent.
 
 It is the design authority for Step 50: Production Security Observability,
 Audit Telemetry, and Detection.
@@ -16,7 +16,7 @@ authorization boundary.
 
 ## 1. Purpose
 
-The VM AI Agent already enforces security controls across enterprise identity,
+The AI Vulnerability Management Agent already enforces security controls across enterprise identity,
 tenant isolation, retrieval authorization, MCP sessions, human approval,
 workflow execution, exact execution attempts, provider operations, and
 reconciliation.
@@ -2006,7 +2006,7 @@ authorize the final project-completion label.
 
 The label:
 
-`VM AI Agent v1 ? production security architecture complete`
+`AI Vulnerability Management Agent v1 ? production security architecture complete`
 
 is applied only when:
 

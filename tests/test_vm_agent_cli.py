@@ -547,7 +547,7 @@ def test_security_eval_command_returns_zero_when_all_suites_pass(
     assert exit_code == 0
 
     assert (
-        "VM AI AGENT - SECURITY EVALUATION"
+        "AI VULNERABILITY MANAGEMENT AGENT - SECURITY EVALUATION"
         in output
     )
 

@@ -116,7 +116,7 @@ def main():
 
     print()
     print("=" * 70)
-    print("VM AI AGENT RESULT")
+    print("AI VULNERABILITY MANAGEMENT AGENT RESULT")
     print("=" * 70)
     print()
 

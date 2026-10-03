@@ -56,7 +56,7 @@ async def _lifespan(
 
 
 app = FastAPI(
-    title="VM AI Agent API",
+    title="AI Vulnerability Management Agent API",
     version="0.3.0",
     lifespan=_lifespan,
     description=(

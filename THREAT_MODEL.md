@@ -1,8 +1,8 @@
-# VM AI Agent Threat Model
+# AI Vulnerability Management Agent Threat Model
 
 ## Purpose
 
-This document describes the primary security threats, trust boundaries, abuse cases, mitigations, assumptions, and residual risks for the VM AI Agent.
+This document describes the primary security threats, trust boundaries, abuse cases, mitigations, assumptions, and residual risks for the AI Vulnerability Management Agent.
 
 The system assists vulnerability-management teams by combining scanner data, enterprise asset context, deterministic risk policy, retrieval-augmented generation (RAG), AI-generated advisory analysis, human approval, and controlled ticket execution.
 
@@ -1041,7 +1041,7 @@ Planned or potential improvements include:
 
 # Security Design Summary
 
-The VM AI Agent is designed around separation of authority.
+The AI Vulnerability Management Agent is designed around separation of authority.
 
 ```text
 External data is untrusted.

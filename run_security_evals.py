@@ -197,7 +197,7 @@ def print_security_report(
     )
 
     print(
-        "VM AI AGENT SECURITY EVALUATION"
+        "AI VULNERABILITY MANAGEMENT AGENT SECURITY EVALUATION"
     )
 
     print(
