@@ -1,0 +1,148 @@
+services:
+
+  tls-init:
+    build:
+      context: .
+      target: postgres-tls-init
+    restart: "no"
+    network_mode: none
+    volumes:
+      - postgres_tls:/tls
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      tls-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: vm_ai_deployment
+      POSTGRES_DB: vm_ai_agent
+      POSTGRES_PASSWORD_FILE: /run/secrets/deployment_db_password
+    secrets:
+      - deployment_db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_tls:/tls:ro
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/tls/server.crt
+      - -c
+      - ssl_key_file=/tls/server.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - hba_file=/tls/pg_hba.conf
+      - -c
+      - password_encryption=scram-sha-256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U vm_ai_deployment -d vm_ai_agent
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks:
+      - database
+
+  bootstrap:
+    build:
+      context: .
+      target: bootstrap
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      VM_AI_ENV: production
+      VM_AI_DEPLOYMENT_DATABASE_URL: >-
+        postgresql://vm_ai_deployment@postgres:5432/vm_ai_agent?sslmode=verify-full
+      VM_AI_RUNTIME_DATABASE_PASSWORD_FILE: /run/secrets/runtime_db_password
+      PGSSLROOTCERT: /tls/ca.crt
+    secrets:
+      - deployment_db_password
+      - runtime_db_password
+    volumes:
+      - postgres_tls:/tls:ro
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export PGPASSWORD="$$(cat /run/secrets/deployment_db_password)"
+        exec python -m deploy.postgresql_bootstrap
+    networks:
+      - database
+
+  api:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    environment:
+      VM_AI_ENV: production
+      VM_AI_WORKFLOW_STORE_BACKEND: postgresql
+      VM_AI_WORKFLOW_DATABASE_URL: >-
+        postgresql://vm_ai_runtime@postgres:5432/vm_ai_agent?sslmode=verify-full
+      VM_AI_SESSION_STORE: postgresql
+      VM_AI_SESSION_DATABASE_URL: >-
+        postgresql://vm_ai_runtime@postgres:5432/vm_ai_agent?sslmode=verify-full
+      PGSSLROOTCERT: /tls/ca.crt
+    secrets:
+      - runtime_db_password
+    volumes:
+      - postgres_tls:/tls:ro
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export PGPASSWORD="$$(cat /run/secrets/runtime_db_password)"
+        exec python -m uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 1
+    ports:
+      - "127.0.0.1:${VM_AI_API_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen(
+              "http://127.0.0.1:8000/health",
+              timeout=2
+          );
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - database
+      - edge
+
+secrets:
+
+  deployment_db_password:
+    file: "${VM_AI_COMPOSE_DEPLOYMENT_PASSWORD_FILE:?Set VM_AI_COMPOSE_DEPLOYMENT_PASSWORD_FILE}"
+
+  runtime_db_password:
+    file: "${VM_AI_COMPOSE_RUNTIME_PASSWORD_FILE:?Set VM_AI_COMPOSE_RUNTIME_PASSWORD_FILE}"
+
+volumes:
+
+  postgres_data:
+
+  postgres_tls:
+
+networks:
+
+  database:
+    internal: true
+
+  edge:
