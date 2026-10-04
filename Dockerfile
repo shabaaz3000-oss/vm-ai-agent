@@ -26,6 +26,26 @@ COPY --chown=10001:10001 app ./app
 
 
 # ------------------------------------------------------------
+# POSTGRESQL TLS INITIALIZATION TARGET
+# ------------------------------------------------------------
+
+# This target contains no application runtime or deployment
+# database authority. It prepares TLS material in a named volume
+# and exits before PostgreSQL starts.
+FROM postgres:17-alpine AS postgres-tls-init
+
+USER root
+
+RUN apk add --no-cache openssl
+
+COPY --chown=root:root     deploy/postgresql_tls_init.sh     /usr/local/bin/postgresql_tls_init.sh
+
+RUN chmod 0755     /usr/local/bin/postgresql_tls_init.sh
+
+ENTRYPOINT ["/usr/local/bin/postgresql_tls_init.sh"]
+
+
+# ------------------------------------------------------------
 # DEPLOYMENT / BOOTSTRAP TARGET
 # ------------------------------------------------------------
 
